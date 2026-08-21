@@ -1,0 +1,8 @@
+<UserControl x:Class="Scada.App.Views.EngineeringView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <StackPanel>
+        <TextBlock Text="Engineering" FontSize="28" FontWeight="SemiBold" Foreground="#162536" />
+        <TextBlock Text="Foundation placeholder. Devices, Tags, History and MQTT configuration are deferred." Margin="0,8,0,20" Foreground="{StaticResource MutedTextBrush}" />
+    </StackPanel>
+</UserControl>

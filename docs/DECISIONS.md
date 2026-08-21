@@ -62,3 +62,23 @@ External symbol libraries such as Symbol Factory are graphic sources only and mu
 ## D-011 — Versioned project knowledge
 
 Architecture, current state, roadmap and decisions live inside the Git repository and are versioned together with the code.
+
+## D-012 — Runtime-neutral polling
+
+`Scada.Runtime` contains the generic `PollingRuntimeService` and depends only on the `IPlcDriver` contract. It contains no Simulator-specific type or logic. Simulator behavior is implemented exclusively in `Scada.Drivers/Simulator` and composed by `Scada.App`.
+
+## D-013 — Static device configuration versus runtime state
+
+`DeviceDefinition` contains static configuration only. Connection state, last error, last successful read and read statistics are represented by `Scada.Runtime.Devices.DeviceRuntimeState`.
+
+## D-014 — Central build and package settings
+
+`Directory.Build.props` provides shared compiler/framework settings. `Directory.Packages.props` centrally pins the small set of NuGet dependencies used by the solution. `coverlet.collector` is not included until coverage is explicitly used.
+
+## D-015 — Portable runtime paths
+
+Runtime configuration is resolved from `AppContext.BaseDirectory`; no working-directory or machine-specific absolute path is required. `Scada.App/appsettings.json` is copied to the application output.
+
+## D-016 — Runtime shutdown and subscriber isolation
+
+`PollingRuntimeService` tracks successfully connected devices and calls the driver’s asynchronous `DisconnectAsync` during hosted-service shutdown. `TagCache` updates its state before notifying subscribers and isolates exceptions from individual callbacks so one subscriber cannot stop other notifications or the polling loop.

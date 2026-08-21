@@ -1,0 +1,22 @@
+<UserControl x:Class="Scada.App.Views.MonitoringView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+        <TextBlock Text="Online Tag Monitor" FontSize="28" FontWeight="SemiBold" Foreground="#162536" />
+        <TextBlock Grid.Row="1" Text="Values originate from the generic Runtime polling service and central TagCache." Margin="0,8,0,18" Foreground="{StaticResource MutedTextBrush}" />
+        <DataGrid Grid.Row="2" ItemsSource="{Binding Rows}" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False" HeadersVisibility="Column" Background="{StaticResource CardBrush}">
+            <DataGrid.Columns>
+                <DataGridTextColumn Header="Tag" Binding="{Binding Name}" Width="1.4*" />
+                <DataGridTextColumn Header="Device" Binding="{Binding DeviceId}" Width="1*" />
+                <DataGridTextColumn Header="Value" Binding="{Binding Value}" Width="1*" />
+                <DataGridTextColumn Header="Quality" Binding="{Binding Quality}" Width="1*" />
+                <DataGridTextColumn Header="Timestamp" Binding="{Binding Timestamp}" Width="1.6*" />
+            </DataGrid.Columns>
+        </DataGrid>
+    </Grid>
+</UserControl>

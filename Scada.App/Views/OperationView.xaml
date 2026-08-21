@@ -1,0 +1,14 @@
+<UserControl x:Class="Scada.App.Views.OperationView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <StackPanel>
+        <TextBlock Text="Operation" FontSize="28" FontWeight="SemiBold" Foreground="#162536" />
+        <TextBlock Text="Foundation shell is ready for machine-specific operation screens." Margin="0,8,0,20" Foreground="{StaticResource MutedTextBrush}" />
+        <Border Background="{StaticResource CardBrush}" Padding="20" CornerRadius="6">
+            <StackPanel>
+                <TextBlock Text="Runtime foundation" FontSize="16" FontWeight="SemiBold" />
+                <TextBlock Text="{Binding RuntimeSummary}" Margin="0,8,0,0" Foreground="{StaticResource MutedTextBrush}" />
+            </StackPanel>
+        </Border>
+    </StackPanel>
+</UserControl>

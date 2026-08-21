@@ -1,0 +1,52 @@
+<Window x:Class="Scada.App.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="clr-namespace:Scada.App.ViewModels"
+        xmlns:views="clr-namespace:Scada.App.Views"
+        Title="SCADA Template" Height="720" Width="1200" MinHeight="520" MinWidth="900">
+    <Window.Resources>
+        <DataTemplate DataType="{x:Type vm:OperationViewModel}"><views:OperationView /></DataTemplate>
+        <DataTemplate DataType="{x:Type vm:MachineSettingsViewModel}"><views:MachineSettingsView /></DataTemplate>
+        <DataTemplate DataType="{x:Type vm:MonitoringViewModel}"><views:MonitoringView /></DataTemplate>
+        <DataTemplate DataType="{x:Type vm:EngineeringViewModel}"><views:EngineeringView /></DataTemplate>
+    </Window.Resources>
+    <Grid Background="{StaticResource WindowBrush}">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="64" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="28" />
+        </Grid.RowDefinitions>
+        <Border Grid.Row="0" Background="{StaticResource HeaderBrush}" Padding="22,0">
+            <DockPanel LastChildFill="True">
+                <TextBlock DockPanel.Dock="Left" Text="SCADA TEMPLATE" VerticalAlignment="Center" FontSize="20" FontWeight="SemiBold" Foreground="White" />
+                <TextBlock Text="Milestone 1 — Foundation" VerticalAlignment="Center" HorizontalAlignment="Right" Foreground="#B8C7D9" />
+            </DockPanel>
+        </Border>
+        <Grid Grid.Row="1">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="220" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <Border Grid.Column="0" Background="{StaticResource NavigationBrush}" Padding="12">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <ItemsControl ItemsSource="{Binding NavigationItems}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <StackPanel Margin="0,0,0,12">
+                                    <TextBlock Text="{Binding Group}" Foreground="#8FA7BF" FontSize="11" FontWeight="Bold" Margin="4,4,4,5" />
+                                    <Button Content="{Binding Title}" Command="{Binding DataContext.NavigateCommand, RelativeSource={RelativeSource AncestorType=Window}}" CommandParameter="{Binding}" Style="{StaticResource NavigationButtonStyle}" />
+                                </StackPanel>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
+            </Border>
+            <Border Grid.Column="1" Padding="28" Background="{StaticResource WindowBrush}">
+                <ContentControl Content="{Binding CurrentViewModel}" />
+            </Border>
+        </Grid>
+        <Border Grid.Row="2" Background="{StaticResource StatusBrush}" Padding="12,0">
+            <TextBlock Text="{Binding RuntimeStatusText}" VerticalAlignment="Center" Foreground="#B8C7D9" FontSize="11" />
+        </Border>
+    </Grid>
+</Window>
