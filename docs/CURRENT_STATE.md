@@ -8,7 +8,11 @@ Milestone 2 — Runtime and Device Polling
 
 Status:
 
-Implemented on `feature/milestone-2-runtime-polling`; checkpoint and stabilization changes are committed/pushed and pending final direct source review, PR and merge.
+Completed and merged to `main` via PR #2.
+
+Merge commit:
+
+`583a743b2e0806d7bd01e42e1014ab0793d6b192`
 
 ## Implemented in Milestone 1
 
