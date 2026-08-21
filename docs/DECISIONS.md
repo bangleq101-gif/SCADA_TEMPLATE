@@ -65,7 +65,7 @@ Architecture, current state, roadmap and decisions live inside the Git repositor
 
 ## D-012 — Runtime-neutral polling
 
-`Scada.Runtime` contains the generic `PollingRuntimeService` and depends only on the `IPlcDriver` contract. It contains no Simulator-specific type or logic. Simulator behavior is implemented exclusively in `Scada.Drivers/Simulator` and composed by `Scada.App`.
+`Scada.Runtime` contains the generic `PollingRuntimeService`, `DeviceManager`, per-device polling workers and the runtime-local driver resolver. It depends only on `Scada.Core` contracts and contains no Simulator-specific type or logic. Simulator behavior is implemented exclusively in `Scada.Drivers/Simulator` and composed by `Scada.App`.
 
 ## D-013 — Static device configuration versus runtime state
 
@@ -81,4 +81,20 @@ Runtime configuration is resolved from `AppContext.BaseDirectory`; no working-di
 
 ## D-016 — Runtime shutdown and subscriber isolation
 
-`PollingRuntimeService` tracks successfully connected devices and calls the driver’s asynchronous `DisconnectAsync` during hosted-service shutdown. `TagCache` updates its state before notifying subscribers and isolates exceptions from individual callbacks so one subscriber cannot stop other notifications or the polling loop.
+`PollingRuntimeService` delegates hosted lifecycle to `DeviceManager`. Device workers call the driver’s asynchronous `DisconnectAsync` during bounded shutdown. `TagCache` updates its state before notifying subscribers and isolates exceptions from individual callbacks so one subscriber cannot stop other notifications or the polling loop.
+
+## D-017 — Runtime-local driver resolution and lease lifetime
+
+`IPlcDriverResolver` belongs to `Scada.Runtime` because selecting and owning a driver instance is runtime orchestration, not a Core domain contract. `IPlcDriverLease` hides whether a registration returns a shared driver or creates a per-device driver. Workers reuse the acquired instance across reconnects and dispose only leases that own a per-device instance.
+
+## D-018 — Per-device asynchronous polling isolation
+
+`DeviceManager` creates one naturally asynchronous `DevicePollingWorker` per enabled device. Each worker owns one scan scheduler and groups tags into device + scan-group logical batches. There is no dedicated OS thread and no scheduler task per scan group.
+
+## D-019 — Disconnect value and timestamp semantics
+
+`TagQuality.Good` is the only result quality that advances a tag's canonical PLC value and PLC timestamp in TagCache. When a tag has a previous Good value, Bad, Uncertain and Disconnected transitions keep that last-good value and timestamp while updating quality. Before any Good value exists, non-Good results publish `null`; a disconnect uses its failure transition timestamp. Failure timing remains in DeviceRuntimeState/Snapshot and is not represented as a new PLC sample timestamp for a last-good value.
+
+## D-020 — Cooperative cancellation and bounded shutdown
+
+Runtime cancellation is cooperative; it cannot force-kill a non-cooperative I/O operation. Concrete drivers must honor cancellation and provide transport-level timeouts. A worker awaits `DisconnectAsync` directly and treats cancellation as complete only when the driver task has completed. DeviceManager bounds both normal shutdown and startup rollback, logs work that exceeds the budget, and does not dispose a lease while a non-cooperative operation remains in flight.

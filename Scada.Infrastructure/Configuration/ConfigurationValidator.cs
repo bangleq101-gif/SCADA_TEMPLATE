@@ -13,9 +13,20 @@ public static class ConfigurationValidator
             throw new InvalidOperationException("Scada.RuntimeId is required.");
         }
 
-        if (options.PollingIntervalMilliseconds <= 0)
+        ValidatePolling(options);
+
+        var scanGroups = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var scanGroup in options.ScanGroups)
         {
-            throw new InvalidOperationException("Scada.PollingIntervalMilliseconds must be greater than zero.");
+            if (string.IsNullOrWhiteSpace(scanGroup.Name) || !scanGroups.Add(scanGroup.Name))
+            {
+                throw new InvalidOperationException($"Scan group '{scanGroup.Name}' is missing or duplicated.");
+            }
+
+            if (scanGroup.IntervalMilliseconds <= 0)
+            {
+                throw new InvalidOperationException($"Scan group '{scanGroup.Name}' interval must be greater than zero.");
+            }
         }
 
         var deviceIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -24,6 +35,11 @@ public static class ConfigurationValidator
             if (string.IsNullOrWhiteSpace(device.Id) || !deviceIds.Add(device.Id))
             {
                 throw new InvalidOperationException($"Device id '{device.Id}' is missing or duplicated.");
+            }
+
+            if (device.Enabled && string.IsNullOrWhiteSpace(device.DriverType))
+            {
+                throw new InvalidOperationException($"Enabled device '{device.Id}' requires a driver type.");
             }
         }
 
@@ -44,6 +60,25 @@ public static class ConfigurationValidator
             {
                 throw new InvalidOperationException($"Tag '{tag.Id}' requires an address.");
             }
+
+            if (tag.Enabled && !scanGroups.Contains(tag.ScanGroup))
+            {
+                throw new InvalidOperationException($"Tag '{tag.Id}' references missing scan group '{tag.ScanGroup}'.");
+            }
+        }
+    }
+
+    private static void ValidatePolling(RuntimeOptions options)
+    {
+        if (options.Polling.ConnectTimeoutMilliseconds <= 0 ||
+            options.Polling.ReadTimeoutMilliseconds <= 0 ||
+            options.Polling.DisconnectTimeoutMilliseconds <= 0 ||
+            options.Polling.InitialReconnectDelayMilliseconds <= 0 ||
+            options.Polling.MaxReconnectDelayMilliseconds <= 0 ||
+            options.Polling.InitialReconnectDelayMilliseconds > options.Polling.MaxReconnectDelayMilliseconds ||
+            options.Polling.ShutdownTimeoutMilliseconds <= 0)
+        {
+            throw new InvalidOperationException("Scada.Polling timeout, reconnect and shutdown settings are invalid.");
         }
     }
 }
