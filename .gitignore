@@ -1,0 +1,26 @@
+# Visual Studio
+.vs/
+*.user
+*.suo
+
+# .NET build
+bin/
+obj/
+
+# Test
+TestResults/
+
+# Build output
+artifacts/
+publish/
+
+# Logs
+Logs/
+*.log
+
+# Local database/runtime data
+Data/
+
+# Secrets
+*.secrets.json
+.env
