@@ -8,7 +8,7 @@ Milestone 2 — Runtime and Device Polling
 
 Status:
 
-Implemented on `feature/milestone-2-runtime-polling`; pending source review and commit.
+Implemented on `feature/milestone-2-runtime-polling`; checkpoint and stabilization changes are committed/pushed and pending final direct source review, PR and merge.
 
 ## Implemented in Milestone 1
 
@@ -42,7 +42,11 @@ Implemented on `feature/milestone-2-runtime-polling`; pending source review and 
 - `DeviceConnectionState` and immutable `DeviceRuntimeSnapshot` diagnostics.
 - Read/failure counters, failure timing, scan timing and missed-cycle count.
 - Central TagCache disconnect quality transitions with explicit value/timestamp semantics.
-- Bounded shutdown and best-effort disconnect/lease cleanup.
+- Cooperative disconnect cancellation that clears in-flight state only after the driver task completes.
+- Manager-level bounded shutdown and startup rollback cleanup, including lease disposal.
+- Last-good TagCache value/timestamp preservation across Bad, Uncertain and Disconnected transitions.
+- Late connect/read completion guards after worker shutdown cancellation.
+- Configuration binding that avoids duplicating default scan groups during WPF startup.
 - Simulator compatibility through the unchanged driver-neutral contract.
 
 The V1 target remains:
@@ -57,7 +61,7 @@ n PLC
 
 - `dotnet restore Scada.sln --ignore-failed-sources` — PASS.
 - `dotnet build Scada.sln -c Release --no-restore` — PASS with 0 warnings and 0 errors.
-- `dotnet test Scada.sln -c Release --no-build` — PASS; 34 tests, 0 failures (23 Runtime, 3 Core, 3 Drivers, 5 Infrastructure).
+- `dotnet test Scada.sln -c Release --no-build` — PASS; 43 tests, 0 failures (31 Runtime, 3 Core, 3 Drivers, 6 Infrastructure).
 - `git diff --check` — PASS.
 - WPF startup smoke test — PASS; `Scada.App` starts and resolves `MainWindow` without a DI exception.
 - Copy-folder portability verification — PASS on a fresh copy; restore/build does not depend on the original folder.
@@ -77,5 +81,10 @@ n PLC
 - Active-view subscription lifecycle optimization for the Monitoring UI.
 - Milestone 3 shell/workspace completion beyond the existing foundation.
 - Distributed multi-runtime, redundancy/HA, web/cloud, advanced scripting and plugin marketplace.
+
+## Technical debt
+
+- A driver factory mismatch in `DriverResolver` can only synchronously dispose a wrongly-created `IDisposable`; a future async resolver/lifecycle design should handle mismatched `IAsyncDisposable` instances without sync-over-async.
+- A genuinely non-cooperative driver operation may remain in flight after the manager shutdown budget expires. M2 bounds manager return time and retains ownership rather than attempting to kill the task; deeper orphan-operation supervision is later work.
 
 Implementation must follow the ordered milestones in `docs/ROADMAP.md` and the constraints in `docs/SCADA_ARCHITECTURE_V1.md`. Do not jump ahead to MQTT, InfluxDB or other later milestones without explicit approval.

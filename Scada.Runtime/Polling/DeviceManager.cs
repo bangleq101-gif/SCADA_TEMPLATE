@@ -78,9 +78,15 @@ public sealed class DeviceManager
         catch
         {
             using var cleanupCts = new CancellationTokenSource(_options.Polling.ShutdownTimeoutMilliseconds);
-            foreach (var worker in _workers.Values)
+            var cleanupTask = Task.WhenAll(
+                _workers.Values.Select(worker => worker.ShutdownAsync(cleanupCts.Token)));
+            try
             {
-                await worker.ShutdownAsync(cleanupCts.Token);
+                await cleanupTask.WaitAsync(cleanupCts.Token);
+            }
+            catch (OperationCanceledException) when (cleanupCts.IsCancellationRequested)
+            {
+                _logger.LogWarning("Startup rollback cleanup exceeded the shutdown budget.");
             }
 
             _workers.Clear();
@@ -101,24 +107,15 @@ public sealed class DeviceManager
         using var shutdownCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         shutdownCts.CancelAfter(_options.Polling.ShutdownTimeoutMilliseconds);
 
+        var cleanupTask = Task.WhenAll(
+            _workers.Values.Select(worker => worker.ShutdownAsync(shutdownCts.Token)));
         try
         {
-            await Task.WhenAll(_workers.Values.Select(worker => worker.Completion))
-                .WaitAsync(shutdownCts.Token);
+            await cleanupTask.WaitAsync(shutdownCts.Token);
         }
         catch (OperationCanceledException) when (shutdownCts.IsCancellationRequested)
         {
             _logger.LogWarning("One or more device workers did not stop within the shutdown budget.");
-        }
-
-        var completedWorkers = _workers.Values.Where(worker => worker.Completion.IsCompleted).ToArray();
-        try
-        {
-            await Task.WhenAll(completedWorkers.Select(worker => worker.ShutdownAsync(shutdownCts.Token)));
-        }
-        catch (OperationCanceledException) when (shutdownCts.IsCancellationRequested)
-        {
-            _logger.LogWarning("Device disconnect cleanup exceeded the shutdown budget.");
         }
 
         _started = false;

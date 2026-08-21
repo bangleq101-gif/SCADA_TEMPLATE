@@ -234,6 +234,99 @@ public sealed class DevicePollingWorkerTests
     }
 
     [Fact]
+    public async Task CooperativeDisconnectCancellationClearsInFlightStateAndAllowsReconnect()
+    {
+        var driver = new CooperativeDisconnectDriver();
+        var resolver = new DriverResolver(
+        [
+            DriverRegistration.PerDevice("Test", _ => driver)
+        ]);
+        var options = CreateOptions(new DeviceDefinition { Id = "PLC-1", DriverType = "Test" });
+        options.Polling.DisconnectTimeoutMilliseconds = 25;
+        options.Tags = [new() { Id = "T1", DeviceId = "PLC-1", Address = "T1" }];
+
+        await using var runtime = await TestRuntime.StartAsync(options, resolver);
+        await driver.ReconnectedRead.Task.WaitAsync(TimeSpan.FromSeconds(1));
+        await driver.FirstDisconnectCancelled.Task.WaitAsync(TimeSpan.FromSeconds(1));
+
+        await runtime.Service.StopAsync(CancellationToken.None);
+
+        Assert.True(driver.ConnectCount >= 2);
+        Assert.True(driver.DisconnectCount >= 2);
+        Assert.Equal(1, driver.DisposeCount);
+    }
+
+    [Fact]
+    public async Task LateConnectCompletionDoesNotPublishConnectedStateAfterShutdown()
+    {
+        var driver = new LateConnectDriver();
+        var options = CreateOptions(new DeviceDefinition { Id = "PLC-1", DriverType = "Test" });
+        options.Polling.ConnectTimeoutMilliseconds = 500;
+        options.Polling.ShutdownTimeoutMilliseconds = 50;
+        options.Tags = [new() { Id = "T1", DeviceId = "PLC-1", Address = "T1" }];
+
+        await using var runtime = await TestRuntime.StartAsync(options, driver);
+        await driver.ConnectStarted.Task.WaitAsync(TimeSpan.FromSeconds(1));
+
+        await runtime.Service.StopAsync(CancellationToken.None);
+        driver.ReleaseConnect.TrySetResult(null);
+        await driver.ConnectReturned.Task.WaitAsync(TimeSpan.FromSeconds(1));
+        await Task.Delay(50);
+
+        Assert.NotEqual(
+            DeviceConnectionState.Connected,
+            runtime.Service.DeviceStates["PLC-1"].ConnectionState);
+        Assert.False(runtime.Cache.TryGet("T1", out _));
+    }
+
+    [Fact]
+    public async Task LateReadCompletionDoesNotPublishTagValueAfterShutdown()
+    {
+        var driver = new LateReadDriver();
+        var options = CreateOptions(new DeviceDefinition { Id = "PLC-1", DriverType = "Test" });
+        options.Polling.ShutdownTimeoutMilliseconds = 50;
+        options.Tags = [new() { Id = "T1", DeviceId = "PLC-1", Address = "T1" }];
+
+        await using var runtime = await TestRuntime.StartAsync(options, driver);
+        await driver.ReadStarted.Task.WaitAsync(TimeSpan.FromSeconds(1));
+
+        await runtime.Service.StopAsync(CancellationToken.None);
+        driver.ReleaseRead.TrySetResult(null);
+        await driver.ReadReturned.Task.WaitAsync(TimeSpan.FromSeconds(1));
+        await Task.Delay(50);
+
+        Assert.False(runtime.Cache.TryGet("T1", out _));
+        Assert.Null(runtime.Service.DeviceStates["PLC-1"].LastSuccessfulRead);
+    }
+
+    [Fact]
+    public async Task StopAsyncIsBoundedWhenLeaseDisposeAsyncDoesNotComplete()
+    {
+        var driver = new HangingDisposeDriver();
+        var resolver = new DriverResolver(
+        [
+            DriverRegistration.PerDevice("Test", _ => driver)
+        ]);
+        var options = CreateOptions(new DeviceDefinition { Id = "PLC-1", DriverType = "Test" });
+        options.Polling.ShutdownTimeoutMilliseconds = 75;
+        options.Tags = [new() { Id = "T1", DeviceId = "PLC-1", Address = "T1" }];
+
+        await using var runtime = await TestRuntime.StartAsync(options, resolver);
+        await WaitUntilAsync(() => driver.ConnectCount > 0);
+
+        var stopwatch = Stopwatch.StartNew();
+        var stopTask = runtime.Service.StopAsync(CancellationToken.None);
+        await driver.DisposeStarted.Task.WaitAsync(TimeSpan.FromSeconds(1));
+        await stopTask;
+        stopwatch.Stop();
+
+        Assert.True(stopwatch.Elapsed < TimeSpan.FromSeconds(1), $"Shutdown took {stopwatch.Elapsed}.");
+
+        driver.ReleaseDispose.TrySetResult(null);
+        await driver.DisposeCompleted.Task.WaitAsync(TimeSpan.FromSeconds(1));
+    }
+
+    [Fact]
     public async Task MultiDeviceShutdownDisconnectsEachConnectedDevice()
     {
         var driver = new DelegateDriver(
@@ -406,5 +499,156 @@ public sealed class DevicePollingWorkerTests
 
         public Task DisconnectAsync(DeviceDefinition device, CancellationToken cancellationToken) =>
             Task.CompletedTask;
+    }
+
+    private sealed class CooperativeDisconnectDriver : IPlcDriver, IAsyncDisposable
+    {
+        private int _connectCount;
+        private int _readCount;
+        private int _disconnectCount;
+        private int _disposeCount;
+
+        public string DriverType => "Test";
+        public int ConnectCount => Volatile.Read(ref _connectCount);
+        public int DisconnectCount => Volatile.Read(ref _disconnectCount);
+        public int DisposeCount => Volatile.Read(ref _disposeCount);
+        public TaskCompletionSource<object?> ReconnectedRead { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource<object?> FirstDisconnectCancelled { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public Task ConnectAsync(DeviceDefinition device, CancellationToken cancellationToken)
+        {
+            Interlocked.Increment(ref _connectCount);
+            return Task.CompletedTask;
+        }
+
+        public Task<IReadOnlyList<DriverReadResult>> ReadAsync(
+            DeviceDefinition device,
+            IReadOnlyList<DriverReadRequest> requests,
+            CancellationToken cancellationToken)
+        {
+            if (Interlocked.Increment(ref _readCount) == 1)
+            {
+                return Task.FromException<IReadOnlyList<DriverReadResult>>(
+                    new InvalidOperationException("first read failed"));
+            }
+
+            ReconnectedRead.TrySetResult(null);
+            return Task.FromResult<IReadOnlyList<DriverReadResult>>(GoodResults(requests));
+        }
+
+        public async Task DisconnectAsync(DeviceDefinition device, CancellationToken cancellationToken)
+        {
+            if (Interlocked.Increment(ref _disconnectCount) == 1)
+            {
+                try
+                {
+                    await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+                }
+                catch (OperationCanceledException)
+                {
+                    FirstDisconnectCancelled.TrySetResult(null);
+                    throw;
+                }
+            }
+        }
+
+        public ValueTask DisposeAsync()
+        {
+            Interlocked.Increment(ref _disposeCount);
+            return ValueTask.CompletedTask;
+        }
+    }
+
+    private sealed class LateConnectDriver : IPlcDriver
+    {
+        public string DriverType => "Test";
+        public TaskCompletionSource<object?> ConnectStarted { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource<object?> ReleaseConnect { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource<object?> ConnectReturned { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public async Task ConnectAsync(DeviceDefinition device, CancellationToken cancellationToken)
+        {
+            ConnectStarted.TrySetResult(null);
+            await ReleaseConnect.Task;
+            ConnectReturned.TrySetResult(null);
+        }
+
+        public Task<IReadOnlyList<DriverReadResult>> ReadAsync(
+            DeviceDefinition device,
+            IReadOnlyList<DriverReadRequest> requests,
+            CancellationToken cancellationToken) =>
+            Task.FromResult<IReadOnlyList<DriverReadResult>>([]);
+
+        public Task DisconnectAsync(DeviceDefinition device, CancellationToken cancellationToken) =>
+            Task.CompletedTask;
+    }
+
+    private sealed class LateReadDriver : IPlcDriver
+    {
+        public string DriverType => "Test";
+        public TaskCompletionSource<object?> ReadStarted { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource<object?> ReleaseRead { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource<object?> ReadReturned { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public Task ConnectAsync(DeviceDefinition device, CancellationToken cancellationToken) =>
+            Task.CompletedTask;
+
+        public async Task<IReadOnlyList<DriverReadResult>> ReadAsync(
+            DeviceDefinition device,
+            IReadOnlyList<DriverReadRequest> requests,
+            CancellationToken cancellationToken)
+        {
+            ReadStarted.TrySetResult(null);
+            await ReleaseRead.Task;
+            ReadReturned.TrySetResult(null);
+            return GoodResults(requests);
+        }
+
+        public Task DisconnectAsync(DeviceDefinition device, CancellationToken cancellationToken) =>
+            Task.CompletedTask;
+    }
+
+    private sealed class HangingDisposeDriver : IPlcDriver, IAsyncDisposable
+    {
+        private int _connectCount;
+
+        public string DriverType => "Test";
+        public int ConnectCount => Volatile.Read(ref _connectCount);
+        public TaskCompletionSource<object?> DisposeStarted { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource<object?> ReleaseDispose { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource<object?> DisposeCompleted { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public Task ConnectAsync(DeviceDefinition device, CancellationToken cancellationToken)
+        {
+            Interlocked.Increment(ref _connectCount);
+            return Task.CompletedTask;
+        }
+
+        public Task<IReadOnlyList<DriverReadResult>> ReadAsync(
+            DeviceDefinition device,
+            IReadOnlyList<DriverReadRequest> requests,
+            CancellationToken cancellationToken) =>
+            Task.FromResult<IReadOnlyList<DriverReadResult>>(GoodResults(requests));
+
+        public Task DisconnectAsync(DeviceDefinition device, CancellationToken cancellationToken) =>
+            Task.CompletedTask;
+
+        public async ValueTask DisposeAsync()
+        {
+            DisposeStarted.TrySetResult(null);
+            await ReleaseDispose.Task;
+            DisposeCompleted.TrySetResult(null);
+        }
     }
 }

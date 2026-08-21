@@ -9,6 +9,7 @@ public sealed class TagCache : ITagCache
     private readonly Dictionary<string, TagValue> _values = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, List<Action<TagValue>>> _subscriptions = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, long> _sequences = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<string> _tagsWithGoodValue = new(StringComparer.OrdinalIgnoreCase);
 
     public bool TryGet(string tagId, out TagValue? value)
     {
@@ -46,7 +47,30 @@ public sealed class TagCache : ITagCache
         {
             var sequence = _sequences.TryGetValue(update.TagId, out var current) ? current + 1 : 1;
             _sequences[update.TagId] = sequence;
-            value = new TagValue(update.TagId, update.Value, update.Quality, update.Timestamp, sequence);
+
+            var valueToPublish = update.Value;
+            var timestampToPublish = update.Timestamp;
+            if (update.Quality == TagQuality.Good)
+            {
+                _tagsWithGoodValue.Add(update.TagId);
+            }
+            else if (_tagsWithGoodValue.Contains(update.TagId)
+                && _values.TryGetValue(update.TagId, out var lastValue))
+            {
+                valueToPublish = lastValue.Value;
+                timestampToPublish = lastValue.Timestamp;
+            }
+            else
+            {
+                valueToPublish = null;
+            }
+
+            value = new TagValue(
+                update.TagId,
+                valueToPublish,
+                update.Quality,
+                timestampToPublish,
+                sequence);
             _values[update.TagId] = value;
             callbacks = _subscriptions.TryGetValue(update.TagId, out var subscribers)
                 ? subscribers.ToArray()

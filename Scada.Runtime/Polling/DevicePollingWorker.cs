@@ -183,6 +183,8 @@ public sealed class DevicePollingWorker
         try
         {
             await _lease.Driver.ConnectAsync(_device, operationCts.Token);
+            operationCts.Token.ThrowIfCancellationRequested();
+            cancellationToken.ThrowIfCancellationRequested();
             _connected = true;
             _state.MarkConnected();
             return true;
@@ -222,7 +224,10 @@ public sealed class DevicePollingWorker
                 _device,
                 group.Requests,
                 operationCts.Token);
+            operationCts.Token.ThrowIfCancellationRequested();
+            cancellationToken.ThrowIfCancellationRequested();
             _tagEngine.Apply(results);
+            cancellationToken.ThrowIfCancellationRequested();
 
             var completedAt = _timeProvider.GetUtcNow();
             var sampleTimestamp = results.Count == 0
@@ -281,35 +286,35 @@ public sealed class DevicePollingWorker
         using var operationCts = CreateOperationTokenSource(
             cancellationToken,
             _options.DisconnectTimeoutMilliseconds);
-        Task disconnectTask;
 
         try
         {
             _disconnectInFlight = true;
-            disconnectTask = _lease.Driver.DisconnectAsync(_device, operationCts.Token);
-            await disconnectTask.WaitAsync(operationCts.Token);
+            await _lease.Driver.DisconnectAsync(_device, operationCts.Token);
             _connected = false;
-            _disconnectInFlight = false;
             return true;
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
-            _disconnectInFlight = true;
             _logger.LogWarning("Disconnect cancelled for device {DeviceId}.", _device.Id);
-            return false;
+            _connected = false;
+            return true;
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException) when (operationCts.IsCancellationRequested)
         {
-            _disconnectInFlight = true;
             _logger.LogWarning("Disconnect timed out for device {DeviceId}.", _device.Id);
-            return false;
+            _connected = false;
+            return true;
         }
         catch (Exception exception)
         {
-            _disconnectInFlight = false;
             _logger.LogWarning(exception, "Unable to disconnect device {DeviceId}.", _device.Id);
             _connected = false;
             return true;
+        }
+        finally
+        {
+            _disconnectInFlight = false;
         }
     }
 

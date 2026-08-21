@@ -2,6 +2,8 @@ using Scada.Core.Configuration;
 using Scada.Core.Devices;
 using Scada.Core.Tags;
 using Scada.Infrastructure.Configuration;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 
 namespace Scada.Infrastructure.Tests;
@@ -77,5 +79,31 @@ public sealed class ConfigurationTests
         };
 
         Assert.Throws<InvalidOperationException>(() => ConfigurationValidator.Validate(options));
+    }
+
+    [Fact]
+    public void ConfigurationBindingDoesNotDuplicateDefaultScanGroups()
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Scada:RuntimeId"] = "Runtime-Test",
+                ["Scada:ScanGroups:0:Name"] = "Fast",
+                ["Scada:ScanGroups:0:IntervalMilliseconds"] = "100"
+            })
+            .Build();
+        IServiceCollection services = new TestServiceCollection();
+
+        services.AddScadaConfiguration(configuration);
+
+        var descriptor = Assert.Single(services);
+        var options = Assert.IsType<RuntimeOptions>(descriptor.ImplementationInstance);
+        var scanGroup = Assert.Single(options.ScanGroups);
+        Assert.Equal("Fast", scanGroup.Name);
+        Assert.Equal(100, scanGroup.IntervalMilliseconds);
+    }
+
+    private sealed class TestServiceCollection : List<ServiceDescriptor>, IServiceCollection
+    {
     }
 }

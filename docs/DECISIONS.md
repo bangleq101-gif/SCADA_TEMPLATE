@@ -93,8 +93,8 @@ Runtime configuration is resolved from `AppContext.BaseDirectory`; no working-di
 
 ## D-019 — Disconnect value and timestamp semantics
 
-When a device fails, TagEngine publishes `TagQuality.Disconnected` through TagCache. A tag with a valid cached PLC value keeps its value and original PLC timestamp. A tag without a valid value publishes `null` with the failure transition timestamp. Failure timing remains in DeviceRuntimeState/Snapshot and is not represented as a new PLC sample timestamp.
+`TagQuality.Good` is the only result quality that advances a tag's canonical PLC value and PLC timestamp in TagCache. When a tag has a previous Good value, Bad, Uncertain and Disconnected transitions keep that last-good value and timestamp while updating quality. Before any Good value exists, non-Good results publish `null`; a disconnect uses its failure transition timestamp. Failure timing remains in DeviceRuntimeState/Snapshot and is not represented as a new PLC sample timestamp for a last-good value.
 
 ## D-020 — Cooperative cancellation and bounded shutdown
 
-Runtime cancellation is cooperative; it cannot force-kill a non-cooperative I/O operation. Concrete drivers must honor cancellation and provide transport-level timeouts. DeviceManager uses a bounded shutdown budget, logs workers that do not stop, and does not dispose a lease while a non-cooperative operation remains in flight.
+Runtime cancellation is cooperative; it cannot force-kill a non-cooperative I/O operation. Concrete drivers must honor cancellation and provide transport-level timeouts. A worker awaits `DisconnectAsync` directly and treats cancellation as complete only when the driver task has completed. DeviceManager bounds both normal shutdown and startup rollback, logs work that exceeds the budget, and does not dispose a lease while a non-cooperative operation remains in flight.
