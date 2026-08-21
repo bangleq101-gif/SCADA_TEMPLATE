@@ -1,8 +1,12 @@
 <UserControl x:Class="Scada.App.Views.MachineSettingsView"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
-    <StackPanel>
-        <TextBlock Text="Machine Settings" FontSize="28" FontWeight="SemiBold" Foreground="#162536" />
-        <TextBlock Text="Foundation placeholder. Machine-specific parameters are deferred to a later milestone." Margin="0,8,0,20" Foreground="{StaticResource MutedTextBrush}" />
-    </StackPanel>
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controls="clr-namespace:Scada.App.Controls">
+    <controls:WorkspaceLayout Title="Machine Settings"
+                              Description="Machine-specific settings workspace."
+                              Style="{StaticResource WorkspaceLayoutStyle}">
+        <Border Style="{StaticResource CardBorderStyle}">
+            <TextBlock Text="Machine settings" Style="{StaticResource CardTitleTextStyle}" />
+        </Border>
+    </controls:WorkspaceLayout>
 </UserControl>

@@ -98,3 +98,15 @@ Runtime configuration is resolved from `AppContext.BaseDirectory`; no working-di
 ## D-020 — Cooperative cancellation and bounded shutdown
 
 Runtime cancellation is cooperative; it cannot force-kill a non-cooperative I/O operation. Concrete drivers must honor cancellation and provide transport-level timeouts. A worker awaits `DisconnectAsync` directly and treats cancellation as complete only when the driver task has completed. DeviceManager bounds both normal shutdown and startup rollback, logs work that exceeds the budget, and does not dispose a lease while a non-cooperative operation remains in flight.
+
+## D-021 — App-layer hierarchical navigation state
+
+Milestone 3 keeps navigation in `Scada.App`. `NavigationService.CurrentRouteKey` and `CurrentViewModel` are the authoritative active navigation state. `NavigationItem` represents non-navigable groups and canonical navigable leaves; `ShellViewModel` derives selection from the current route rather than maintaining a second selected-route state.
+
+## D-022 — Workspace lifecycle and active Monitoring ownership
+
+Workspace ViewModels implement a minimal App-layer `IWorkspaceLifecycle` contract. Navigation owns deactivate/activate transitions. `MonitoringViewModel` owns TagCache subscriptions only while active, seeds rows from the cache on activation, disposes subscriptions on deactivation and uses an activation generation check to reject stale callbacks queued through the WPF Dispatcher.
+
+## D-023 — Reusable WPF workspace layout
+
+Milestone 3 uses a small `WorkspaceLayout` ContentControl with `Title` and `Description` dependency properties. It reuses inherited `Content` and a ResourceDictionary template; no external UI framework or separate styling project is introduced.

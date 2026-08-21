@@ -2,8 +2,10 @@ using Scada.Core.Configuration;
 
 namespace Scada.App.ViewModels;
 
-public sealed class OperationViewModel(RuntimeOptions options)
+public sealed class OperationViewModel(RuntimeOptions options) : IWorkspaceLifecycle
 {
+    public bool IsActive { get; private set; }
+
     public string RuntimeSummary
     {
         get
@@ -14,15 +16,47 @@ public sealed class OperationViewModel(RuntimeOptions options)
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .ToArray();
             var driverSummary = driverTypes.Length == 0 ? "No drivers configured" : string.Join(", ", driverTypes);
-            return $"{options.RuntimeId} • {driverSummary} • TagCache active";
+            return $"{options.RuntimeId} • {driverSummary}";
         }
+    }
+
+    public void Activate()
+    {
+        IsActive = true;
+    }
+
+    public void Deactivate()
+    {
+        IsActive = false;
     }
 }
 
-public sealed class MachineSettingsViewModel
+public sealed class MachineSettingsViewModel : IWorkspaceLifecycle
 {
+    public bool IsActive { get; private set; }
+
+    public void Activate()
+    {
+        IsActive = true;
+    }
+
+    public void Deactivate()
+    {
+        IsActive = false;
+    }
 }
 
-public sealed class EngineeringViewModel
+public sealed class EngineeringViewModel : IWorkspaceLifecycle
 {
+    public bool IsActive { get; private set; }
+
+    public void Activate()
+    {
+        IsActive = true;
+    }
+
+    public void Deactivate()
+    {
+        IsActive = false;
+    }
 }

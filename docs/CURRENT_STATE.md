@@ -4,15 +4,15 @@ Architecture V1 is approved.
 
 Current implementation milestone:
 
-Milestone 2 — Runtime and Device Polling
+Milestone 3 — Shell and Workspaces
 
 Status:
 
-Completed and merged to `main` via PR #2.
+Implemented on `feature/milestone-3-shell-workspaces`; pending source review, PR and merge.
 
-Merge commit:
+Base implementation commit:
 
-`583a743b2e0806d7bd01e42e1014ab0793d6b192`
+`3e7ffee0356bc1711888daee8be79dc2f7d414e0`
 
 ## Implemented in Milestone 1
 
@@ -53,6 +53,17 @@ Merge commit:
 - Configuration binding that avoids duplicating default scan groups during WPF startup.
 - Simulator compatibility through the unchanged driver-neutral contract.
 
+## Implemented in Milestone 3
+
+- `Scada.App.Tests` WPF-compatible unit test project with navigation and lifecycle coverage.
+- Minimal App-layer `IWorkspaceLifecycle` contract for deterministic workspace activation and deactivation.
+- Hierarchical navigation with canonical route keys and `CurrentRouteKey` as the authoritative route state.
+- Operation, Machine Settings, Monitoring and Engineering workspace foundations.
+- Active Monitoring TagCache subscription ownership with idempotent activation/deactivation and generation guards for stale callbacks.
+- Reusable `WorkspaceLayout` control using inherited `Content` plus `Title` and `Description` dependency properties.
+- Compact WPF semantic colors, navigation styles, workspace/card styles and DataGrid foundation.
+- Product-facing Shell and workspace text with development milestone terminology removed.
+
 The V1 target remains:
 
 ```text
@@ -65,11 +76,12 @@ n PLC
 
 - `dotnet restore Scada.sln --ignore-failed-sources` — PASS.
 - `dotnet build Scada.sln -c Release --no-restore` — PASS with 0 warnings and 0 errors.
-- `dotnet test Scada.sln -c Release --no-build` — PASS; 45 tests, 0 failures (32 Runtime, 3 Core, 3 Drivers, 7 Infrastructure).
+- `dotnet test Scada.sln -c Release --no-build` — PASS; 63 tests, 0 failures (18 App, 32 Runtime, 3 Core, 3 Drivers, 7 Infrastructure).
 - `git diff --check` — PASS.
-- WPF startup smoke test — PASS; `Scada.App` starts and resolves `MainWindow` without a DI exception.
-- Copy-folder portability verification — PASS on a fresh copy; restore/build does not depend on the original folder.
-- No `Scada.App.Tests` project is included; UI automation remains out of scope.
+- WPF startup smoke test — PASS; `Scada.App` stayed running through the startup check and resolved `MainWindow` with resources/templates loaded without a startup DI/XAML exception.
+- Copy-folder portability verification — PASS on a fresh copy outside the repository; restore/build does not depend on the original folder.
+- GitNexus post-change review — PASS; no import cycles, no Runtime dependency on App/WPF/Drivers, and no TagCache source change.
+- UI automation remains out of scope.
 
 ## Not implemented — later milestones
 
@@ -82,8 +94,7 @@ n PLC
 - Full Machine Settings implementation.
 - Deployment tooling.
 - Stress testing at 50 simulated PLCs / approximately 10,000 tags.
-- Active-view subscription lifecycle optimization for the Monitoring UI.
-- Milestone 3 shell/workspace completion beyond the existing foundation.
+- Deeper active-view subscription lifecycle optimization beyond the M3 activation/deactivation boundary.
 - Distributed multi-runtime, redundancy/HA, web/cloud, advanced scripting and plugin marketplace.
 
 ## Technical debt
