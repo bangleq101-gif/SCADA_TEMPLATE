@@ -39,6 +39,10 @@ public partial class App : Application
         builder.Services.AddSingleton<TagEngine>();
         builder.Services.AddSingleton<ScadaRuntime>();
         builder.Services.AddHostedService<PollingRuntimeService>();
+        builder.Services.AddSingleton<OperationViewModel>();
+        builder.Services.AddSingleton<MachineSettingsViewModel>();
+        builder.Services.AddSingleton<MonitoringViewModel>();
+        builder.Services.AddSingleton<EngineeringViewModel>();
         builder.Services.AddSingleton<NavigationService>();
         builder.Services.AddSingleton<ShellViewModel>();
         builder.Services.AddTransient<MainWindow>();
