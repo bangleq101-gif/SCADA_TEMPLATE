@@ -327,6 +327,26 @@ public sealed class DevicePollingWorkerTests
     }
 
     [Fact]
+    public async Task StopAsyncIsolatedDriverLeaseDisposalFailure()
+    {
+        var driver = new ThrowingDisposeDriver();
+        var resolver = new DriverResolver(
+        [
+            DriverRegistration.PerDevice("Test", _ => driver)
+        ]);
+        var options = CreateOptions(new DeviceDefinition { Id = "PLC-1", DriverType = "Test" });
+        options.Tags = [new() { Id = "T1", DeviceId = "PLC-1", Address = "T1" }];
+
+        await using var runtime = await TestRuntime.StartAsync(options, resolver);
+        await WaitUntilAsync(() => driver.ConnectCount > 0);
+
+        var exception = await Record.ExceptionAsync(() => runtime.Service.StopAsync(CancellationToken.None));
+
+        Assert.Null(exception);
+        Assert.Equal(1, driver.DisposeCount);
+    }
+
+    [Fact]
     public async Task MultiDeviceShutdownDisconnectsEachConnectedDevice()
     {
         var driver = new DelegateDriver(
@@ -649,6 +669,37 @@ public sealed class DevicePollingWorkerTests
             DisposeStarted.TrySetResult(null);
             await ReleaseDispose.Task;
             DisposeCompleted.TrySetResult(null);
+        }
+    }
+
+    private sealed class ThrowingDisposeDriver : IPlcDriver, IAsyncDisposable
+    {
+        private int _connectCount;
+        private int _disposeCount;
+
+        public string DriverType => "Test";
+        public int ConnectCount => Volatile.Read(ref _connectCount);
+        public int DisposeCount => Volatile.Read(ref _disposeCount);
+
+        public Task ConnectAsync(DeviceDefinition device, CancellationToken cancellationToken)
+        {
+            Interlocked.Increment(ref _connectCount);
+            return Task.CompletedTask;
+        }
+
+        public Task<IReadOnlyList<DriverReadResult>> ReadAsync(
+            DeviceDefinition device,
+            IReadOnlyList<DriverReadRequest> requests,
+            CancellationToken cancellationToken) =>
+            Task.FromResult<IReadOnlyList<DriverReadResult>>(GoodResults(requests));
+
+        public Task DisconnectAsync(DeviceDefinition device, CancellationToken cancellationToken) =>
+            Task.CompletedTask;
+
+        public ValueTask DisposeAsync()
+        {
+            Interlocked.Increment(ref _disposeCount);
+            throw new InvalidOperationException("dispose failure");
         }
     }
 }

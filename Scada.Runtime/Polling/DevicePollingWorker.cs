@@ -369,9 +369,21 @@ public sealed class DevicePollingWorker
 
     private async ValueTask DisposeLeaseAsync()
     {
-        if (Interlocked.Exchange(ref _leaseDisposed, 1) == 0)
+        if (Interlocked.Exchange(ref _leaseDisposed, 1) != 0)
+        {
+            return;
+        }
+
+        try
         {
             await _lease.DisposeAsync();
+        }
+        catch (Exception exception)
+        {
+            _logger.LogWarning(
+                exception,
+                "Unable to dispose driver lease for device {DeviceId}.",
+                _device.Id);
         }
     }
 }

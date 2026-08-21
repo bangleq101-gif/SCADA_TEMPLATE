@@ -103,6 +103,46 @@ public sealed class ConfigurationTests
         Assert.Equal(100, scanGroup.IntervalMilliseconds);
     }
 
+    [Fact]
+    public void ConfigurationBindingWithoutScanGroupsKeepsRuntimeDefaults()
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Scada:RuntimeId"] = "Runtime-Test"
+            })
+            .Build();
+        IServiceCollection services = new TestServiceCollection();
+
+        services.AddScadaConfiguration(configuration);
+
+        var descriptor = Assert.Single(services);
+        var options = Assert.IsType<RuntimeOptions>(descriptor.ImplementationInstance);
+        Assert.Equal(4, options.ScanGroups.Count);
+        Assert.Collection(
+            options.ScanGroups,
+            fast =>
+            {
+                Assert.Equal("Fast", fast.Name);
+                Assert.Equal(100, fast.IntervalMilliseconds);
+            },
+            normal =>
+            {
+                Assert.Equal("Normal", normal.Name);
+                Assert.Equal(500, normal.IntervalMilliseconds);
+            },
+            slow =>
+            {
+                Assert.Equal("Slow", slow.Name);
+                Assert.Equal(1_000, slow.IntervalMilliseconds);
+            },
+            verySlow =>
+            {
+                Assert.Equal("VerySlow", verySlow.Name);
+                Assert.Equal(5_000, verySlow.IntervalMilliseconds);
+            });
+    }
+
     private sealed class TestServiceCollection : List<ServiceDescriptor>, IServiceCollection
     {
     }

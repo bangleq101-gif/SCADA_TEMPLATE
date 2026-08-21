@@ -61,7 +61,7 @@ n PLC
 
 - `dotnet restore Scada.sln --ignore-failed-sources` — PASS.
 - `dotnet build Scada.sln -c Release --no-restore` — PASS with 0 warnings and 0 errors.
-- `dotnet test Scada.sln -c Release --no-build` — PASS; 43 tests, 0 failures (31 Runtime, 3 Core, 3 Drivers, 6 Infrastructure).
+- `dotnet test Scada.sln -c Release --no-build` — PASS; 45 tests, 0 failures (32 Runtime, 3 Core, 3 Drivers, 7 Infrastructure).
 - `git diff --check` — PASS.
 - WPF startup smoke test — PASS; `Scada.App` starts and resolves `MainWindow` without a DI exception.
 - Copy-folder portability verification — PASS on a fresh copy; restore/build does not depend on the original folder.
@@ -84,7 +84,7 @@ n PLC
 
 ## Technical debt
 
-- A driver factory mismatch in `DriverResolver` can only synchronously dispose a wrongly-created `IDisposable`; a future async resolver/lifecycle design should handle mismatched `IAsyncDisposable` instances without sync-over-async.
+- A per-device factory that creates a driver with a mismatched `DriverType` can leave that instance without lease ownership before `Acquire` throws. Correct `IDisposable`/`IAsyncDisposable` cleanup on this exceptional misconfiguration path is deferred until resolver acquisition/lifetime design is expanded.
 - A genuinely non-cooperative driver operation may remain in flight after the manager shutdown budget expires. M2 bounds manager return time and retains ownership rather than attempting to kill the task; deeper orphan-operation supervision is later work.
 
 Implementation must follow the ordered milestones in `docs/ROADMAP.md` and the constraints in `docs/SCADA_ARCHITECTURE_V1.md`. Do not jump ahead to MQTT, InfluxDB or other later milestones without explicit approval.

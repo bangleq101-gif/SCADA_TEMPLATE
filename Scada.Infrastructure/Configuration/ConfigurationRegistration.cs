@@ -10,13 +10,14 @@ public static class ConfigurationRegistration
         this IServiceCollection services,
         IConfiguration configuration)
     {
-        var options = new RuntimeOptions
+        var options = new RuntimeOptions();
+        var scadaSection = configuration.GetSection("Scada");
+        if (scadaSection.GetSection("ScanGroups").Exists())
         {
-            // RuntimeOptions has programmatic defaults. Clear collection defaults before binding
-            // so configuration entries do not get appended to those defaults as duplicates.
-            ScanGroups = []
-        };
-        configuration.GetSection("Scada").Bind(options);
+            options.ScanGroups.Clear();
+        }
+
+        scadaSection.Bind(options);
         ConfigurationValidator.Validate(options);
         services.AddSingleton(options);
         return services;
