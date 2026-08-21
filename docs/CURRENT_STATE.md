@@ -4,11 +4,11 @@ Architecture V1 is approved.
 
 Current implementation milestone:
 
-Milestone 1 — Foundation
+Milestone 2 — Runtime and Device Polling
 
 Status:
 
-Implemented — foundation complete; later milestones have not started.
+Implemented on `feature/milestone-2-runtime-polling`; pending source review and commit.
 
 ## Implemented in Milestone 1
 
@@ -24,14 +24,26 @@ Implemented — foundation complete; later milestones have not started.
 - Driver-neutral asynchronous batch-oriented `IPlcDriver` abstraction.
 - Deterministic/smooth Simulator foundation under `Scada.Drivers/Simulator`.
 - `TagEngine`, central `TagCache` and disposable tag subscriptions.
-- Generic polling foundation with driver shutdown through `DisconnectAsync`.
-- Subscriber exception isolation so one callback cannot stop other updates or polling.
-- Basic WPF Shell, navigation and design-resource foundation.
-- Operation, Machine Settings, Monitoring and Engineering page foundations.
+- Basic WPF Shell, navigation, design resources and page ViewModel registration.
 - Online Tag Monitor foundation.
-- WPF page ViewModel DI registration and `MainWindow` startup resolution.
-- Architecture, project-structure and development-rule documentation.
-- Copy-folder portability remains a core requirement.
+- Copy-folder portability foundation.
+
+## Implemented in Milestone 2
+
+- `RuntimeOptions.Polling` and configurable `ScanGroups`.
+- Runtime-local driver resolver, registration and lease lifetime abstraction.
+- Shared driver registration and per-device driver registration support.
+- `DeviceManager` and one naturally asynchronous polling worker per enabled device.
+- Per-device scan scheduler using planned due times.
+- Device + scan-group logical batch reads.
+- Multi-device isolation without dedicated OS threads per device.
+- Connect/read/disconnect operation timeouts and cancellation propagation.
+- Bounded reconnect backoff and driver-instance reuse across reconnects.
+- `DeviceConnectionState` and immutable `DeviceRuntimeSnapshot` diagnostics.
+- Read/failure counters, failure timing, scan timing and missed-cycle count.
+- Central TagCache disconnect quality transitions with explicit value/timestamp semantics.
+- Bounded shutdown and best-effort disconnect/lease cleanup.
+- Simulator compatibility through the unchanged driver-neutral contract.
 
 The V1 target remains:
 
@@ -45,19 +57,14 @@ n PLC
 
 - `dotnet restore Scada.sln --ignore-failed-sources` — PASS.
 - `dotnet build Scada.sln -c Release --no-restore` — PASS with 0 warnings and 0 errors.
-- `dotnet test Scada.sln -c Release --no-build` — PASS; 12 tests, 0 failures.
-- `git diff --check` — PASS; line-ending notices are non-blocking.
+- `dotnet test Scada.sln -c Release --no-build` — PASS; 34 tests, 0 failures (23 Runtime, 3 Core, 3 Drivers, 5 Infrastructure).
+- `git diff --check` — PASS.
 - WPF startup smoke test — PASS; `Scada.App` starts and resolves `MainWindow` without a DI exception.
-- Copy-folder portability verification — PASS on a fresh copy; no architecture or output-path changes were made in this stabilization fix.
+- Copy-folder portability verification — PASS on a fresh copy; restore/build does not depend on the original folder.
 - No `Scada.App.Tests` project is included; UI automation remains out of scope.
 
 ## Not implemented — later milestones
 
-- `DeviceManager`.
-- `DriverFactory`.
-- Scan Group scheduling.
-- Asynchronous multi-device isolation.
-- Reconnect/timeout diagnostics beyond the current foundation state tracking.
 - Real Siemens, Mitsubishi, Modbus or OPC UA drivers.
 - Complete Tag Manager.
 - Historian, SQLite historian and InfluxDB provider.
@@ -68,7 +75,7 @@ n PLC
 - Deployment tooling.
 - Stress testing at 50 simulated PLCs / approximately 10,000 tags.
 - Active-view subscription lifecycle optimization for the Monitoring UI.
-
-These deferred items must not be added as part of the Milestone 1 pre-merge stabilization.
+- Milestone 3 shell/workspace completion beyond the existing foundation.
+- Distributed multi-runtime, redundancy/HA, web/cloud, advanced scripting and plugin marketplace.
 
 Implementation must follow the ordered milestones in `docs/ROADMAP.md` and the constraints in `docs/SCADA_ARCHITECTURE_V1.md`. Do not jump ahead to MQTT, InfluxDB or other later milestones without explicit approval.

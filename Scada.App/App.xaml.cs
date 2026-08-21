@@ -7,6 +7,7 @@ using Scada.App.ViewModels;
 using Scada.Core.Drivers;
 using Scada.Drivers.Simulator;
 using Scada.Infrastructure.Configuration;
+using Scada.Runtime.Drivers;
 using Scada.Runtime.Engine;
 using Scada.Runtime.Polling;
 using Scada.Runtime.Tags;
@@ -32,12 +33,20 @@ public partial class App : Application
 
         builder.Logging.AddDebug();
         builder.Services.AddScadaConfiguration(builder.Configuration);
+        builder.Services.AddSingleton(TimeProvider.System);
         builder.Services.AddSingleton<SimulatorValueGenerator>();
-        builder.Services.AddSingleton<IPlcDriver, SimulatorPlcDriver>();
+        builder.Services.AddSingleton<SimulatorPlcDriver>();
+        builder.Services.AddSingleton<IPlcDriverResolver>(services => new DriverResolver(
+        [
+            DriverRegistration.Shared(
+                "Simulator",
+                services.GetRequiredService<SimulatorPlcDriver>())
+        ]));
         builder.Services.AddSingleton<TagCache>();
         builder.Services.AddSingleton<ITagCache>(services => services.GetRequiredService<TagCache>());
         builder.Services.AddSingleton<TagEngine>();
         builder.Services.AddSingleton<ScadaRuntime>();
+        builder.Services.AddSingleton<DeviceManager>();
         builder.Services.AddHostedService<PollingRuntimeService>();
         builder.Services.AddSingleton<OperationViewModel>();
         builder.Services.AddSingleton<MachineSettingsViewModel>();
