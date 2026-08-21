@@ -393,3 +393,18 @@ RUN
 ```
 
 Nếu một giải pháp làm workflow này phức tạp đáng kể mà không mang lại lợi ích kỹ thuật rõ ràng, hãy chọn giải pháp đơn giản hơn.
+
+## 17. Initial planning gate
+
+Khi repository chưa có production SCADA source code, milestone đầu tiên phải bắt đầu bằng việc kiểm tra repository, branch, worktree và toàn bộ tài liệu trong `docs/`.
+
+Trước khi tạo bất kỳ source code nào cho Milestone 1 — Foundation, phải:
+
+1. Xác nhận đang làm việc trên `feature/milestone-1-foundation`.
+2. Đọc đầy đủ `SCADA_ARCHITECTURE_V1.md`, `CURRENT_STATE.md`, `ROADMAP.md` và `DECISIONS.md`.
+3. Phân tích dependency architecture.
+4. Lập implementation plan chi tiết.
+5. Liệt kê project/file dự kiến tạo.
+6. Nêu rõ các phần không triển khai trong milestone.
+
+Chỉ trả về plan để review. Không implement source code cho đến khi plan được người dùng phê duyệt.
