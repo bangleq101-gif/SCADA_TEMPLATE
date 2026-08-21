@@ -19,6 +19,17 @@ public sealed class SimulatorTests
     }
 
     [Fact]
+    public void GeneratorUsesStableSeedForFixedInputsAndTimestamp()
+    {
+        var generator = new SimulatorValueGenerator();
+        var intTimestamp = DateTimeOffset.UnixEpoch.AddSeconds(1234);
+        var booleanTimestamp = DateTimeOffset.UnixEpoch.AddSeconds(10);
+
+        Assert.Equal(986, generator.Generate("T1", "A1", TagDataType.Int32, intTimestamp));
+        Assert.False((bool)generator.Generate("T1", "A1", TagDataType.Boolean, booleanTimestamp));
+    }
+
+    [Fact]
     public async Task DriverReturnsOneGoodResultPerRequest()
     {
         var driver = new SimulatorPlcDriver(new SimulatorValueGenerator());
