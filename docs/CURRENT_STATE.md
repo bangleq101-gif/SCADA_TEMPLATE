@@ -8,7 +8,11 @@ Milestone 4 — Tag Manager
 
 Status:
 
-Implemented, stabilized and source-reviewed on `feature/milestone-4-tag-manager`; pending PR.
+Completed and merged to `main` via PR #4.
+
+Merge commit:
+
+`e1a56b42b31b83d46649a897ca517a0d78026221`
 
 ## Implemented in Milestone 1
 
