@@ -68,6 +68,32 @@
         <Setter Property="EnableRowVirtualization" Value="True" />
         <Setter Property="EnableColumnVirtualization" Value="True" />
     </Style>
+    <Style x:Key="TagManagerDataGridStyle" TargetType="DataGrid" BasedOn="{StaticResource WorkspaceDataGridStyle}">
+        <Setter Property="IsReadOnly" Value="False" />
+        <Setter Property="CanUserSortColumns" Value="True" />
+        <Setter Property="CanUserResizeColumns" Value="True" />
+        <Setter Property="VirtualizingPanel.IsVirtualizing" Value="True" />
+        <Setter Property="VirtualizingPanel.VirtualizationMode" Value="Recycling" />
+        <Setter Property="ScrollViewer.CanContentScroll" Value="True" />
+        <Setter Property="RowDetailsVisibilityMode" Value="Collapsed" />
+    </Style>
+    <Style x:Key="PrimaryButtonStyle" TargetType="Button">
+        <Setter Property="Background" Value="{StaticResource AccentBrush}" />
+        <Setter Property="Foreground" Value="White" />
+        <Setter Property="BorderBrush" Value="{StaticResource AccentBrush}" />
+        <Setter Property="Padding" Value="10,5" />
+    </Style>
+    <Style x:Key="SecondaryButtonStyle" TargetType="Button">
+        <Setter Property="Background" Value="{StaticResource CardBrush}" />
+        <Setter Property="Foreground" Value="{StaticResource PrimaryTextBrush}" />
+        <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}" />
+        <Setter Property="Padding" Value="10,5" />
+    </Style>
+    <Style x:Key="FieldLabelTextStyle" TargetType="TextBlock">
+        <Setter Property="Foreground" Value="{StaticResource SecondaryTextBrush}" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+        <Setter Property="Margin" Value="4" />
+    </Style>
     <Style x:Key="WorkspaceLayoutStyle" TargetType="controls:WorkspaceLayout">
         <Setter Property="Template">
             <Setter.Value>

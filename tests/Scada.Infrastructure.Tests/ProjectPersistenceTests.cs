@@ -1,0 +1,286 @@
+using System.Text.Json;
+using Scada.Core.Configuration;
+using Scada.Core.Devices;
+using Scada.Core.Tags;
+using Scada.Infrastructure.Configuration;
+using Scada.Infrastructure.Persistence;
+using Xunit;
+
+namespace Scada.Infrastructure.Tests;
+
+public sealed class ProjectPersistenceTests
+{
+    [Fact]
+    public void ResolverAcceptsExplicitAbsolutePathAndNormalizesIt()
+    {
+        var directory = CreateTempDirectory();
+        try
+        {
+            var path = Path.Combine(directory, ".", "project.json");
+            var resolved = new ProjectPathResolver().Resolve(path);
+
+            Assert.True(Path.IsPathFullyQualified(resolved.FullPath));
+            Assert.Equal(Path.GetFullPath(path), resolved.FullPath);
+        }
+        finally
+        {
+            DeleteDirectory(directory);
+        }
+    }
+
+    [Fact]
+    public void ResolverRejectsRelativePathInsteadOfGuessingSourceRoot()
+    {
+        Assert.Throws<ArgumentException>(() => new ProjectPathResolver().Resolve("project.json"));
+    }
+
+    [Fact]
+    public void MissingProjectDocumentUsesBootstrapSignal()
+    {
+        var directory = CreateTempDirectory();
+        try
+        {
+            var store = new ProjectConfigurationStore(
+                new ProjectPath(Path.Combine(directory, "project.json")));
+
+            Assert.Null(store.Load());
+        }
+        finally
+        {
+            DeleteDirectory(directory);
+        }
+    }
+
+    [Fact]
+    public void ProjectCollectionsAreAuthoritativeAndPreserveOrder()
+    {
+        var directory = CreateTempDirectory();
+        try
+        {
+            var store = CreateStore(directory);
+            var options = CreateOptions("T2", "T1");
+            store.Save(new ProjectDocument { SchemaVersion = 1, Scada = options });
+
+            var loaded = store.Load();
+
+            Assert.NotNull(loaded);
+            Assert.Equal(["T2", "T1"], loaded!.Scada!.Tags.Select(tag => tag.Id));
+        }
+        finally
+        {
+            DeleteDirectory(directory);
+        }
+    }
+
+    [Fact]
+    public void EmptyProjectTagsRemainEmptyWithoutBootstrapOverlay()
+    {
+        var directory = CreateTempDirectory();
+        try
+        {
+            var store = CreateStore(directory);
+            var options = CreateOptions();
+            options.Tags.Clear();
+            store.Save(new ProjectDocument { SchemaVersion = 1, Scada = options });
+
+            Assert.Empty(store.Load()!.Scada!.Tags);
+        }
+        finally
+        {
+            DeleteDirectory(directory);
+        }
+    }
+
+    [Fact]
+    public void ExistingProjectWithoutSchemaVersionIsRejected()
+    {
+        AssertSchemaRejected("{\"Scada\":{}}", "SchemaVersion");
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    [InlineData(2)]
+    public void UnsupportedProjectSchemaVersionsAreRejected(int schemaVersion)
+    {
+        AssertSchemaRejected($"{{\"SchemaVersion\":{schemaVersion},\"Scada\":{{}}}}", "schema");
+    }
+
+    [Fact]
+    public void MalformedProjectIsRejectedWithoutBootstrapFallback()
+    {
+        AssertSchemaRejected("{not-json", "invalid JSON");
+    }
+
+    [Fact]
+    public void FirstSaveCreatesVersionOneDocument()
+    {
+        var directory = CreateTempDirectory();
+        try
+        {
+            var store = CreateStore(directory);
+            store.Save(new ProjectDocument { SchemaVersion = 1, Scada = CreateOptions("T1") });
+
+            var text = File.ReadAllText(Path.Combine(directory, "project.json"));
+            Assert.Contains("SchemaVersion", text, StringComparison.Ordinal);
+            Assert.Equal(1, store.Load()!.SchemaVersion);
+        }
+        finally
+        {
+            DeleteDirectory(directory);
+        }
+    }
+
+    [Fact]
+    public void InvalidSaveDoesNotReplaceExistingDocument()
+    {
+        var directory = CreateTempDirectory();
+        try
+        {
+            var store = CreateStore(directory);
+            store.Save(new ProjectDocument { SchemaVersion = 1, Scada = CreateOptions("Original") });
+            var original = File.ReadAllText(Path.Combine(directory, "project.json"));
+
+            var invalid = CreateOptions("Invalid");
+            invalid.Tags[0].Name = string.Empty;
+
+            Assert.Throws<ConfigurationValidationException>(() =>
+                store.Save(new ProjectDocument { SchemaVersion = 1, Scada = invalid }));
+
+            Assert.Equal(original, File.ReadAllText(Path.Combine(directory, "project.json")));
+        }
+        finally
+        {
+            DeleteDirectory(directory);
+        }
+    }
+
+    [Fact]
+    public void ValidationUsesGlobalCaseInsensitiveIdAndNameUniqueness()
+    {
+        var options = CreateOptions("T1", "t1");
+        options.Tags[1].Name = options.Tags[0].Name.ToUpperInvariant();
+
+        var issues = ConfigurationValidator.CollectIssues(options);
+
+        Assert.Contains(issues, issue => issue.Code == "TAG_ID_DUPLICATE");
+        Assert.Contains(issues, issue => issue.Code == "TAG_NAME_DUPLICATE");
+    }
+
+    [Fact]
+    public void DisabledDeviceIsValidButMissingDeviceIsNot()
+    {
+        var disabled = CreateOptions("T1");
+        disabled.Devices[0].Enabled = false;
+        ConfigurationValidator.Validate(disabled);
+
+        var missing = CreateOptions("T1");
+        missing.Tags[0].DeviceId = "MISSING";
+        Assert.Contains(
+            ConfigurationValidator.CollectIssues(missing),
+            issue => issue.Code == "TAG_DEVICE_MISSING");
+    }
+
+    [Fact]
+    public void EmptyEnabledProfilesBlockButUnknownProfilesArePreservedAsWarnings()
+    {
+        var empty = CreateOptions("T1");
+        empty.Tags[0].HistoryEnabled = true;
+        empty.Tags[0].HistoryProfile = string.Empty;
+        empty.Tags[0].MqttPublishEnabled = true;
+        empty.Tags[0].MqttProfile = string.Empty;
+        var emptyIssues = ConfigurationValidator.CollectIssues(empty);
+
+        Assert.Contains(emptyIssues, issue => issue.Code == "HISTORY_PROFILE_REQUIRED" && issue.IsBlocking);
+        Assert.Contains(emptyIssues, issue => issue.Code == "MQTT_PROFILE_REQUIRED" && issue.IsBlocking);
+
+        var unknown = CreateOptions("T1");
+        unknown.Tags[0].HistoryProfile = "FutureHistory";
+        unknown.Tags[0].MqttProfile = "FutureMqtt";
+        var unknownIssues = ConfigurationValidator.CollectIssues(unknown);
+
+        Assert.Contains(unknownIssues, issue => issue.Code == "HISTORY_PROFILE_UNKNOWN" && !issue.IsBlocking);
+        Assert.Contains(unknownIssues, issue => issue.Code == "MQTT_PROFILE_UNKNOWN" && !issue.IsBlocking);
+    }
+
+    [Fact]
+    public void TenThousandUniqueTagsValidateWithIndexedLookups()
+    {
+        var options = CreateOptions();
+        options.Tags = Enumerable.Range(0, 10_000)
+            .Select(index => new TagDefinition
+            {
+                Id = $"T{index:D5}",
+                Name = $"Tag {index:D5}",
+                DeviceId = "SIM01",
+                Address = $"A{index}",
+                ScanGroup = "Normal"
+            })
+            .ToList();
+
+        var issues = RuntimeOptionsValidation.CollectIssues(options);
+
+        Assert.DoesNotContain(issues, issue => issue.IsBlocking);
+    }
+
+    private static void AssertSchemaRejected(string json, string expectedText)
+    {
+        var directory = CreateTempDirectory();
+        try
+        {
+            var path = Path.Combine(directory, "project.json");
+            File.WriteAllText(path, json);
+            var store = new ProjectConfigurationStore(new ProjectPath(path));
+
+            var exception = Assert.Throws<ProjectDocumentException>(() => store.Load());
+            Assert.Contains(expectedText, exception.Message, StringComparison.OrdinalIgnoreCase);
+        }
+        finally
+        {
+            DeleteDirectory(directory);
+        }
+    }
+
+    private static ProjectConfigurationStore CreateStore(string directory) =>
+        new(new ProjectPath(Path.Combine(directory, "project.json")));
+
+    private static RuntimeOptions CreateOptions(params string[] tagIds)
+    {
+        var options = new RuntimeOptions
+        {
+            Devices =
+            [
+                new DeviceDefinition
+                {
+                    Id = "SIM01",
+                    Name = "Simulator",
+                    DriverType = "Simulator"
+                }
+            ]
+        };
+        options.Tags = tagIds.Select((id, index) => new TagDefinition
+        {
+            Id = id,
+            Name = $"Tag {index + 1}",
+            DeviceId = "SIM01",
+            Address = $"A{index + 1}",
+            ScanGroup = "Normal"
+        }).ToList();
+        return options;
+    }
+
+    private static string CreateTempDirectory()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "ScadaM4", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        return directory;
+    }
+
+    private static void DeleteDirectory(string directory)
+    {
+        if (Directory.Exists(directory))
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+}
