@@ -6,10 +6,10 @@ namespace Scada.Infrastructure.Configuration;
 
 public static class ConfigurationRegistration
 {
-    public static IServiceCollection AddScadaConfiguration(
-        this IServiceCollection services,
-        IConfiguration configuration)
+    public static RuntimeOptions CreateOptions(IConfiguration configuration)
     {
+        ArgumentNullException.ThrowIfNull(configuration);
+
         var options = new RuntimeOptions();
         var scadaSection = configuration.GetSection("Scada");
         if (scadaSection.GetSection("ScanGroups").Exists())
@@ -18,6 +18,14 @@ public static class ConfigurationRegistration
         }
 
         scadaSection.Bind(options);
+        return options;
+    }
+
+    public static IServiceCollection AddScadaConfiguration(
+        this IServiceCollection services,
+        IConfiguration configuration)
+    {
+        var options = CreateOptions(configuration);
         ConfigurationValidator.Validate(options);
         services.AddSingleton(options);
         return services;

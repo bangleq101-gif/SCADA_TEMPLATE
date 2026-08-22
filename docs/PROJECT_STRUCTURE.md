@@ -44,13 +44,18 @@ Scada.Drivers/
 └── Simulator
 
 Scada.Infrastructure/
-└── Configuration
+├── Configuration
+└── Persistence
 
 Scada.App/
 ├── Controls
 ├── Resources
+├── Services
 ├── ViewModels
 └── Views
+
+scripts/
+└── run-scada.ps1
 ```
 
 The App layer owns the hierarchical route model and workspace lifecycle. `NavigationService.CurrentRouteKey` is the authoritative active route; `ShellViewModel` derives tree selection from it. Navigation destination ViewModels implement the minimal `IWorkspaceLifecycle` contract. Monitoring owns TagCache subscriptions only while its workspace is active and rejects callbacks from older activation generations.
@@ -101,6 +106,24 @@ WPF subscriptions / Online Tag Monitor
 
 TagCache remains the central runtime source. A disconnected device publishes `TagQuality.Disconnected`; a last-known value keeps its original PLC timestamp, while a tag without a valid value gets the failure transition timestamp.
 
+## Milestone 4 Tag Manager flow
+
+```text
+explicit --project-file path
+        ↓
+ProjectPathResolver → ProjectConfigurationStore
+        ↓
+ProjectEditSession (startup/saved/working snapshots)
+        ↓
+TagManagerViewModel → virtualized TagManagerView
+        ↓
+save/revert, validation, TSV clipboard and CSV interchange
+        ↓
+selected-row TagCache quality observation only
+```
+
+The Tag Manager owns project editing in `Scada.App`; import data is prepared and conflict-checked before a single candidate mutation, and bulk edits apply only explicit field states. It does not read PLCs, change Runtime polling or provide live runtime reconfiguration. Runtime-affecting edits are marked restart-required. BuildRows seeds a quality snapshot with one `TryGet` per tag and creates no subscriptions; only the selected persisted tag may own one live subscription.
+
 ## Portable configuration
 
-`Scada.App/appsettings.json` is copied to application output. The application sets its content root to `AppContext.BaseDirectory`, so running from a copied template folder does not depend on the original repository or current working directory.
+`Scada.App/appsettings.json` is copied to application output. The application sets its content root to `AppContext.BaseDirectory`, while project persistence uses an explicit absolute `--project-file` path. `scripts/run-scada.ps1` resolves that path from `$PSScriptRoot`, so running a copied template folder does not depend on the original repository or current working directory.

@@ -8,6 +8,7 @@ public sealed class NavigationService : INotifyPropertyChanged
     public const string MachineSettingsOverviewRoute = "machine-settings.overview";
     public const string MonitoringOnlineTagsRoute = "monitoring.online-tags";
     public const string EngineeringOverviewRoute = "engineering.overview";
+    public const string EngineeringTagManagerRoute = "engineering.tag-manager";
 
     private readonly IReadOnlyDictionary<string, object> _pages;
     private string _currentRouteKey;
@@ -17,20 +18,27 @@ public sealed class NavigationService : INotifyPropertyChanged
         OperationViewModel operation,
         MachineSettingsViewModel machineSettings,
         MonitoringViewModel monitoring,
-        EngineeringViewModel engineering)
+        EngineeringViewModel engineering,
+        TagManagerViewModel? tagManager = null)
     {
         ArgumentNullException.ThrowIfNull(operation);
         ArgumentNullException.ThrowIfNull(machineSettings);
         ArgumentNullException.ThrowIfNull(monitoring);
         ArgumentNullException.ThrowIfNull(engineering);
 
-        _pages = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase)
+        var pages = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase)
         {
             [OperationOverviewRoute] = operation,
             [MachineSettingsOverviewRoute] = machineSettings,
             [MonitoringOnlineTagsRoute] = monitoring,
             [EngineeringOverviewRoute] = engineering
         };
+        if (tagManager is not null)
+        {
+            pages[EngineeringTagManagerRoute] = tagManager;
+        }
+
+        _pages = pages;
 
         _currentRouteKey = OperationOverviewRoute;
         _currentViewModel = operation;
@@ -42,6 +50,8 @@ public sealed class NavigationService : INotifyPropertyChanged
     public string CurrentRouteKey => _currentRouteKey;
 
     public object CurrentViewModel => _currentViewModel;
+
+    public bool HasRoute(string routeKey) => _pages.ContainsKey(routeKey);
 
     public void Navigate(string routeKey)
     {

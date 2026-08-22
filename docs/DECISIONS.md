@@ -110,3 +110,55 @@ Workspace ViewModels implement a minimal App-layer `IWorkspaceLifecycle` contrac
 ## D-023 — Reusable WPF workspace layout
 
 Milestone 3 uses a small `WorkspaceLayout` ContentControl with `Title` and `Description` dependency properties. It reuses inherited `Content` and a ResourceDictionary template; no external UI framework or separate styling project is introduced.
+
+## D-024 — Whole project document authority
+
+Milestone 4 treats the versioned `project.json` document as the authoritative project configuration for engineering edits. The Tag Manager loads and saves the complete `RuntimeOptions` document through `IProjectConfigurationStore`; it does not overlay partial JSON onto unrelated startup defaults.
+
+## D-025 — Explicit portable project path
+
+Project persistence requires an explicit absolute project path resolved by `ProjectPathResolver`. `Scada.App` accepts `--project-file`, and `scripts/run-scada.ps1` passes the canonical path explicitly. The application must not search parent folders, infer a source-tree path or silently fall back to an output-directory project file.
+
+## D-026 — Project edit session and restart boundary
+
+`ProjectEditSession` owns deep-cloned startup, saved and working snapshots. Save is atomic and updates the saved snapshot without mutating the startup snapshot. Runtime-affecting changes are marked restart-required; hot reload and live runtime reconfiguration are deferred.
+
+## D-027 — Tag identity and metadata scope
+
+Tag IDs and logical names are globally unique within a project. `AccessMode`, limits, units, history metadata and MQTT metadata are configuration fields only in Milestone 4. Tag scaling/offset semantics, live write commands and production history/MQTT services remain outside this milestone.
+
+## D-028 — Deterministic configuration validation
+
+Core owns the pure `RuntimeOptionsValidation` rules so Infrastructure persistence and App editing use the same validation source. Blocking issues reject load/save; unknown non-empty history or MQTT profiles are preserved with warnings, while enabled features with empty profiles are blocking errors.
+
+## D-029 — Selected-only runtime quality observation
+
+The Tag Manager observes runtime quality only for the currently selected persisted tag rows through one disposable TagCache subscription. It does not create one subscription per row, fan out subscriptions to the whole table or read PLCs directly. Subscription ownership ends on deactivation/disposal.
+
+## D-030 — CSV/TSV interchange boundary
+
+Tag interchange uses a shared deterministic table codec. TSV is the clipboard format and CSV is the file format; both preserve the complete supported `TagDefinition` metadata set, handle quoted/multiline fields and reject malformed input without silently truncating data.
+
+## D-031 — Selected-tag subscription generations
+
+Every logical selected-tag subscription lifetime receives a new generation when selection changes, the workspace is activated/deactivated or rows are rebuilt. Callback guards check both before Dispatcher enqueue and inside the queued callback, so an old A selection cannot update a later A selection after an A → B → A transition.
+
+## D-032 — Editor options versus filter options
+
+Configured device and scan-group collections used by editors never contain the `All` filter sentinel. Editable ComboBoxes preserve unknown existing references as text so validation can expose repair work without silently substituting or creating configuration entries. DataType editing uses an enum ComboBox.
+
+## D-033 — Warning presentation boundary
+
+`TagEditorRowViewModel` exposes blocking issues through `INotifyDataErrorInfo`; non-blocking warnings remain in a separate warning collection and summary. Errors-only filtering therefore excludes warning-only rows while the UI can display warning text independently.
+
+## D-034 — Transactional import conflict policy
+
+CSV and TSV import/paste parse into prepared candidates before any working-project mutation. A supplied unique Id is preserved, a missing Id receives a deterministic generated Id, and conflicting Ids/names are reported without suffixing or overwriting. The M4 UI explicitly confirms conflict-free apply or chooses append-non-conflicting/cancel for conflicted imports.
+
+## D-035 — Explicit-state bulk editing
+
+Bulk edits use `Unchanged`, `Mixed` and `Explicit` states rather than a null sentinel. Only explicit fields are applied to a cloned candidate project; the candidate is validated once before it replaces the working snapshot, preserving unrelated selected-tag fields.
+
+## D-036 — Quality snapshot and destructive action boundaries
+
+Tag Manager row construction seeds each tag from one central `TagCache.TryGet` snapshot without per-row subscriptions. A selected persisted tag owns at most one live subscription. Delete requires an App-layer confirmation adapter; cancellation cannot mutate the working project and no Runtime/TagCache mutation is performed.

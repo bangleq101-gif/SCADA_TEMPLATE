@@ -16,6 +16,15 @@ public sealed class ShellViewModel : INotifyPropertyChanged
         _navigation = navigation;
         _options = options;
         _navigation.PropertyChanged += OnNavigationPropertyChanged;
+        var engineeringChildren = new List<NavigationItem>
+        {
+            new("Engineering Overview", NavigationService.EngineeringOverviewRoute)
+        };
+        if (_navigation.HasRoute(NavigationService.EngineeringTagManagerRoute))
+        {
+            engineeringChildren.Add(new NavigationItem("Tag Manager", NavigationService.EngineeringTagManagerRoute));
+        }
+
         NavigationItems =
         [
             new NavigationItem(
@@ -27,9 +36,7 @@ public sealed class ShellViewModel : INotifyPropertyChanged
             new NavigationItem(
                 "MONITORING",
                 children: [new NavigationItem("Online Tag Monitor", NavigationService.MonitoringOnlineTagsRoute)]),
-            new NavigationItem(
-                "ENGINEERING",
-                children: [new NavigationItem("Engineering Overview", NavigationService.EngineeringOverviewRoute)])
+            new NavigationItem("ENGINEERING", children: engineeringChildren)
         ];
         NavigateCommand = new RelayCommand(parameter =>
         {

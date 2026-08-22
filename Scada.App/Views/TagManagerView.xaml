@@ -1,0 +1,169 @@
+<UserControl x:Class="Scada.App.Views.TagManagerView"
+             x:Name="Root"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controls="clr-namespace:Scada.App.Controls">
+    <controls:WorkspaceLayout Title="Tag Manager"
+                              Description="Configure logical tags without reading PLCs from the engineering UI."
+                              Style="{StaticResource WorkspaceLayoutStyle}">
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+            <Border Grid.Row="0" Style="{StaticResource CardBorderStyle}" Padding="12" Margin="0,0,0,12">
+                <WrapPanel VerticalAlignment="Center">
+                    <Button Content="Add" Command="{Binding AddCommand}" Style="{StaticResource PrimaryButtonStyle}" Margin="0,0,6,0" />
+                    <Button Content="Duplicate" Command="{Binding DuplicateCommand}" Style="{StaticResource SecondaryButtonStyle}" Margin="0,0,6,0" />
+                    <Button Content="Delete" Command="{Binding DeleteCommand}" Style="{StaticResource SecondaryButtonStyle}" Margin="0,0,6,0" />
+                    <Button Content="Save" Command="{Binding SaveCommand}" Style="{StaticResource PrimaryButtonStyle}" Margin="0,0,6,0" />
+                    <Button Content="Revert" Command="{Binding RevertCommand}" Style="{StaticResource SecondaryButtonStyle}" Margin="0,0,6,0" />
+                    <Button Content="Copy TSV" Command="{Binding CopyCommand}" Style="{StaticResource SecondaryButtonStyle}" Margin="0,0,6,0" />
+                    <Button Content="Paste TSV" Command="{Binding PasteCommand}" Style="{StaticResource SecondaryButtonStyle}" Margin="0,0,6,0" />
+                    <Button Content="CSV Import" Click="ImportCsv_Click" Style="{StaticResource SecondaryButtonStyle}" Margin="0,0,6,0" />
+                    <Button Content="CSV Export" Click="ExportCsv_Click" Style="{StaticResource SecondaryButtonStyle}" Margin="0,0,6,0" />
+                    <Button Content="Refresh Quality" Command="{Binding RefreshQualityCommand}" Style="{StaticResource SecondaryButtonStyle}" />
+                    <Button Content="Enable Selected" Command="{Binding EnableSelectedCommand}" Style="{StaticResource SecondaryButtonStyle}" Margin="6,0,0,0" />
+                    <Button Content="Disable Selected" Command="{Binding DisableSelectedCommand}" Style="{StaticResource SecondaryButtonStyle}" />
+                    <Button Content="History On" Command="{Binding EnableHistoryCommand}" Style="{StaticResource SecondaryButtonStyle}" />
+                    <Button Content="History Off" Command="{Binding DisableHistoryCommand}" Style="{StaticResource SecondaryButtonStyle}" />
+                </WrapPanel>
+            </Border>
+            <Grid Grid.Row="1">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+                <StackPanel Grid.Row="0" Margin="0,0,0,8">
+                    <WrapPanel>
+                        <TextBox Width="220" Margin="0,0,8,0" Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}" ToolTip="Search Id, name, device, address, description or unit" />
+                        <ComboBox Width="100" Margin="0,0,8,0" ItemsSource="{Binding EnabledFilterOptions}" SelectedItem="{Binding EnabledFilter}" />
+                        <ComboBox Width="140" Margin="0,0,8,0" ItemsSource="{Binding DeviceFilterOptions}" SelectedItem="{Binding DeviceFilter}" />
+                        <ComboBox Width="100" Margin="0,0,8,0" ItemsSource="{Binding DataTypeFilterOptions}" SelectedItem="{Binding DataTypeFilter}" />
+                        <ComboBox Width="120" Margin="0,0,8,0" ItemsSource="{Binding ScanGroupFilterOptions}" SelectedItem="{Binding ScanGroupFilter}" />
+                        <CheckBox Content="Errors only" VerticalAlignment="Center" IsChecked="{Binding ValidationOnly}" />
+                    </WrapPanel>
+                    <Expander Header="Bulk Edit" Margin="0,8,0,0">
+                        <WrapPanel Margin="4">
+                            <ComboBox Width="110" Margin="0,0,6,0" ItemsSource="{Binding BulkEnabledOptions}" SelectedItem="{Binding BulkEdit.Enabled, Mode=TwoWay}" DisplayMemberPath="DisplayName" ToolTip="Enabled" />
+                            <ComboBox Width="140" Margin="0,0,6,0" ItemsSource="{Binding BulkDeviceOptions}" SelectedItem="{Binding BulkEdit.DeviceId, Mode=TwoWay}" DisplayMemberPath="DisplayName" ToolTip="Device" />
+                            <ComboBox Width="110" Margin="0,0,6,0" ItemsSource="{Binding BulkDataTypeOptions}" SelectedItem="{Binding BulkEdit.DataType, Mode=TwoWay}" DisplayMemberPath="DisplayName" ToolTip="Data Type" />
+                            <ComboBox Width="130" Margin="0,0,6,0" ItemsSource="{Binding BulkScanGroupOptions}" SelectedItem="{Binding BulkEdit.ScanGroup, Mode=TwoWay}" DisplayMemberPath="DisplayName" ToolTip="Scan Group" />
+                            <ComboBox Width="120" Margin="0,0,6,0" ItemsSource="{Binding BulkAccessModeOptions}" SelectedItem="{Binding BulkEdit.AccessMode, Mode=TwoWay}" DisplayMemberPath="DisplayName" ToolTip="Access Mode" />
+                            <ComboBox Width="130" Margin="0,0,6,0" ItemsSource="{Binding BulkHistoryEnabledOptions}" SelectedItem="{Binding BulkEdit.HistoryEnabled, Mode=TwoWay}" DisplayMemberPath="DisplayName" ToolTip="History Enabled" />
+                            <ComboBox Width="130" Margin="0,0,6,0" ItemsSource="{Binding BulkHistoryProfileOptions}" SelectedItem="{Binding BulkEdit.HistoryProfile, Mode=TwoWay}" DisplayMemberPath="DisplayName" ToolTip="History Profile" />
+                            <ComboBox Width="130" Margin="0,0,6,0" ItemsSource="{Binding BulkMqttPublishEnabledOptions}" SelectedItem="{Binding BulkEdit.MqttPublishEnabled, Mode=TwoWay}" DisplayMemberPath="DisplayName" ToolTip="MQTT Enabled" />
+                            <ComboBox Width="130" Margin="0,0,6,0" ItemsSource="{Binding BulkMqttProfileOptions}" SelectedItem="{Binding BulkEdit.MqttProfile, Mode=TwoWay}" DisplayMemberPath="DisplayName" ToolTip="MQTT Profile" />
+                            <Button Content="Apply bulk edit" Command="{Binding ApplyBulkEditCommand}" Style="{StaticResource PrimaryButtonStyle}" />
+                        </WrapPanel>
+                    </Expander>
+                </StackPanel>
+                <DataGrid x:Name="TagGrid"
+                          Grid.Row="1"
+                          ItemsSource="{Binding ItemsView}"
+                          Style="{StaticResource TagManagerDataGridStyle}"
+                          SelectionMode="Extended"
+                          SelectionUnit="FullRow"
+                          SelectionChanged="TagGrid_SelectionChanged"
+                          RowDetailsVisibilityMode="Collapsed">
+                    <DataGrid.Columns>
+                        <DataGridCheckBoxColumn Header="Enabled" Binding="{Binding Enabled, UpdateSourceTrigger=PropertyChanged}" Width="70" />
+                        <DataGridTextColumn Header="Name" Binding="{Binding Name, UpdateSourceTrigger=PropertyChanged}" Width="1.4*" />
+                        <DataGridTemplateColumn Header="Device" SortMemberPath="DeviceId" Width="1*">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate><TextBlock Text="{Binding DeviceId}" /></DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                            <DataGridTemplateColumn.CellEditingTemplate>
+                                <DataTemplate>
+                                    <ComboBox ItemsSource="{Binding DataContext.DeviceOptions, RelativeSource={RelativeSource AncestorType=DataGrid}}" Text="{Binding DeviceId, UpdateSourceTrigger=PropertyChanged}" IsEditable="True" />
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellEditingTemplate>
+                        </DataGridTemplateColumn>
+                        <DataGridTextColumn Header="Address" Binding="{Binding Address, UpdateSourceTrigger=PropertyChanged}" Width="1*" />
+                        <DataGridTemplateColumn Header="Data Type" SortMemberPath="DataType" Width="90">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate><TextBlock Text="{Binding DataType}" /></DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                            <DataGridTemplateColumn.CellEditingTemplate>
+                                <DataTemplate>
+                                    <ComboBox ItemsSource="{Binding DataContext.DataTypeOptions, RelativeSource={RelativeSource AncestorType=DataGrid}}" SelectedItem="{Binding DataType, UpdateSourceTrigger=PropertyChanged}" />
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellEditingTemplate>
+                        </DataGridTemplateColumn>
+                        <DataGridTemplateColumn Header="Scan Group" SortMemberPath="ScanGroup" Width="100">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate><TextBlock Text="{Binding ScanGroup}" /></DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                            <DataGridTemplateColumn.CellEditingTemplate>
+                                <DataTemplate>
+                                    <ComboBox ItemsSource="{Binding DataContext.ScanGroupOptions, RelativeSource={RelativeSource AncestorType=DataGrid}}" Text="{Binding ScanGroup, UpdateSourceTrigger=PropertyChanged}" IsEditable="True" />
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellEditingTemplate>
+                        </DataGridTemplateColumn>
+                        <DataGridCheckBoxColumn Header="History" Binding="{Binding HistoryEnabled, UpdateSourceTrigger=PropertyChanged}" Width="70" />
+                        <DataGridTextColumn Header="History Profile" Binding="{Binding HistoryProfile, UpdateSourceTrigger=PropertyChanged}" Width="110" />
+                        <DataGridCheckBoxColumn Header="MQTT" Binding="{Binding MqttPublishEnabled, UpdateSourceTrigger=PropertyChanged}" Width="65" />
+                        <DataGridTextColumn Header="Warnings" Binding="{Binding WarningSummary}" Width="1.4*" />
+                        <DataGridTextColumn Header="Quality Snapshot" Binding="{Binding Quality}" Width="120" />
+                        <DataGridTextColumn Header="Runtime" Binding="{Binding RuntimeStatus}" Width="1.3*" />
+                    </DataGrid.Columns>
+                </DataGrid>
+                <Border Grid.Row="2" Style="{StaticResource CardBorderStyle}" Margin="0,10,0,0" Padding="10">
+                    <Grid DataContext="{Binding SelectedRow}">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="90" />
+                            <ColumnDefinition Width="180" />
+                            <ColumnDefinition Width="90" />
+                            <ColumnDefinition Width="180" />
+                            <ColumnDefinition Width="90" />
+                            <ColumnDefinition Width="180" />
+                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+                        <TextBlock Grid.Row="0" Grid.Column="0" Text="Id" Style="{StaticResource FieldLabelTextStyle}" />
+                        <TextBox Grid.Row="0" Grid.Column="1" Text="{Binding Id}" IsReadOnly="True" Margin="4" />
+                        <TextBlock Grid.Row="0" Grid.Column="2" Text="Description" Style="{StaticResource FieldLabelTextStyle}" />
+                        <TextBox Grid.Row="0" Grid.Column="3" Text="{Binding Description, UpdateSourceTrigger=PropertyChanged}" Margin="4" />
+                        <TextBlock Grid.Row="0" Grid.Column="4" Text="Access" Style="{StaticResource FieldLabelTextStyle}" />
+                        <ComboBox Grid.Row="0" Grid.Column="5" ItemsSource="{Binding DataContext.AccessModeOptions, ElementName=Root}" SelectedItem="{Binding AccessMode, UpdateSourceTrigger=PropertyChanged}" Margin="4" />
+                        <TextBlock Grid.Row="1" Grid.Column="0" Text="Device" Style="{StaticResource FieldLabelTextStyle}" />
+                        <ComboBox Grid.Row="1" Grid.Column="1" ItemsSource="{Binding DataContext.DeviceOptions, ElementName=Root}" Text="{Binding DeviceId, UpdateSourceTrigger=PropertyChanged}" IsEditable="True" Margin="4" />
+                        <TextBlock Grid.Row="1" Grid.Column="2" Text="Scan Group" Style="{StaticResource FieldLabelTextStyle}" />
+                        <ComboBox Grid.Row="1" Grid.Column="3" ItemsSource="{Binding DataContext.ScanGroupOptions, ElementName=Root}" Text="{Binding ScanGroup, UpdateSourceTrigger=PropertyChanged}" IsEditable="True" Margin="4" />
+                        <TextBlock Grid.Row="1" Grid.Column="4" Text="Data Type" Style="{StaticResource FieldLabelTextStyle}" />
+                        <ComboBox Grid.Row="1" Grid.Column="5" ItemsSource="{Binding DataContext.DataTypeOptions, ElementName=Root}" SelectedItem="{Binding DataType, UpdateSourceTrigger=PropertyChanged}" Margin="4" />
+                        <TextBlock Grid.Row="2" Grid.Column="0" Text="Min" Style="{StaticResource FieldLabelTextStyle}" />
+                        <TextBox Grid.Row="2" Grid.Column="1" Text="{Binding Min, UpdateSourceTrigger=PropertyChanged}" Margin="4" />
+                        <TextBlock Grid.Row="2" Grid.Column="2" Text="Max" Style="{StaticResource FieldLabelTextStyle}" />
+                        <TextBox Grid.Row="2" Grid.Column="3" Text="{Binding Max, UpdateSourceTrigger=PropertyChanged}" Margin="4" />
+                        <TextBlock Grid.Row="2" Grid.Column="4" Text="Unit" Style="{StaticResource FieldLabelTextStyle}" />
+                        <TextBox Grid.Row="2" Grid.Column="5" Text="{Binding Unit, UpdateSourceTrigger=PropertyChanged}" Margin="4" />
+                        <TextBlock Grid.Row="3" Grid.Column="0" Text="Enabled" Style="{StaticResource FieldLabelTextStyle}" />
+                        <CheckBox Grid.Row="3" Grid.Column="1" IsChecked="{Binding Enabled, UpdateSourceTrigger=PropertyChanged}" Margin="4" VerticalAlignment="Center" />
+                        <TextBlock Grid.Row="3" Grid.Column="2" Text="History Profile" Style="{StaticResource FieldLabelTextStyle}" />
+                        <TextBox Grid.Row="3" Grid.Column="3" Text="{Binding HistoryProfile, UpdateSourceTrigger=PropertyChanged}" Margin="4" />
+                        <TextBlock Grid.Row="3" Grid.Column="4" Text="MQTT Profile" Style="{StaticResource FieldLabelTextStyle}" />
+                        <TextBox Grid.Row="3" Grid.Column="5" Text="{Binding MqttProfile, UpdateSourceTrigger=PropertyChanged}" Margin="4" />
+                        <TextBlock Grid.Row="4" Grid.Column="0" Text="MQTT Topic" Style="{StaticResource FieldLabelTextStyle}" />
+                        <TextBox Grid.Row="4" Grid.Column="1" Grid.ColumnSpan="3" Text="{Binding MqttTopicOverride, UpdateSourceTrigger=PropertyChanged}" Margin="4" />
+                        <TextBlock Grid.Row="4" Grid.Column="4" Text="Runtime" Style="{StaticResource FieldLabelTextStyle}" />
+                        <TextBlock Grid.Row="4" Grid.Column="5" Text="{Binding RuntimeStatus}" Margin="4" VerticalAlignment="Center" Foreground="{StaticResource SecondaryTextBrush}" />
+                    </Grid>
+                </Border>
+            </Grid>
+            <DockPanel Grid.Row="2" Margin="0,10,0,0">
+                <TextBlock Text="{Binding StatusText}" Foreground="{StaticResource SecondaryTextBrush}" />
+                <TextBlock DockPanel.Dock="Right" Text="{Binding ValidationErrorCount, StringFormat=Blocking issues: {0}}" Foreground="{StaticResource BadBrush}" Margin="12,0,0,0" />
+                <TextBlock DockPanel.Dock="Right" Text="{Binding RestartRequired, StringFormat=Restart required: {0}}" Foreground="{StaticResource WarningBrush}" Margin="12,0,0,0" />
+                <TextBlock DockPanel.Dock="Right" Text="{Binding IsDirty, StringFormat=Dirty: {0}}" Foreground="{StaticResource SecondaryTextBrush}" />
+            </DockPanel>
+        </Grid>
+    </controls:WorkspaceLayout>
+</UserControl>
