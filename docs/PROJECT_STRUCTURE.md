@@ -21,6 +21,8 @@ Scada.Infrastructure  → Scada.Core
 Scada.App             → Scada.Core, Scada.Runtime, Scada.Drivers, Scada.Infrastructure
 ```
 
+Milestone 5 keeps the product-project dependency graph unchanged. Historian orchestration is in `Scada.Runtime` and depends on Core contracts only; SQLite storage is composed by `Scada.App` through the `IHistoryStore` contract and implemented in `Scada.Infrastructure`.
+
 `Scada.Runtime` is driver-neutral. It consumes `IPlcDriver` from `Scada.Core` and owns only the runtime-local resolver, lease, manager and polling workers. Concrete drivers are composed by `Scada.App` from `Scada.Drivers`.
 
 ## Main folders
@@ -31,12 +33,14 @@ Scada.Core/
 ├── Configuration
 ├── Devices
 ├── Drivers
+├── History
 └── Tags
 
 Scada.Runtime/
 ├── Devices
 ├── Drivers
 ├── Engine
+├── Historian
 ├── Polling
 └── Tags
 
@@ -45,6 +49,7 @@ Scada.Drivers/
 
 Scada.Infrastructure/
 ├── Configuration
+├── History
 └── Persistence
 
 Scada.App/
@@ -80,7 +85,7 @@ tests/Scada.Infrastructure.Tests
 tests/Scada.App.Tests
 ```
 
-`Scada.App.Tests` contains deterministic ViewModel/navigation/lifecycle tests. There is no UI automation test in this milestone.
+`Scada.App.Tests` contains deterministic ViewModel/navigation/lifecycle and History Settings tests. There is no UI automation test in this milestone.
 
 ## Runtime data flow
 
@@ -104,6 +109,26 @@ TagCache
 WPF subscriptions / Online Tag Monitor
 ```
 
+## Milestone 5 historian flow
+
+```text
+TagCache subscription
+        ↓
+HistoryProfileEvaluator
+        ↓
+HistorySample normalization
+        ↓
+bounded HistorianQueue
+        ↓
+single background batch writer
+        ↓
+IHistoryStore
+        ↓
+SqliteHistoryStore → project-relative Data/history.db
+```
+
+The Historian never reads a PLC and never performs SQLite I/O in a TagCache callback. The callback performs evaluation and non-blocking `TryWrite` only. Source timestamps come from `TagValue.Timestamp`, wall-clock `RecordedAtUtc` comes from the historian `TimeProvider`, and monotonic timestamps are runtime-only for throttling and periodic scheduling. Queue overflow, invalid samples, abandoned samples and committed writes remain separate diagnostics.
+
 TagCache remains the central runtime source. A disconnected device publishes `TagQuality.Disconnected`; a last-known value keeps its original PLC timestamp, while a tag without a valid value gets the failure transition timestamp.
 
 ## Milestone 4 Tag Manager flow
@@ -126,4 +151,4 @@ The Tag Manager owns project editing in `Scada.App`; import data is prepared and
 
 ## Portable configuration
 
-`Scada.App/appsettings.json` is copied to application output. The application sets its content root to `AppContext.BaseDirectory`, while project persistence uses an explicit absolute `--project-file` path. `scripts/run-scada.ps1` resolves that path from `$PSScriptRoot`, so running a copied template folder does not depend on the original repository or current working directory.
+`Scada.App/appsettings.json` is copied to application output. The application sets its content root to `AppContext.BaseDirectory`, while project persistence uses an explicit absolute `--project-file` path. Historian SQLite is resolved relative to that canonical project document directory and is never created when Historian is disabled. `scripts/run-scada.ps1` resolves its project path from `$PSScriptRoot`, so running a copied template folder does not depend on the original repository or current working directory.

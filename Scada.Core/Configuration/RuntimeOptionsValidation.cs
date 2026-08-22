@@ -1,12 +1,10 @@
 using Scada.Core.Tags;
+using Scada.Core.History;
 
 namespace Scada.Core.Configuration;
 
 public static class RuntimeOptionsValidation
 {
-    private static readonly HashSet<string> HistoryProfiles =
-        new(StringComparer.OrdinalIgnoreCase) { "Digital", "Analog", "FastAnalog", "Custom" };
-
     private static readonly HashSet<string> MqttProfiles =
         new(StringComparer.OrdinalIgnoreCase) { "Default" };
 
@@ -22,6 +20,9 @@ public static class RuntimeOptionsValidation
         }
 
         ValidatePolling(options, issues);
+        issues.AddRange(HistoryProfileValidation.CollectIssues(options.Historian ?? new HistorianOptions()));
+
+        var historyRegistry = new HistoryProfileRegistry(options.Historian?.Profiles ?? []);
 
         var scanGroups = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var scanGroup in options.ScanGroups ?? [])
@@ -70,7 +71,7 @@ public static class RuntimeOptionsValidation
         var tagNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var tag in options.Tags ?? [])
         {
-            ValidateTag(tag, deviceIds, scanGroups, tagIds, tagNames, issues);
+            ValidateTag(tag, deviceIds, scanGroups, tagIds, tagNames, historyRegistry, issues);
         }
 
         return issues;
@@ -98,6 +99,7 @@ public static class RuntimeOptionsValidation
         ISet<string> scanGroups,
         ISet<string> tagIds,
         ISet<string> tagNames,
+        HistoryProfileRegistry historyRegistry,
         ICollection<ValidationIssue> issues)
     {
         if (string.IsNullOrWhiteSpace(tag.Id))
@@ -156,15 +158,22 @@ public static class RuntimeOptionsValidation
                 $"Tag '{tag.Id}' minimum cannot be greater than maximum."));
         }
 
+        HistoryProfileDefinition? historyProfile = null;
         if (tag.HistoryEnabled && string.IsNullOrWhiteSpace(tag.HistoryProfile))
         {
             issues.Add(Error("HISTORY_PROFILE_REQUIRED", "Tag", tag.Id, nameof(tag.HistoryProfile),
                 $"Tag '{tag.Id}' requires a history profile when history is enabled."));
         }
-        else if (!string.IsNullOrWhiteSpace(tag.HistoryProfile) && !HistoryProfiles.Contains(tag.HistoryProfile))
+        else if (!string.IsNullOrWhiteSpace(tag.HistoryProfile) && !historyRegistry.TryGet(tag.HistoryProfile, out historyProfile))
         {
             issues.Add(Warning("HISTORY_PROFILE_UNKNOWN", "Tag", tag.Id, nameof(tag.HistoryProfile),
-                $"History profile '{tag.HistoryProfile}' is not a built-in M4 profile and will be preserved."));
+                $"History profile '{tag.HistoryProfile}' is not configured and will be preserved."));
+        }
+        else if (tag.HistoryEnabled && historyProfile is not null &&
+                 !HistoryProfileValidation.IsCompatible(tag.DataType, historyProfile))
+        {
+            issues.Add(Warning("HISTORY_PROFILE_TYPE_INCOMPATIBLE", "Tag", tag.Id, nameof(tag.DataType),
+                $"Tag '{tag.Id}' data type '{tag.DataType}' is incompatible with history profile '{historyProfile.Name}'; Historian will skip it."));
         }
 
         if (tag.MqttPublishEnabled && string.IsNullOrWhiteSpace(tag.MqttProfile))

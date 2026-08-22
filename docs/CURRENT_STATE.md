@@ -4,15 +4,15 @@ Architecture V1 is approved.
 
 Current implementation milestone:
 
-Milestone 4 — Tag Manager
+Milestone 5 — Historian Foundation
 
 Status:
 
-Completed and merged to `main` via PR #4.
+Implemented on `feature/milestone-5-historian-foundation`; source verification is complete and the feature branch is ready for review. No Pull Request has been created yet.
 
-Merge commit:
+Base commit:
 
-`e1a56b42b31b83d46649a897ca517a0d78026221`
+`434d6357c00a3150f00922aa26a3f5d5925fde79`
 
 ## Implemented in Milestone 1
 
@@ -91,21 +91,34 @@ n PLC
 - Explicit-state bulk editing for enabled/device/datatype/scan group/access/history/MQTT fields, with one candidate validation pass.
 - Delete confirmation abstraction and one-pass per-row quality snapshot seeding without subscription fan-out.
 
+## Implemented in Milestone 5
+
+- Central `HistorianOptions`, approved Digital/Analog/FastAnalog/Custom profile defaults, case-insensitive profile registry and authoritative configuration binding.
+- Profile validation for required built-ins, duplicates, invalid intervals/deadbands, unknown tag profiles and incompatible tag data types.
+- `ProjectDocumentSchema.CurrentVersion = 2` with explicit v1-to-v2 in-memory migration; v1 documents are not rewritten until an explicit Save.
+- Core-neutral `HistorySample`, bounded `HistoryQuery` and `IHistoryStore` contracts.
+- Strict history value normalization, non-finite Double rejection, source/recorded/monotonic clock separation and overflow-safe Int64 deadband evaluation.
+- Single monotonic periodic coordinator, subscribe-before-seed with TagValue.Sequence deduplication, bounded `Channel<HistorySample>` and separate rejected/dropped/abandoned/written counters.
+- `HistorianRuntimeService` with Disabled/Starting/Healthy/Degraded/Faulted/Stopping states, background initialization/writes, bounded retry, clean intake shutdown and queue drain.
+- `Microsoft.Data.Sqlite` storage under `Scada.Infrastructure/History` with schema version 1, typed value columns, deterministic query ordering, path traversal protection and malformed/newer-schema fault handling.
+- Hosted-service ordering and singleton identity: Historian starts before polling while polling remains independent of historian storage failures.
+- Engineering `engineering.history` History Settings workspace with profile editing, protected built-ins, advanced global settings, runtime snapshot/status and restart-required save semantics.
+
 ## Verified
 
 - `dotnet restore Scada.sln --ignore-failed-sources` — PASS.
-- `dotnet build Scada.sln -c Release --no-restore` — PASS with 0 warnings and 0 errors.
-- `dotnet test Scada.sln -c Release --no-build` — PASS; 110 tests, 0 failures (49 App, 32 Runtime, 3 Core, 3 Drivers, 23 Infrastructure).
+- `dotnet build Scada.sln -c Release --no-restore` — PASS with no compiler errors; the known NU1903 advisory warning for transitive `SQLitePCLRaw.lib.e_sqlite3` is documented below and was not suppressed.
+- `dotnet test Scada.sln -c Release --no-build` — PASS; 142 tests, 0 failures (52 App, 47 Runtime, 7 Core, 3 Drivers, 33 Infrastructure).
 - `git diff --check` — PASS.
 - WPF startup smoke test — PASS; `Scada.App` stayed running through the startup check and resolved `MainWindow` with resources/templates loaded without a startup DI/XAML exception.
 - Copy-folder portability verification — PASS on a fresh copy outside the repository; restore/build and explicit project-file startup do not depend on the original folder, and the project document remains unchanged.
-- GitNexus post-change review — PASS; 0 import cycles, no Runtime dependency on App/WPF/Drivers, no TagCache source change, and no direct PLC reads from Tag Manager.
+- GitNexus post-change review — PASS; 0 import cycles, `Scada.Runtime` still depends only on `Scada.Core`, SQLite types remain in Infrastructure, no TagCache source change, and no direct PLC reads from the History Settings workspace.
 - UI automation remains out of scope.
 
 ## Not implemented — later milestones
 
 - Real Siemens, Mitsubishi, Modbus or OPC UA drivers.
-- Historian, SQLite historian and InfluxDB provider.
+- InfluxDB provider.
 - MQTT publisher or write support.
 - Complete Alarm and Trend systems.
 - Reusable HMI controls and Faceplates.
@@ -119,9 +132,12 @@ n PLC
 
 - A per-device factory that creates a driver with a mismatched `DriverType` can leave that instance without lease ownership before `Acquire` throws. Correct `IDisposable`/`IAsyncDisposable` cleanup on this exceptional misconfiguration path is deferred until resolver acquisition/lifetime design is expanded.
 - A genuinely non-cooperative driver operation may remain in flight after the manager shutdown budget expires. M2 bounds manager return time and retains ownership rather than attempting to kill the task; deeper orphan-operation supervision is later work.
-- Project persistence currently supports schema version 1 only; migrations, multi-process conflict handling and undo/redo are deferred.
+- Project persistence supports schema v1 migration to v2; multi-process conflict handling and undo/redo are deferred.
 - Project startup requires an explicit canonical `--project-file` path (the supplied launcher provides it); automatic project discovery and hot reload are intentionally not implemented.
 - Tag Manager validation is deterministic and synchronous; full UI automation, advanced tag scaling/offset semantics and runtime reconfiguration without restart remain later work.
 - Import conflict resolution currently offers explicit apply-all for conflict-free imports or append-non-conflicting/cancel for conflicted imports; identity regeneration after a conflict is deferred.
+- The current Microsoft.Data.Sqlite 10.0.10 dependency brings transitive `SQLitePCLRaw.lib.e_sqlite3` 2.1.11, which emits NU1903 for a high-severity advisory during restore/build. Security review or an upstream package update is deferred; security checks were not disabled.
+- Historian retry buffering is process-local and bounded by the in-memory queue; durable buffering, InfluxDB synchronization, retention and historian replay remain later milestones.
+- Historian configuration changes are persisted and marked restart-required; runtime hot reload is intentionally not implemented.
 
 Implementation must follow the ordered milestones in `docs/ROADMAP.md` and the constraints in `docs/SCADA_ARCHITECTURE_V1.md`. Do not jump ahead to MQTT, InfluxDB or other later milestones without explicit approval.

@@ -6,7 +6,6 @@ namespace Scada.Infrastructure.Persistence;
 
 public sealed class ProjectConfigurationStore : IProjectConfigurationStore
 {
-    private const int SupportedSchemaVersion = 1;
     private static readonly JsonSerializerOptions SerializerOptions = new()
     {
         WriteIndented = true,
@@ -45,6 +44,10 @@ public sealed class ProjectConfigurationStore : IProjectConfigurationStore
                 $"Project document '{ProjectPath.FullPath}' could not be read.", exception);
         }
 
+        ValidateDocumentVersion(document);
+        document = document!.SchemaVersion < ProjectDocumentSchema.CurrentVersion
+            ? ProjectDocumentMigrator.MigrateToCurrent(document)
+            : document;
         ValidateDocument(document);
         ConfigurationValidator.Validate(document!.Scada!);
         return document;
@@ -53,6 +56,10 @@ public sealed class ProjectConfigurationStore : IProjectConfigurationStore
     public void Save(ProjectDocument document)
     {
         ArgumentNullException.ThrowIfNull(document);
+        ValidateDocumentVersion(document);
+        document = document.SchemaVersion < ProjectDocumentSchema.CurrentVersion
+            ? ProjectDocumentMigrator.MigrateToCurrent(document)
+            : document;
         ValidateDocument(document);
         ConfigurationValidator.Validate(document.Scada!);
 
@@ -94,7 +101,7 @@ public sealed class ProjectConfigurationStore : IProjectConfigurationStore
         }
     }
 
-    private static void ValidateDocument(ProjectDocument? document)
+    private static void ValidateDocumentVersion(ProjectDocument? document)
     {
         if (document is null)
         {
@@ -106,16 +113,19 @@ public sealed class ProjectConfigurationStore : IProjectConfigurationStore
             throw new ProjectDocumentException("The project document must specify a positive SchemaVersion.");
         }
 
-        if (document.SchemaVersion > SupportedSchemaVersion)
+        if (document.SchemaVersion > ProjectDocumentSchema.CurrentVersion)
         {
             throw new ProjectDocumentException(
-                $"Project schema version {document.SchemaVersion} is newer than supported version {SupportedSchemaVersion}.");
+                $"Project schema version {document.SchemaVersion} is newer than supported version {ProjectDocumentSchema.CurrentVersion}.");
         }
+    }
 
-        if (document.SchemaVersion != SupportedSchemaVersion)
+    private static void ValidateDocument(ProjectDocument? document)
+    {
+        if (document is null || document.SchemaVersion != ProjectDocumentSchema.CurrentVersion)
         {
             throw new ProjectDocumentException(
-                $"Project schema version {document.SchemaVersion} is not supported.");
+                $"Project schema version is not current. Expected {ProjectDocumentSchema.CurrentVersion}.");
         }
 
         if (document.Scada is null)

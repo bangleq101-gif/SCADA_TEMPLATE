@@ -3,6 +3,7 @@ using System.IO;
 using System.Runtime.CompilerServices;
 using Scada.Core.Configuration;
 using Scada.Core.Devices;
+using Scada.Core.History;
 using Scada.Core.Tags;
 using Scada.Infrastructure.Persistence;
 
@@ -113,7 +114,7 @@ public sealed class ProjectEditSession : INotifyPropertyChanged
         {
             _store.Save(new ProjectDocument
             {
-                SchemaVersion = 1,
+                SchemaVersion = ProjectDocumentSchema.CurrentVersion,
                 Scada = ProjectSnapshotCloner.Clone(_workingProject)
             });
 
@@ -187,6 +188,23 @@ internal static class ProjectSnapshotCloner
                 MaxReconnectDelayMilliseconds = source.Polling.MaxReconnectDelayMilliseconds,
                 ShutdownTimeoutMilliseconds = source.Polling.ShutdownTimeoutMilliseconds
             },
+            Historian = new HistorianOptions
+            {
+                Enabled = source.Historian.Enabled,
+                DatabasePath = source.Historian.DatabasePath,
+                QueueCapacity = source.Historian.QueueCapacity,
+                BatchSize = source.Historian.BatchSize,
+                FlushIntervalMilliseconds = source.Historian.FlushIntervalMilliseconds,
+                ShutdownDrainTimeoutMilliseconds = source.Historian.ShutdownDrainTimeoutMilliseconds,
+                Profiles = source.Historian.Profiles.Select(profile => new HistoryProfileDefinition
+                {
+                    Name = profile.Name,
+                    Mode = profile.Mode,
+                    Deadband = profile.Deadband,
+                    MinimumIntervalMilliseconds = profile.MinimumIntervalMilliseconds,
+                    MaximumIntervalMilliseconds = profile.MaximumIntervalMilliseconds
+                }).ToList()
+            },
             ScanGroups = source.ScanGroups.Select(group => new ScanGroupDefinition
             {
                 Name = group.Name,
@@ -237,11 +255,32 @@ internal static class ProjectSnapshotComparer
             left.Polling.InitialReconnectDelayMilliseconds != right.Polling.InitialReconnectDelayMilliseconds ||
             left.Polling.MaxReconnectDelayMilliseconds != right.Polling.MaxReconnectDelayMilliseconds ||
             left.Polling.ShutdownTimeoutMilliseconds != right.Polling.ShutdownTimeoutMilliseconds ||
+            left.Historian.Enabled != right.Historian.Enabled ||
+            !string.Equals(left.Historian.DatabasePath, right.Historian.DatabasePath, StringComparison.Ordinal) ||
+            left.Historian.QueueCapacity != right.Historian.QueueCapacity ||
+            left.Historian.BatchSize != right.Historian.BatchSize ||
+            left.Historian.FlushIntervalMilliseconds != right.Historian.FlushIntervalMilliseconds ||
+            left.Historian.ShutdownDrainTimeoutMilliseconds != right.Historian.ShutdownDrainTimeoutMilliseconds ||
+            left.Historian.Profiles.Count != right.Historian.Profiles.Count ||
             left.ScanGroups.Count != right.ScanGroups.Count ||
             left.Devices.Count != right.Devices.Count ||
             left.Tags.Count != right.Tags.Count)
         {
             return false;
+        }
+
+        for (var index = 0; index < left.Historian.Profiles.Count; index++)
+        {
+            var leftProfile = left.Historian.Profiles[index];
+            var rightProfile = right.Historian.Profiles[index];
+            if (!string.Equals(leftProfile.Name, rightProfile.Name, StringComparison.Ordinal) ||
+                leftProfile.Mode != rightProfile.Mode ||
+                leftProfile.Deadband != rightProfile.Deadband ||
+                leftProfile.MinimumIntervalMilliseconds != rightProfile.MinimumIntervalMilliseconds ||
+                leftProfile.MaximumIntervalMilliseconds != rightProfile.MaximumIntervalMilliseconds)
+            {
+                return false;
+            }
         }
 
         for (var index = 0; index < left.ScanGroups.Count; index++)

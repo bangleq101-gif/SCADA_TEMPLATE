@@ -6,11 +6,14 @@ using Microsoft.Extensions.Logging;
 using Scada.App.Services;
 using Scada.App.ViewModels;
 using Scada.Core.Drivers;
+using Scada.Core.History;
 using Scada.Drivers.Simulator;
 using Scada.Infrastructure.Configuration;
+using Scada.Infrastructure.History;
 using Scada.Infrastructure.Persistence;
 using Scada.Runtime.Drivers;
 using Scada.Runtime.Engine;
+using Scada.Runtime.Historian;
 using Scada.Runtime.Polling;
 using Scada.Runtime.Tags;
 
@@ -58,7 +61,15 @@ public partial class App : Application
             builder.Services.AddSingleton<TagEngine>();
             builder.Services.AddSingleton<ScadaRuntime>();
             builder.Services.AddSingleton<DeviceManager>();
-            builder.Services.AddHostedService<PollingRuntimeService>();
+            builder.Services.AddSingleton<IHistoryStore>(_ => new SqliteHistoryStore(
+                projectPath,
+                startupOptions.Historian.DatabasePath));
+            builder.Services.AddSingleton<HistorianRuntimeService>();
+            builder.Services.AddSingleton<IHostedService>(services =>
+                services.GetRequiredService<HistorianRuntimeService>());
+            builder.Services.AddSingleton<PollingRuntimeService>();
+            builder.Services.AddSingleton<IHostedService>(services =>
+                services.GetRequiredService<PollingRuntimeService>());
             builder.Services.AddSingleton<ProjectEditSession>(_ => new ProjectEditSession(
                 startupOptions,
                 projectPath,
@@ -70,6 +81,7 @@ public partial class App : Application
             builder.Services.AddSingleton<MachineSettingsViewModel>();
             builder.Services.AddSingleton<MonitoringViewModel>();
             builder.Services.AddSingleton<TagManagerViewModel>();
+            builder.Services.AddSingleton<HistorySettingsViewModel>();
             builder.Services.AddSingleton<EngineeringViewModel>();
             builder.Services.AddSingleton<NavigationService>();
             builder.Services.AddSingleton<ShellViewModel>();
