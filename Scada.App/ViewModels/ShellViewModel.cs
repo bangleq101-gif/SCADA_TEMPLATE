@@ -15,28 +15,119 @@ public sealed class ShellViewModel : INotifyPropertyChanged
     {
         _navigation = navigation;
         _options = options;
-        _navigation.PropertyChanged += (_, args) => OnPropertyChanged(args.PropertyName);
+        _navigation.PropertyChanged += OnNavigationPropertyChanged;
         NavigationItems =
         [
-            new("operation", "OPERATION", "Overview"),
-            new("machine-settings", "MACHINE SETTINGS", "Machine Settings"),
-            new("monitoring", "MONITORING", "Online Tag Monitor"),
-            new("engineering", "ENGINEERING", "Engineering")
+            new NavigationItem(
+                "OPERATION",
+                children: [new NavigationItem("Overview", NavigationService.OperationOverviewRoute)]),
+            new NavigationItem(
+                "MACHINE SETTINGS",
+                children: [new NavigationItem("Machine Settings", NavigationService.MachineSettingsOverviewRoute)]),
+            new NavigationItem(
+                "MONITORING",
+                children: [new NavigationItem("Online Tag Monitor", NavigationService.MonitoringOnlineTagsRoute)]),
+            new NavigationItem(
+                "ENGINEERING",
+                children: [new NavigationItem("Engineering Overview", NavigationService.EngineeringOverviewRoute)])
         ];
         NavigateCommand = new RelayCommand(parameter =>
         {
-            if (parameter is NavigationItem item)
+            if (parameter is NavigationItem { IsNavigable: true, RouteKey: not null } item)
             {
-                _navigation.Navigate(item.Key);
+                _navigation.Navigate(item.RouteKey);
             }
         });
+
+        SynchronizeSelection();
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
     public ReadOnlyCollection<NavigationItem> NavigationItems { get; }
     public object CurrentViewModel => _navigation.CurrentViewModel;
+    public string CurrentRouteKey => _navigation.CurrentRouteKey;
+    public string CurrentWorkspaceTitle =>
+        FindNavigationItem(_navigation.CurrentRouteKey)?.Title ?? "Workspace";
     public ICommand NavigateCommand { get; }
-    public string RuntimeStatusText => $"{_options.RuntimeId}  •  Foundation";
+    public string RuntimeStatusText => $"{_options.RuntimeId}  •  {CurrentWorkspaceTitle}";
+
+    private void OnNavigationPropertyChanged(object? sender, PropertyChangedEventArgs args)
+    {
+        SynchronizeSelection();
+        OnPropertyChanged(args.PropertyName);
+        if (args.PropertyName is nameof(NavigationService.CurrentRouteKey)
+            or nameof(NavigationService.CurrentViewModel))
+        {
+            OnPropertyChanged(nameof(CurrentWorkspaceTitle));
+            OnPropertyChanged(nameof(RuntimeStatusText));
+        }
+    }
+
+    private void SynchronizeSelection()
+    {
+        foreach (var group in NavigationItems)
+        {
+            var selected = SynchronizeSelection(group, _navigation.CurrentRouteKey);
+            if (selected)
+            {
+                group.IsExpanded = true;
+            }
+        }
+    }
+
+    private static bool SynchronizeSelection(NavigationItem item, string routeKey)
+    {
+        var selected = item.IsNavigable
+            && string.Equals(item.RouteKey, routeKey, StringComparison.OrdinalIgnoreCase);
+        item.SetSelected(selected);
+
+        var childSelected = false;
+        foreach (var child in item.Children)
+        {
+            childSelected |= SynchronizeSelection(child, routeKey);
+        }
+
+        if (childSelected)
+        {
+            item.IsExpanded = true;
+        }
+
+        return selected || childSelected;
+    }
+
+    private NavigationItem? FindNavigationItem(string routeKey)
+    {
+        foreach (var item in NavigationItems)
+        {
+            var match = FindNavigationItem(item, routeKey);
+            if (match is not null)
+            {
+                return match;
+            }
+        }
+
+        return null;
+    }
+
+    private static NavigationItem? FindNavigationItem(NavigationItem item, string routeKey)
+    {
+        if (item.IsNavigable
+            && string.Equals(item.RouteKey, routeKey, StringComparison.OrdinalIgnoreCase))
+        {
+            return item;
+        }
+
+        foreach (var child in item.Children)
+        {
+            var match = FindNavigationItem(child, routeKey);
+            if (match is not null)
+            {
+                return match;
+            }
+        }
+
+        return null;
+    }
 
     private void OnPropertyChanged([CallerMemberName] string? propertyName = null) =>
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));

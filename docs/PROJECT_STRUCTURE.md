@@ -47,10 +47,13 @@ Scada.Infrastructure/
 └── Configuration
 
 Scada.App/
+├── Controls
 ├── Resources
 ├── ViewModels
 └── Views
 ```
+
+The App layer owns the hierarchical route model and workspace lifecycle. `NavigationService.CurrentRouteKey` is the authoritative active route; `ShellViewModel` derives tree selection from it. Navigation destination ViewModels implement the minimal `IWorkspaceLifecycle` contract. Monitoring owns TagCache subscriptions only while its workspace is active and rejects callbacks from older activation generations.
 
 ## Runtime polling components
 
@@ -69,9 +72,10 @@ tests/Scada.Core.Tests
 tests/Scada.Runtime.Tests
 tests/Scada.Drivers.Tests
 tests/Scada.Infrastructure.Tests
+tests/Scada.App.Tests
 ```
 
-There is intentionally no `Scada.App.Tests` project and no UI automation test in this milestone.
+`Scada.App.Tests` contains deterministic ViewModel/navigation/lifecycle tests. There is no UI automation test in this milestone.
 
 ## Runtime data flow
 

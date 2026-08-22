@@ -8,6 +8,17 @@
 - Use `AppContext.BaseDirectory` for runtime file resolution. Do not use absolute or working-directory-dependent paths.
 - Keep external service integrations, real PLC drivers, Tag Manager and advanced HMI features outside the approved milestone.
 
+## Shell and workspace rules
+
+- Keep canonical route keys in `NavigationService`; `CurrentRouteKey` is the single source of truth for the active workspace.
+- Navigation groups are non-navigable. Exactly one canonical leaf is selected, and Shell selection is synchronized from the NavigationService state.
+- Navigation transitions must deactivate the old workspace, update the route/view model coherently and activate the destination. Invalid and same-route navigation must not change lifecycle state.
+- Keep workspace lifecycle abstractions in `Scada.App`; do not move UI navigation or lifecycle contracts into Core or Runtime.
+- Monitoring must own TagCache subscriptions only while active. Activation is idempotent, deactivation disposes owned subscriptions, and queued callbacks must re-check their activation generation before updating rows.
+- WPF Dispatcher marshaling belongs in `Scada.App`. Views and ViewModels must consume TagCache data and must not read PLCs directly.
+- Reuse `WorkspaceLayout` and ResourceDictionary styles for workspace page structure and semantic colors. Do not add a third-party UI framework for the Shell.
+- Product UI must not expose milestone, foundation, placeholder or fabricated health-status text.
+
 ## Runtime polling rules
 
 - `IPlcDriver` remains asynchronous, batch-oriented and `CancellationToken`-aware.
@@ -30,3 +41,4 @@
 - Use GitNexus impact analysis before changing existing runtime symbols and review post-change dependency impact.
 - Update `CURRENT_STATE.md`, `PROJECT_STRUCTURE.md` and `DECISIONS.md` when implementation changes documented architecture.
 - Do not commit generated `bin/`, `obj/`, `TestResults/`, logs, databases, secrets or copy-verification folders.
+- App behavior is covered with deterministic unit tests; UI automation is not required for this milestone.

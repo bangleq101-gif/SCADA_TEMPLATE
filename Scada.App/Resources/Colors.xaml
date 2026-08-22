@@ -7,4 +7,15 @@
     <SolidColorBrush x:Key="CardBrush" Color="White" />
     <SolidColorBrush x:Key="AccentBrush" Color="#2D80B8" />
     <SolidColorBrush x:Key="MutedTextBrush" Color="#607080" />
+    <SolidColorBrush x:Key="PrimaryTextBrush" Color="#162536" />
+    <SolidColorBrush x:Key="SecondaryTextBrush" Color="#607080" />
+    <SolidColorBrush x:Key="HeaderMutedBrush" Color="#B8C7D9" />
+    <SolidColorBrush x:Key="NavigationGroupBrush" Color="#8FA7BF" />
+    <SolidColorBrush x:Key="NavigationHoverBrush" Color="#2B4A63" />
+    <SolidColorBrush x:Key="NavigationSelectedBrush" Color="#2D80B8" />
+    <SolidColorBrush x:Key="BorderBrush" Color="#D6DEE6" />
+    <SolidColorBrush x:Key="GoodBrush" Color="#2E8B57" />
+    <SolidColorBrush x:Key="WarningBrush" Color="#C47F00" />
+    <SolidColorBrush x:Key="BadBrush" Color="#B33A3A" />
+    <SolidColorBrush x:Key="DisconnectedBrush" Color="#7A8793" />
 </ResourceDictionary>
