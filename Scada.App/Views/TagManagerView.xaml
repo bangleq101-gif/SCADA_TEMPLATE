@@ -71,7 +71,7 @@
                     <DataGrid.Columns>
                         <DataGridCheckBoxColumn Header="Enabled" Binding="{Binding Enabled, UpdateSourceTrigger=PropertyChanged}" Width="70" />
                         <DataGridTextColumn Header="Name" Binding="{Binding Name, UpdateSourceTrigger=PropertyChanged}" Width="1.4*" />
-                        <DataGridTemplateColumn Header="Device" Width="1*">
+                        <DataGridTemplateColumn Header="Device" SortMemberPath="DeviceId" Width="1*">
                             <DataGridTemplateColumn.CellTemplate>
                                 <DataTemplate><TextBlock Text="{Binding DeviceId}" /></DataTemplate>
                             </DataGridTemplateColumn.CellTemplate>
@@ -82,7 +82,7 @@
                             </DataGridTemplateColumn.CellEditingTemplate>
                         </DataGridTemplateColumn>
                         <DataGridTextColumn Header="Address" Binding="{Binding Address, UpdateSourceTrigger=PropertyChanged}" Width="1*" />
-                        <DataGridTemplateColumn Header="Data Type" Width="90">
+                        <DataGridTemplateColumn Header="Data Type" SortMemberPath="DataType" Width="90">
                             <DataGridTemplateColumn.CellTemplate>
                                 <DataTemplate><TextBlock Text="{Binding DataType}" /></DataTemplate>
                             </DataGridTemplateColumn.CellTemplate>
@@ -92,7 +92,7 @@
                                 </DataTemplate>
                             </DataGridTemplateColumn.CellEditingTemplate>
                         </DataGridTemplateColumn>
-                        <DataGridTemplateColumn Header="Scan Group" Width="100">
+                        <DataGridTemplateColumn Header="Scan Group" SortMemberPath="ScanGroup" Width="100">
                             <DataGridTemplateColumn.CellTemplate>
                                 <DataTemplate><TextBlock Text="{Binding ScanGroup}" /></DataTemplate>
                             </DataGridTemplateColumn.CellTemplate>

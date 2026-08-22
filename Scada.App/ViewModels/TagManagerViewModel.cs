@@ -521,6 +521,16 @@ public sealed class TagManagerViewModel : INotifyPropertyChanged, IWorkspaceLife
             ApplyExplicitBulkValues(tag);
         }
 
+        var blockingIssues = RuntimeOptionsValidation.CollectIssues(candidate)
+            .Where(issue => issue.IsBlocking)
+            .ToArray();
+        if (blockingIssues.Length > 0)
+        {
+            var firstIssue = blockingIssues[0];
+            StatusText = $"{description} blocked: {firstIssue.Code} — {firstIssue.Message}";
+            return;
+        }
+
         _session.ReplaceWorkingProject(candidate);
         SetSelection(selected.Select(row => (object)_rowsById[row.Id]));
         RefreshValidation();

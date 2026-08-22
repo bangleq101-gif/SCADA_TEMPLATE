@@ -194,6 +194,41 @@ public sealed class TagManagerTests
     }
 
     [Fact]
+    public void BulkEditRejectsBlockingCandidateBeforeWorkingProjectMutation()
+    {
+        var context = CreateContext();
+        context.TagManager.Rows[0].HistoryProfile = string.Empty;
+        context.TagManager.SetSelection([context.TagManager.Rows[0]]);
+        context.TagManager.BulkEdit.HistoryEnabled = BulkEditValue<bool>.Explicit(true);
+
+        context.TagManager.ApplyBulkEdit();
+
+        var tag = context.Session.WorkingProject.Tags.Single(tag => tag.Id == "T1");
+        Assert.False(tag.HistoryEnabled);
+        Assert.Equal(string.Empty, tag.HistoryProfile);
+        Assert.Same(context.TagManager.Rows[0], context.TagManager.SelectedRow);
+        Assert.Contains("blocked", context.TagManager.StatusText, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("HISTORY_PROFILE_REQUIRED", context.TagManager.StatusText, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void BulkEditAllowsWarningOnlyCandidate()
+    {
+        var context = CreateContext();
+        context.TagManager.SetSelection([context.TagManager.Rows[0]]);
+        context.TagManager.BulkEdit.HistoryProfile = BulkEditValue<string>.Explicit("FutureHistory");
+
+        context.TagManager.ApplyBulkEdit();
+
+        var tag = context.Session.WorkingProject.Tags.Single(tag => tag.Id == "T1");
+        Assert.Equal("FutureHistory", tag.HistoryProfile);
+        Assert.Contains("applied", context.TagManager.StatusText, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains(
+            context.Session.ValidationIssues,
+            issue => issue.Code == "HISTORY_PROFILE_UNKNOWN" && !issue.IsBlocking);
+    }
+
+    [Fact]
     public void DeleteCancellationDoesNotMutateWorkingProject()
     {
         var context = CreateContext();

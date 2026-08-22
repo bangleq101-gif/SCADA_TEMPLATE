@@ -30,12 +30,20 @@ public sealed record TagImportConflict(
 
 public sealed class TagImportPreparation
 {
+    private readonly IReadOnlyList<PreparedTagImport> _nonConflictingCandidates;
+
     public TagImportPreparation(
         IReadOnlyList<PreparedTagImport> candidates,
         IReadOnlyList<TagImportConflict> conflicts)
     {
         Candidates = candidates;
         Conflicts = conflicts;
+        var conflictedSourceRows = conflicts
+            .Select(conflict => conflict.SourceRow)
+            .ToHashSet();
+        _nonConflictingCandidates = candidates
+            .Where(candidate => !conflictedSourceRows.Contains(candidate.SourceRow))
+            .ToArray();
     }
 
     public IReadOnlyList<PreparedTagImport> Candidates { get; }
@@ -44,10 +52,7 @@ public sealed class TagImportPreparation
 
     public bool HasConflicts => Conflicts.Count > 0;
 
-    public IReadOnlyList<PreparedTagImport> NonConflictingCandidates =>
-        Candidates
-            .Where(candidate => !Conflicts.Any(conflict => conflict.SourceRow == candidate.SourceRow))
-            .ToArray();
+    public IReadOnlyList<PreparedTagImport> NonConflictingCandidates => _nonConflictingCandidates;
 }
 
 public interface ITagImportDecisionService

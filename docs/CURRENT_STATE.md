@@ -8,7 +8,7 @@ Milestone 4 — Tag Manager
 
 Status:
 
-Implemented and stabilized on `feature/milestone-4-tag-manager`; pending source review and PR.
+Implemented, stabilized and source-reviewed on `feature/milestone-4-tag-manager`; pending PR.
 
 ## Implemented in Milestone 1
 
@@ -91,7 +91,7 @@ n PLC
 
 - `dotnet restore Scada.sln --ignore-failed-sources` — PASS.
 - `dotnet build Scada.sln -c Release --no-restore` — PASS with 0 warnings and 0 errors.
-- `dotnet test Scada.sln -c Release --no-build` — PASS; 108 tests, 0 failures (47 App, 32 Runtime, 3 Core, 3 Drivers, 23 Infrastructure).
+- `dotnet test Scada.sln -c Release --no-build` — PASS; 110 tests, 0 failures (49 App, 32 Runtime, 3 Core, 3 Drivers, 23 Infrastructure).
 - `git diff --check` — PASS.
 - WPF startup smoke test — PASS; `Scada.App` stayed running through the startup check and resolved `MainWindow` with resources/templates loaded without a startup DI/XAML exception.
 - Copy-folder portability verification — PASS on a fresh copy outside the repository; restore/build and explicit project-file startup do not depend on the original folder, and the project document remains unchanged.
