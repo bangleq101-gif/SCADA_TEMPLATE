@@ -8,11 +8,11 @@ Milestone 3 — Shell and Workspaces
 
 Status:
 
-Implemented and source-reviewed on `feature/milestone-3-shell-workspaces`; PR #3 is open and pending merge.
+Completed and merged to `main` via PR #3.
 
-Base implementation commit:
+Merge commit:
 
-`3e7ffee0356bc1711888daee8be79dc2f7d414e0`
+`c39813d6047236f903f15fa0bb5fc5a105d7b77b`
 
 ## Implemented in Milestone 1
 
