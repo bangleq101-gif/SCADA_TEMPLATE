@@ -63,7 +63,7 @@ public sealed class NavigationItem : INotifyPropertyChanged
     public bool IsSelected
     {
         get => _isSelected;
-        set
+        private set
         {
             if (_isSelected == value)
             {
@@ -74,6 +74,8 @@ public sealed class NavigationItem : INotifyPropertyChanged
             OnPropertyChanged();
         }
     }
+
+    internal void SetSelected(bool selected) => IsSelected = selected;
 
     private void OnPropertyChanged([CallerMemberName] string? propertyName = null) =>
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));

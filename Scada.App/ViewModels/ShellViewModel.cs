@@ -79,7 +79,7 @@ public sealed class ShellViewModel : INotifyPropertyChanged
     {
         var selected = item.IsNavigable
             && string.Equals(item.RouteKey, routeKey, StringComparison.OrdinalIgnoreCase);
-        item.IsSelected = selected;
+        item.SetSelected(selected);
 
         var childSelected = false;
         foreach (var child in item.Children)

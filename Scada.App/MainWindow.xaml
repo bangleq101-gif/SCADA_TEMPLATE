@@ -10,7 +10,8 @@
         <DataTemplate DataType="{x:Type vm:MonitoringViewModel}"><views:MonitoringView /></DataTemplate>
         <DataTemplate DataType="{x:Type vm:EngineeringViewModel}"><views:EngineeringView /></DataTemplate>
         <HierarchicalDataTemplate x:Key="NavigationItemTemplate"
-                                  ItemsSource="{Binding Children}">
+                                  ItemsSource="{Binding Children}"
+                                  ItemContainerStyle="{StaticResource NavigationTreeViewItemStyle}">
             <Button Content="{Binding Title}"
                     Command="{Binding DataContext.NavigateCommand, RelativeSource={RelativeSource AncestorType=Window}}"
                     CommandParameter="{Binding}"
@@ -45,19 +46,11 @@
             <Border Grid.Column="0" Background="{StaticResource NavigationBrush}" Padding="12,16">
                 <TreeView ItemsSource="{Binding NavigationItems}"
                           ItemTemplate="{StaticResource NavigationItemTemplate}"
+                          ItemContainerStyle="{StaticResource NavigationTreeViewItemStyle}"
                           Background="Transparent"
                           BorderThickness="0"
                           Foreground="White"
                           ScrollViewer.VerticalScrollBarVisibility="Auto">
-                    <TreeView.ItemContainerStyle>
-                        <Style TargetType="TreeViewItem">
-                            <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}" />
-                            <Setter Property="IsSelected" Value="{Binding IsSelected, Mode=TwoWay}" />
-                            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
-                            <Setter Property="Padding" Value="0" />
-                            <Setter Property="Margin" Value="0,0,0,8" />
-                        </Style>
-                    </TreeView.ItemContainerStyle>
                 </TreeView>
             </Border>
             <Border Grid.Column="1" Padding="28" Background="{StaticResource WindowBrush}">

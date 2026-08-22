@@ -17,6 +17,15 @@ public sealed class ShellNavigationTests
     }
 
     [Fact]
+    public void SelectedStateHasNoPublicSetter()
+    {
+        var property = typeof(NavigationItem).GetProperty(nameof(NavigationItem.IsSelected));
+
+        Assert.NotNull(property);
+        Assert.Null(property!.GetSetMethod());
+    }
+
+    [Fact]
     public void EachWorkspaceGroupHasTheExpectedCanonicalLeaf()
     {
         var context = CreateContext();
