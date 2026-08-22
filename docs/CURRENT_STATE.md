@@ -8,7 +8,7 @@ Milestone 3 — Shell and Workspaces
 
 Status:
 
-Implemented on `feature/milestone-3-shell-workspaces`; pending source review, PR and merge.
+Implemented and source-reviewed on `feature/milestone-3-shell-workspaces`; PR #3 is open and pending merge.
 
 Base implementation commit:
 
@@ -76,7 +76,7 @@ n PLC
 
 - `dotnet restore Scada.sln --ignore-failed-sources` — PASS.
 - `dotnet build Scada.sln -c Release --no-restore` — PASS with 0 warnings and 0 errors.
-- `dotnet test Scada.sln -c Release --no-build` — PASS; 63 tests, 0 failures (18 App, 32 Runtime, 3 Core, 3 Drivers, 7 Infrastructure).
+- `dotnet test Scada.sln -c Release --no-build` — PASS; 64 tests, 0 failures (19 App, 32 Runtime, 3 Core, 3 Drivers, 7 Infrastructure).
 - `git diff --check` — PASS.
 - WPF startup smoke test — PASS; `Scada.App` stayed running through the startup check and resolved `MainWindow` with resources/templates loaded without a startup DI/XAML exception.
 - Copy-folder portability verification — PASS on a fresh copy outside the repository; restore/build does not depend on the original folder.
