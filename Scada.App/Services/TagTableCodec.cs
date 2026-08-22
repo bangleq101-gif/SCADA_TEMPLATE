@@ -68,7 +68,6 @@ internal static class TagTableCodec
             }
         }
 
-        RequireHeader(headerIndexes, "Id");
         RequireHeader(headerIndexes, "Name");
         var tags = new List<TagDefinition>();
         for (var rowIndex = 1; rowIndex < rows.Count; rowIndex++)

@@ -64,6 +64,8 @@ public partial class App : Application
                 projectPath,
                 projectStore));
             builder.Services.AddSingleton<IClipboardAdapter, WpfClipboardAdapter>();
+            builder.Services.AddSingleton<ITagImportDecisionService, WpfTagImportDecisionService>();
+            builder.Services.AddSingleton<IDeleteConfirmation, WpfDeleteConfirmation>();
             builder.Services.AddSingleton<OperationViewModel>();
             builder.Services.AddSingleton<MachineSettingsViewModel>();
             builder.Services.AddSingleton<MonitoringViewModel>();

@@ -9,6 +9,7 @@ namespace Scada.App.ViewModels;
 public sealed class TagEditorRowViewModel : INotifyPropertyChanged, INotifyDataErrorInfo
 {
     private readonly Dictionary<string, string[]> _errors = new(StringComparer.OrdinalIgnoreCase);
+    private IReadOnlyList<ValidationIssue> _warnings = [];
     private TagQuality _quality = TagQuality.NotConfigured;
     private object? _value;
     private DateTimeOffset? _timestamp;
@@ -68,7 +69,11 @@ public sealed class TagEditorRowViewModel : INotifyPropertyChanged, INotifyDataE
 
     public bool HasErrors => _errors.Count > 0;
 
-    public bool HasWarnings => _errors.Values.SelectMany(messages => messages).Any(message => message.StartsWith("Warning:", StringComparison.Ordinal));
+    public bool HasWarnings => _warnings.Count > 0;
+
+    public IReadOnlyList<ValidationIssue> Warnings => _warnings;
+
+    public string WarningSummary => string.Join(Environment.NewLine, Warnings.Select(issue => issue.Message));
 
     public bool HasRuntimeConfigurationWarning { get; private set; }
 
@@ -83,6 +88,11 @@ public sealed class TagEditorRowViewModel : INotifyPropertyChanged, INotifyDataE
 
         return _errors.TryGetValue(propertyName, out var messages) ? messages : [];
     }
+
+    public IEnumerable<ValidationIssue> GetWarnings(string? propertyName = null) =>
+        propertyName is null
+            ? Warnings
+            : Warnings.Where(issue => string.Equals(issue.PropertyName, propertyName, StringComparison.OrdinalIgnoreCase));
 
     public void ApplyRuntimeValue(TagValue value, string status)
     {
@@ -104,29 +114,34 @@ public sealed class TagEditorRowViewModel : INotifyPropertyChanged, INotifyDataE
 
     public void SetValidationIssues(IEnumerable<ValidationIssue> issues)
     {
-        var next = issues
+        var issuesArray = issues.ToArray();
+        var nextErrors = issuesArray
+            .Where(issue => issue.IsBlocking)
             .GroupBy(issue => issue.PropertyName ?? string.Empty, StringComparer.OrdinalIgnoreCase)
             .ToDictionary(
                 group => group.Key,
-                group => group.Select(issue =>
-                    issue.IsBlocking ? issue.Message : $"Warning: {issue.Message}").ToArray(),
+                group => group.Select(issue => issue.Message).ToArray(),
                 StringComparer.OrdinalIgnoreCase);
+        var nextWarnings = issuesArray.Where(issue => !issue.IsBlocking).ToArray();
 
-        var changedProperties = _errors.Keys.Union(next.Keys, StringComparer.OrdinalIgnoreCase).ToArray();
+        var changedErrorProperties = _errors.Keys.Union(nextErrors.Keys, StringComparer.OrdinalIgnoreCase).ToArray();
         _errors.Clear();
-        foreach (var pair in next)
+        foreach (var pair in nextErrors)
         {
             _errors[pair.Key] = pair.Value;
         }
 
-        HasRuntimeConfigurationWarning = issues.Any(issue => issue.Code == "RUNTIME_RESTART_REQUIRED");
-        foreach (var property in changedProperties)
+        _warnings = nextWarnings;
+        HasRuntimeConfigurationWarning = issuesArray.Any(issue => issue.Code == "RUNTIME_RESTART_REQUIRED");
+        foreach (var property in changedErrorProperties)
         {
             ErrorsChanged?.Invoke(this, new DataErrorsChangedEventArgs(property));
         }
 
         OnPropertyChanged(nameof(HasErrors));
         OnPropertyChanged(nameof(HasWarnings));
+        OnPropertyChanged(nameof(Warnings));
+        OnPropertyChanged(nameof(WarningSummary));
         OnPropertyChanged(nameof(HasRuntimeConfigurationWarning));
     }
 

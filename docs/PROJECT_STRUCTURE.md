@@ -122,7 +122,7 @@ save/revert, validation, TSV clipboard and CSV interchange
 selected-row TagCache quality observation only
 ```
 
-The Tag Manager owns project editing in `Scada.App`; it does not read PLCs, change Runtime polling or provide live runtime reconfiguration. Runtime-affecting edits are marked restart-required.
+The Tag Manager owns project editing in `Scada.App`; import data is prepared and conflict-checked before a single candidate mutation, and bulk edits apply only explicit field states. It does not read PLCs, change Runtime polling or provide live runtime reconfiguration. Runtime-affecting edits are marked restart-required. BuildRows seeds a quality snapshot with one `TryGet` per tag and creates no subscriptions; only the selected persisted tag may own one live subscription.
 
 ## Portable configuration
 

@@ -36,14 +36,30 @@
                     <RowDefinition Height="*" />
                     <RowDefinition Height="Auto" />
                 </Grid.RowDefinitions>
-                <WrapPanel Grid.Row="0" Margin="0,0,0,8">
-                    <TextBox Width="220" Margin="0,0,8,0" Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}" ToolTip="Search Id, name, device, address, description or unit" />
-                    <ComboBox Width="100" Margin="0,0,8,0" ItemsSource="{Binding EnabledFilterOptions}" SelectedItem="{Binding EnabledFilter}" />
-                    <ComboBox Width="140" Margin="0,0,8,0" ItemsSource="{Binding DeviceFilterOptions}" SelectedItem="{Binding DeviceFilter}" />
-                    <ComboBox Width="100" Margin="0,0,8,0" ItemsSource="{Binding DataTypeFilterOptions}" SelectedItem="{Binding DataTypeFilter}" />
-                    <ComboBox Width="120" Margin="0,0,8,0" ItemsSource="{Binding ScanGroupFilterOptions}" SelectedItem="{Binding ScanGroupFilter}" />
-                    <CheckBox Content="Errors only" VerticalAlignment="Center" IsChecked="{Binding ValidationOnly}" />
-                </WrapPanel>
+                <StackPanel Grid.Row="0" Margin="0,0,0,8">
+                    <WrapPanel>
+                        <TextBox Width="220" Margin="0,0,8,0" Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}" ToolTip="Search Id, name, device, address, description or unit" />
+                        <ComboBox Width="100" Margin="0,0,8,0" ItemsSource="{Binding EnabledFilterOptions}" SelectedItem="{Binding EnabledFilter}" />
+                        <ComboBox Width="140" Margin="0,0,8,0" ItemsSource="{Binding DeviceFilterOptions}" SelectedItem="{Binding DeviceFilter}" />
+                        <ComboBox Width="100" Margin="0,0,8,0" ItemsSource="{Binding DataTypeFilterOptions}" SelectedItem="{Binding DataTypeFilter}" />
+                        <ComboBox Width="120" Margin="0,0,8,0" ItemsSource="{Binding ScanGroupFilterOptions}" SelectedItem="{Binding ScanGroupFilter}" />
+                        <CheckBox Content="Errors only" VerticalAlignment="Center" IsChecked="{Binding ValidationOnly}" />
+                    </WrapPanel>
+                    <Expander Header="Bulk Edit" Margin="0,8,0,0">
+                        <WrapPanel Margin="4">
+                            <ComboBox Width="110" Margin="0,0,6,0" ItemsSource="{Binding BulkEnabledOptions}" SelectedItem="{Binding BulkEdit.Enabled, Mode=TwoWay}" DisplayMemberPath="DisplayName" ToolTip="Enabled" />
+                            <ComboBox Width="140" Margin="0,0,6,0" ItemsSource="{Binding BulkDeviceOptions}" SelectedItem="{Binding BulkEdit.DeviceId, Mode=TwoWay}" DisplayMemberPath="DisplayName" ToolTip="Device" />
+                            <ComboBox Width="110" Margin="0,0,6,0" ItemsSource="{Binding BulkDataTypeOptions}" SelectedItem="{Binding BulkEdit.DataType, Mode=TwoWay}" DisplayMemberPath="DisplayName" ToolTip="Data Type" />
+                            <ComboBox Width="130" Margin="0,0,6,0" ItemsSource="{Binding BulkScanGroupOptions}" SelectedItem="{Binding BulkEdit.ScanGroup, Mode=TwoWay}" DisplayMemberPath="DisplayName" ToolTip="Scan Group" />
+                            <ComboBox Width="120" Margin="0,0,6,0" ItemsSource="{Binding BulkAccessModeOptions}" SelectedItem="{Binding BulkEdit.AccessMode, Mode=TwoWay}" DisplayMemberPath="DisplayName" ToolTip="Access Mode" />
+                            <ComboBox Width="130" Margin="0,0,6,0" ItemsSource="{Binding BulkHistoryEnabledOptions}" SelectedItem="{Binding BulkEdit.HistoryEnabled, Mode=TwoWay}" DisplayMemberPath="DisplayName" ToolTip="History Enabled" />
+                            <ComboBox Width="130" Margin="0,0,6,0" ItemsSource="{Binding BulkHistoryProfileOptions}" SelectedItem="{Binding BulkEdit.HistoryProfile, Mode=TwoWay}" DisplayMemberPath="DisplayName" ToolTip="History Profile" />
+                            <ComboBox Width="130" Margin="0,0,6,0" ItemsSource="{Binding BulkMqttPublishEnabledOptions}" SelectedItem="{Binding BulkEdit.MqttPublishEnabled, Mode=TwoWay}" DisplayMemberPath="DisplayName" ToolTip="MQTT Enabled" />
+                            <ComboBox Width="130" Margin="0,0,6,0" ItemsSource="{Binding BulkMqttProfileOptions}" SelectedItem="{Binding BulkEdit.MqttProfile, Mode=TwoWay}" DisplayMemberPath="DisplayName" ToolTip="MQTT Profile" />
+                            <Button Content="Apply bulk edit" Command="{Binding ApplyBulkEditCommand}" Style="{StaticResource PrimaryButtonStyle}" />
+                        </WrapPanel>
+                    </Expander>
+                </StackPanel>
                 <DataGrid x:Name="TagGrid"
                           Grid.Row="1"
                           ItemsSource="{Binding ItemsView}"
@@ -55,14 +71,42 @@
                     <DataGrid.Columns>
                         <DataGridCheckBoxColumn Header="Enabled" Binding="{Binding Enabled, UpdateSourceTrigger=PropertyChanged}" Width="70" />
                         <DataGridTextColumn Header="Name" Binding="{Binding Name, UpdateSourceTrigger=PropertyChanged}" Width="1.4*" />
-                        <DataGridTextColumn Header="Device" Binding="{Binding DeviceId, UpdateSourceTrigger=PropertyChanged}" Width="1*" />
+                        <DataGridTemplateColumn Header="Device" Width="1*">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate><TextBlock Text="{Binding DeviceId}" /></DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                            <DataGridTemplateColumn.CellEditingTemplate>
+                                <DataTemplate>
+                                    <ComboBox ItemsSource="{Binding DataContext.DeviceOptions, RelativeSource={RelativeSource AncestorType=DataGrid}}" Text="{Binding DeviceId, UpdateSourceTrigger=PropertyChanged}" IsEditable="True" />
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellEditingTemplate>
+                        </DataGridTemplateColumn>
                         <DataGridTextColumn Header="Address" Binding="{Binding Address, UpdateSourceTrigger=PropertyChanged}" Width="1*" />
-                        <DataGridTextColumn Header="Data Type" Binding="{Binding DataType}" Width="90" />
-                        <DataGridTextColumn Header="Scan Group" Binding="{Binding ScanGroup, UpdateSourceTrigger=PropertyChanged}" Width="100" />
+                        <DataGridTemplateColumn Header="Data Type" Width="90">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate><TextBlock Text="{Binding DataType}" /></DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                            <DataGridTemplateColumn.CellEditingTemplate>
+                                <DataTemplate>
+                                    <ComboBox ItemsSource="{Binding DataContext.DataTypeOptions, RelativeSource={RelativeSource AncestorType=DataGrid}}" SelectedItem="{Binding DataType, UpdateSourceTrigger=PropertyChanged}" />
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellEditingTemplate>
+                        </DataGridTemplateColumn>
+                        <DataGridTemplateColumn Header="Scan Group" Width="100">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate><TextBlock Text="{Binding ScanGroup}" /></DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                            <DataGridTemplateColumn.CellEditingTemplate>
+                                <DataTemplate>
+                                    <ComboBox ItemsSource="{Binding DataContext.ScanGroupOptions, RelativeSource={RelativeSource AncestorType=DataGrid}}" Text="{Binding ScanGroup, UpdateSourceTrigger=PropertyChanged}" IsEditable="True" />
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellEditingTemplate>
+                        </DataGridTemplateColumn>
                         <DataGridCheckBoxColumn Header="History" Binding="{Binding HistoryEnabled, UpdateSourceTrigger=PropertyChanged}" Width="70" />
                         <DataGridTextColumn Header="History Profile" Binding="{Binding HistoryProfile, UpdateSourceTrigger=PropertyChanged}" Width="110" />
                         <DataGridCheckBoxColumn Header="MQTT" Binding="{Binding MqttPublishEnabled, UpdateSourceTrigger=PropertyChanged}" Width="65" />
-                        <DataGridTextColumn Header="Quality" Binding="{Binding Quality}" Width="100" />
+                        <DataGridTextColumn Header="Warnings" Binding="{Binding WarningSummary}" Width="1.4*" />
+                        <DataGridTextColumn Header="Quality Snapshot" Binding="{Binding Quality}" Width="120" />
                         <DataGridTextColumn Header="Runtime" Binding="{Binding RuntimeStatus}" Width="1.3*" />
                     </DataGrid.Columns>
                 </DataGrid>
@@ -90,9 +134,9 @@
                         <TextBlock Grid.Row="0" Grid.Column="4" Text="Access" Style="{StaticResource FieldLabelTextStyle}" />
                         <ComboBox Grid.Row="0" Grid.Column="5" ItemsSource="{Binding DataContext.AccessModeOptions, ElementName=Root}" SelectedItem="{Binding AccessMode, UpdateSourceTrigger=PropertyChanged}" Margin="4" />
                         <TextBlock Grid.Row="1" Grid.Column="0" Text="Device" Style="{StaticResource FieldLabelTextStyle}" />
-                        <ComboBox Grid.Row="1" Grid.Column="1" ItemsSource="{Binding DataContext.DeviceFilterOptions, ElementName=Root}" Text="{Binding DeviceId, UpdateSourceTrigger=PropertyChanged}" IsEditable="True" Margin="4" />
+                        <ComboBox Grid.Row="1" Grid.Column="1" ItemsSource="{Binding DataContext.DeviceOptions, ElementName=Root}" Text="{Binding DeviceId, UpdateSourceTrigger=PropertyChanged}" IsEditable="True" Margin="4" />
                         <TextBlock Grid.Row="1" Grid.Column="2" Text="Scan Group" Style="{StaticResource FieldLabelTextStyle}" />
-                        <ComboBox Grid.Row="1" Grid.Column="3" ItemsSource="{Binding DataContext.ScanGroupFilterOptions, ElementName=Root}" Text="{Binding ScanGroup, UpdateSourceTrigger=PropertyChanged}" IsEditable="True" Margin="4" />
+                        <ComboBox Grid.Row="1" Grid.Column="3" ItemsSource="{Binding DataContext.ScanGroupOptions, ElementName=Root}" Text="{Binding ScanGroup, UpdateSourceTrigger=PropertyChanged}" IsEditable="True" Margin="4" />
                         <TextBlock Grid.Row="1" Grid.Column="4" Text="Data Type" Style="{StaticResource FieldLabelTextStyle}" />
                         <ComboBox Grid.Row="1" Grid.Column="5" ItemsSource="{Binding DataContext.DataTypeOptions, ElementName=Root}" SelectedItem="{Binding DataType, UpdateSourceTrigger=PropertyChanged}" Margin="4" />
                         <TextBlock Grid.Row="2" Grid.Column="0" Text="Min" Style="{StaticResource FieldLabelTextStyle}" />

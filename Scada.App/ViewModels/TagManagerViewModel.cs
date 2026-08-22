@@ -17,6 +17,8 @@ public sealed class TagManagerViewModel : INotifyPropertyChanged, IWorkspaceLife
     private readonly ProjectEditSession _session;
     private readonly ITagCache _cache;
     private readonly IClipboardAdapter _clipboard;
+    private readonly ITagImportDecisionService _importDecision;
+    private readonly IDeleteConfirmation _deleteConfirmation;
     private readonly object _lifecycleSync = new();
     private readonly Dictionary<string, TagEditorRowViewModel> _rowsById = new(StringComparer.OrdinalIgnoreCase);
     private IDisposable? _selectedSubscription;
@@ -35,11 +37,15 @@ public sealed class TagManagerViewModel : INotifyPropertyChanged, IWorkspaceLife
     public TagManagerViewModel(
         ProjectEditSession session,
         ITagCache cache,
-        IClipboardAdapter clipboard)
+        IClipboardAdapter clipboard,
+        ITagImportDecisionService importDecision,
+        IDeleteConfirmation deleteConfirmation)
     {
         _session = session ?? throw new ArgumentNullException(nameof(session));
         _cache = cache ?? throw new ArgumentNullException(nameof(cache));
         _clipboard = clipboard ?? throw new ArgumentNullException(nameof(clipboard));
+        _importDecision = importDecision ?? throw new ArgumentNullException(nameof(importDecision));
+        _deleteConfirmation = deleteConfirmation ?? throw new ArgumentNullException(nameof(deleteConfirmation));
 
         Rows = [];
         SelectedRows = [];
@@ -57,6 +63,7 @@ public sealed class TagManagerViewModel : INotifyPropertyChanged, IWorkspaceLife
         DisableSelectedCommand = new RelayCommand(_ => BulkSetEnabled(false));
         EnableHistoryCommand = new RelayCommand(_ => BulkSetHistoryEnabled(true));
         DisableHistoryCommand = new RelayCommand(_ => BulkSetHistoryEnabled(false));
+        ApplyBulkEditCommand = new RelayCommand(_ => ApplyBulkEdit());
 
         _session.PropertyChanged += OnSessionPropertyChanged;
         BuildRows();
@@ -74,6 +81,8 @@ public sealed class TagManagerViewModel : INotifyPropertyChanged, IWorkspaceLife
 
     public ObservableCollection<string> DeviceFilterOptions { get; } = ["All"];
 
+    public ObservableCollection<string> DeviceOptions { get; } = [];
+
     public IReadOnlyList<string> DataTypeFilterOptions { get; } = ["All", "Boolean", "Int32", "Int64", "Double", "String"];
 
     public IReadOnlyList<TagDataType> DataTypeOptions { get; } = Enum.GetValues<TagDataType>();
@@ -81,6 +90,63 @@ public sealed class TagManagerViewModel : INotifyPropertyChanged, IWorkspaceLife
     public IReadOnlyList<TagAccessMode> AccessModeOptions { get; } = Enum.GetValues<TagAccessMode>();
 
     public ObservableCollection<string> ScanGroupFilterOptions { get; } = ["All"];
+
+    public ObservableCollection<string> ScanGroupOptions { get; } = [];
+
+    public TagBulkEditModel BulkEdit { get; private set; } = new();
+
+    public IReadOnlyList<BulkEditValue<bool>> BulkEnabledOptions { get; } =
+    [
+        BulkEditValue<bool>.Unchanged,
+        BulkEditValue<bool>.Mixed,
+        BulkEditValue<bool>.Explicit(true),
+        BulkEditValue<bool>.Explicit(false)
+    ];
+
+    public IReadOnlyList<BulkEditValue<bool>> BulkHistoryEnabledOptions { get; } =
+    [
+        BulkEditValue<bool>.Unchanged,
+        BulkEditValue<bool>.Mixed,
+        BulkEditValue<bool>.Explicit(true),
+        BulkEditValue<bool>.Explicit(false)
+    ];
+
+    public IReadOnlyList<BulkEditValue<bool>> BulkMqttPublishEnabledOptions { get; } =
+    [
+        BulkEditValue<bool>.Unchanged,
+        BulkEditValue<bool>.Mixed,
+        BulkEditValue<bool>.Explicit(true),
+        BulkEditValue<bool>.Explicit(false)
+    ];
+
+    public IReadOnlyList<BulkEditValue<string>> BulkDeviceOptions =>
+        [BulkEditValue<string>.Unchanged, BulkEditValue<string>.Mixed, .. DeviceOptions.Select(value => BulkEditValue<string>.Explicit(value))];
+
+    public IReadOnlyList<BulkEditValue<string>> BulkScanGroupOptions =>
+        [BulkEditValue<string>.Unchanged, BulkEditValue<string>.Mixed, .. ScanGroupOptions.Select(value => BulkEditValue<string>.Explicit(value))];
+
+    public IReadOnlyList<BulkEditValue<TagDataType>> BulkDataTypeOptions =>
+        [BulkEditValue<TagDataType>.Unchanged, BulkEditValue<TagDataType>.Mixed, .. DataTypeOptions.Select(value => BulkEditValue<TagDataType>.Explicit(value))];
+
+    public IReadOnlyList<BulkEditValue<TagAccessMode>> BulkAccessModeOptions =>
+        [BulkEditValue<TagAccessMode>.Unchanged, BulkEditValue<TagAccessMode>.Mixed, .. AccessModeOptions.Select(value => BulkEditValue<TagAccessMode>.Explicit(value))];
+
+    public IReadOnlyList<BulkEditValue<string>> BulkHistoryProfileOptions { get; } =
+    [
+        BulkEditValue<string>.Unchanged,
+        BulkEditValue<string>.Mixed,
+        BulkEditValue<string>.Explicit("Digital"),
+        BulkEditValue<string>.Explicit("Analog"),
+        BulkEditValue<string>.Explicit("FastAnalog"),
+        BulkEditValue<string>.Explicit("Custom")
+    ];
+
+    public IReadOnlyList<BulkEditValue<string>> BulkMqttProfileOptions { get; } =
+    [
+        BulkEditValue<string>.Unchanged,
+        BulkEditValue<string>.Mixed,
+        BulkEditValue<string>.Explicit("Default")
+    ];
 
     public RelayCommand AddCommand { get; }
     public RelayCommand DuplicateCommand { get; }
@@ -94,6 +160,9 @@ public sealed class TagManagerViewModel : INotifyPropertyChanged, IWorkspaceLife
     public RelayCommand DisableSelectedCommand { get; }
     public RelayCommand EnableHistoryCommand { get; }
     public RelayCommand DisableHistoryCommand { get; }
+    public RelayCommand ApplyBulkEditCommand { get; }
+
+    public TagImportPreparation? LastImportPreparation { get; private set; }
 
     public bool IsActive
     {
@@ -116,6 +185,7 @@ public sealed class TagManagerViewModel : INotifyPropertyChanged, IWorkspaceLife
                 return;
             }
 
+            InvalidateSelectionGeneration();
             DisposeSelectedSubscription();
             _selectedRow = value;
             OnPropertyChanged();
@@ -264,6 +334,7 @@ public sealed class TagManagerViewModel : INotifyPropertyChanged, IWorkspaceLife
         }
 
         SelectedRow = selected.FirstOrDefault();
+        RefreshBulkEditModel();
     }
 
     public void ImportCsv(string path)
@@ -281,12 +352,19 @@ public sealed class TagManagerViewModel : INotifyPropertyChanged, IWorkspaceLife
 
     public void BulkSetEnabled(bool enabled)
     {
-        ApplyBulkChange(tag => tag.Enabled = enabled, enabled ? "Enabled" : "Disabled");
+        BulkEdit.Enabled = BulkEditValue<bool>.Explicit(enabled);
+        ApplyBulkEdit(enabled ? "Enabled" : "Disabled");
     }
 
     public void BulkSetHistoryEnabled(bool enabled)
     {
-        ApplyBulkChange(tag => tag.HistoryEnabled = enabled, enabled ? "History enabled" : "History disabled");
+        BulkEdit.HistoryEnabled = BulkEditValue<bool>.Explicit(enabled);
+        ApplyBulkEdit(enabled ? "History enabled" : "History disabled");
+    }
+
+    public void ApplyBulkEdit()
+    {
+        ApplyBulkEdit("Bulk edit");
     }
 
     private void AddTag()
@@ -340,6 +418,12 @@ public sealed class TagManagerViewModel : INotifyPropertyChanged, IWorkspaceLife
             return;
         }
 
+        if (!_deleteConfirmation.ConfirmDelete(selected.Length))
+        {
+            StatusText = "Delete cancelled; no project changes were made.";
+            return;
+        }
+
         var ids = selected.Select(row => row.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
         _session.WorkingProject.Tags.RemoveAll(tag => ids.Contains(tag.Id));
         BuildRows();
@@ -368,7 +452,6 @@ public sealed class TagManagerViewModel : INotifyPropertyChanged, IWorkspaceLife
     private void Revert()
     {
         _session.Revert();
-        BuildRows();
         RefreshValidation();
         StatusText = "Unsaved changes reverted.";
     }
@@ -423,7 +506,7 @@ public sealed class TagManagerViewModel : INotifyPropertyChanged, IWorkspaceLife
         }
     }
 
-    private void ApplyBulkChange(Action<TagDefinition> change, string description)
+    private void ApplyBulkEdit(string description)
     {
         var selected = SelectedRows.Count > 0 ? SelectedRows.ToArray() : SelectedRow is null ? [] : [SelectedRow];
         if (selected.Length == 0)
@@ -435,39 +518,113 @@ public sealed class TagManagerViewModel : INotifyPropertyChanged, IWorkspaceLife
         var ids = selected.Select(row => row.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
         foreach (var tag in candidate.Tags.Where(tag => ids.Contains(tag.Id)))
         {
-            change(tag);
+            ApplyExplicitBulkValues(tag);
         }
 
         _session.ReplaceWorkingProject(candidate);
-        BuildRows();
         SetSelection(selected.Select(row => (object)_rowsById[row.Id]));
         RefreshValidation();
         StatusText = $"{description} applied to {selected.Length} tag(s); Save when ready.";
     }
 
+    private void ApplyExplicitBulkValues(TagDefinition tag)
+    {
+        if (BulkEdit.Enabled.Kind == BulkEditValueKind.Explicit)
+        {
+            tag.Enabled = BulkEdit.Enabled.Value;
+        }
+
+        if (BulkEdit.DeviceId.Kind == BulkEditValueKind.Explicit)
+        {
+            tag.DeviceId = BulkEdit.DeviceId.Value;
+        }
+
+        if (BulkEdit.DataType.Kind == BulkEditValueKind.Explicit)
+        {
+            tag.DataType = BulkEdit.DataType.Value;
+        }
+
+        if (BulkEdit.ScanGroup.Kind == BulkEditValueKind.Explicit)
+        {
+            tag.ScanGroup = BulkEdit.ScanGroup.Value;
+        }
+
+        if (BulkEdit.AccessMode.Kind == BulkEditValueKind.Explicit)
+        {
+            tag.AccessMode = BulkEdit.AccessMode.Value;
+        }
+
+        if (BulkEdit.HistoryEnabled.Kind == BulkEditValueKind.Explicit)
+        {
+            tag.HistoryEnabled = BulkEdit.HistoryEnabled.Value;
+        }
+
+        if (BulkEdit.HistoryProfile.Kind == BulkEditValueKind.Explicit)
+        {
+            tag.HistoryProfile = BulkEdit.HistoryProfile.Value;
+        }
+
+        if (BulkEdit.MqttPublishEnabled.Kind == BulkEditValueKind.Explicit)
+        {
+            tag.MqttPublishEnabled = BulkEdit.MqttPublishEnabled.Value;
+        }
+
+        if (BulkEdit.MqttProfile.Kind == BulkEditValueKind.Explicit)
+        {
+            tag.MqttProfile = BulkEdit.MqttProfile.Value;
+        }
+    }
+
     private void ApplyImportedTags(IReadOnlyList<TagDefinition> imported, string operation)
     {
-        var candidate = ProjectSnapshotCloner.Clone(_session.WorkingProject);
-        foreach (var importedTag in imported)
+        var preparation = TagImportPreparer.Prepare(imported, _session.WorkingProject.Tags);
+        LastImportPreparation = preparation;
+        OnPropertyChanged(nameof(LastImportPreparation));
+        if (preparation.Candidates.Count == 0)
         {
-            var tag = CloneTag(importedTag);
-            if (candidate.Tags.Any(existing => string.Equals(existing.Id, tag.Id, StringComparison.OrdinalIgnoreCase)))
-            {
-                tag.Id = CreateUniqueId(candidate.Tags);
-            }
+            StatusText = $"{operation} contained no tag rows.";
+            return;
+        }
 
-            tag.Name = CreateUniqueName(tag.Name, candidate.Tags);
-            candidate.Tags.Add(tag);
+        var decision = _importDecision.Decide(preparation, operation);
+        if (decision == TagImportDecision.Cancel)
+        {
+            StatusText = $"{operation} cancelled; no project changes were made.";
+            return;
+        }
+
+        if (preparation.HasConflicts && decision == TagImportDecision.ApplyAll)
+        {
+            StatusText = $"{operation} blocked: resolve {preparation.Conflicts.Count} conflict(s) before applying.";
+            return;
+        }
+
+        var toApply = decision == TagImportDecision.AppendNonConflicting
+            ? preparation.NonConflictingCandidates
+            : preparation.Candidates;
+        if (toApply.Count == 0)
+        {
+            StatusText = $"{operation} produced no non-conflicting tags; no project changes were made.";
+            return;
+        }
+
+        var candidate = ProjectSnapshotCloner.Clone(_session.WorkingProject);
+        foreach (var prepared in toApply)
+        {
+            candidate.Tags.Add(CloneTag(prepared.Definition));
         }
 
         _session.ReplaceWorkingProject(candidate);
-        BuildRows();
         RefreshValidation();
-        StatusText = $"{operation} added {imported.Count} tag(s); Save when ready.";
+        var generatedCount = toApply.Count(candidateTag => candidateTag.IdGenerated);
+        StatusText = $"{operation} added {toApply.Count} tag(s)" +
+            (generatedCount == 0 ? string.Empty : $" ({generatedCount} Id(s) generated)") +
+            "; Save when ready.";
     }
 
     private void BuildRows()
     {
+        InvalidateSelectionGeneration();
         DisposeSelectedSubscription();
         foreach (var row in Rows)
         {
@@ -479,6 +636,15 @@ public sealed class TagManagerViewModel : INotifyPropertyChanged, IWorkspaceLife
         foreach (var tag in _session.WorkingProject.Tags)
         {
             var row = new TagEditorRowViewModel(tag);
+            if (_cache.TryGet(tag.Id, out var currentValue) && currentValue is not null)
+            {
+                row.ApplyRuntimeValue(currentValue, RuntimeStatusFor(row));
+            }
+            else
+            {
+                row.ApplyRuntimeUnavailable(RuntimeStatusFor(row));
+            }
+
             row.PropertyChanged += OnRowPropertyChanged;
             Rows.Add(row);
             _rowsById[tag.Id] = row;
@@ -487,7 +653,9 @@ public sealed class TagManagerViewModel : INotifyPropertyChanged, IWorkspaceLife
         SelectedRows.Clear();
         _selectedRow = null;
         OnPropertyChanged(nameof(SelectedRow));
-        RefreshFilterOptions();
+        BulkEdit = new TagBulkEditModel();
+        OnPropertyChanged(nameof(BulkEdit));
+        RefreshOptionCollections();
         ItemsView.Refresh();
         RefreshValidation();
     }
@@ -500,6 +668,8 @@ public sealed class TagManagerViewModel : INotifyPropertyChanged, IWorkspaceLife
             or nameof(TagEditorRowViewModel.RuntimeStatus)
             or nameof(TagEditorRowViewModel.HasErrors)
             or nameof(TagEditorRowViewModel.HasWarnings)
+            or nameof(TagEditorRowViewModel.Warnings)
+            or nameof(TagEditorRowViewModel.WarningSummary)
             or nameof(TagEditorRowViewModel.HasRuntimeConfigurationWarning))
         {
             return;
@@ -510,7 +680,7 @@ public sealed class TagManagerViewModel : INotifyPropertyChanged, IWorkspaceLife
         {
             changedRow.SetRuntimeStatus(RuntimeStatusFor(changedRow));
         }
-        RefreshFilterOptions();
+        RefreshBulkEditModel();
         ItemsView.Refresh();
         RefreshValidation();
     }
@@ -545,10 +715,27 @@ public sealed class TagManagerViewModel : INotifyPropertyChanged, IWorkspaceLife
         ItemsView.Refresh();
     }
 
-    private void RefreshFilterOptions()
+    private void RefreshOptionCollections()
     {
-        ReplaceOptions(DeviceFilterOptions, ["All", .. _session.WorkingProject.Devices.Select(device => device.Id).Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(id => id, StringComparer.OrdinalIgnoreCase)]);
-        ReplaceOptions(ScanGroupFilterOptions, ["All", .. _session.WorkingProject.ScanGroups.Select(group => group.Name).Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(name => name, StringComparer.OrdinalIgnoreCase)]);
+        var devices = _session.WorkingProject.Devices
+            .Select(device => device.Id)
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(id => id, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        var scanGroups = _session.WorkingProject.ScanGroups
+            .Select(group => group.Name)
+            .Where(name => !string.IsNullOrWhiteSpace(name))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(name => name, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        ReplaceOptions(DeviceFilterOptions, ["All", .. devices]);
+        ReplaceOptions(DeviceOptions, devices);
+        ReplaceOptions(ScanGroupFilterOptions, ["All", .. scanGroups]);
+        ReplaceOptions(ScanGroupOptions, scanGroups);
+        OnPropertyChanged(nameof(BulkDeviceOptions));
+        OnPropertyChanged(nameof(BulkScanGroupOptions));
     }
 
     private bool FilterRow(object item)
@@ -691,6 +878,20 @@ public sealed class TagManagerViewModel : INotifyPropertyChanged, IWorkspaceLife
         subscription?.Dispose();
     }
 
+    private void RefreshBulkEditModel()
+    {
+        BulkEdit = TagBulkEditModel.FromSelection(SelectedRows.Select(row => row.Definition));
+        OnPropertyChanged(nameof(BulkEdit));
+    }
+
+    private void InvalidateSelectionGeneration()
+    {
+        lock (_lifecycleSync)
+        {
+            _selectionGeneration++;
+        }
+    }
+
     private string RuntimeStatusFor(TagEditorRowViewModel row)
     {
         var runtimeTag = _session.StartupProject.Tags.FirstOrDefault(tag =>
@@ -764,8 +965,14 @@ public sealed class TagManagerViewModel : INotifyPropertyChanged, IWorkspaceLife
 
     private static void ReplaceOptions(ObservableCollection<string> target, IEnumerable<string> values)
     {
+        var next = values.ToArray();
+        if (target.SequenceEqual(next, StringComparer.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
         target.Clear();
-        foreach (var value in values)
+        foreach (var value in next)
         {
             target.Add(value);
         }

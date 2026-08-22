@@ -9,6 +9,8 @@ internal sealed class TestTagCache : ITagCache
     private readonly Dictionary<string, TagValue> _values = new(StringComparer.OrdinalIgnoreCase);
     private readonly List<TestSubscription> _subscriptions = [];
 
+    public int TryGetCount { get; private set; }
+
     public int ActiveSubscriptionCount
     {
         get
@@ -46,6 +48,7 @@ internal sealed class TestTagCache : ITagCache
     {
         lock (_sync)
         {
+            TryGetCount++;
             if (_values.TryGetValue(tagId, out var current))
             {
                 value = current;

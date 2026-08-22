@@ -28,6 +28,11 @@
 - Use one disposable selected-row TagCache subscription for runtime quality observation. Do not create a subscription per row or fan out to the whole table.
 - Keep validation rules in the shared Core validation source so load and edit behavior agree. Blocking issues reject save; warning metadata is preserved.
 - Use deterministic quoted CSV/TSV codecs for interchange. Do not use naive `Split(',')` parsing and do not place JSON on the primary clipboard path.
+- Treat CSV/TSV import as a prepare/decide/apply transaction. Never silently suffix, overwrite or regenerate a supplied conflicting Id/name.
+- Keep editor option lists separate from filter option lists; `All` is a filter sentinel and is never an editable DeviceId or ScanGroup value.
+- Model bulk fields as `Unchanged`, `Mixed` or `Explicit`; apply only explicit fields to one cloned candidate and validate once.
+- Seed row quality from one central TagCache snapshot per row. Keep live subscriptions limited to the selected persisted tag and invalidate every old selection generation.
+- Destructive delete requires an App-layer confirmation adapter; cancellation must leave the working project unchanged.
 
 ## Runtime polling rules
 

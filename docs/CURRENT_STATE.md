@@ -8,7 +8,7 @@ Milestone 4 — Tag Manager
 
 Status:
 
-Implemented on `feature/milestone-4-tag-manager`; pending source review and PR.
+Implemented and stabilized on `feature/milestone-4-tag-manager`; pending source review and PR.
 
 ## Implemented in Milestone 1
 
@@ -80,16 +80,22 @@ n PLC
 - Selected-row runtime quality refresh through the central `TagCache`; no direct PLC reads and no write command.
 - Virtualized editable DataGrid and compact selected-tag detail editor.
 - Portable `scripts/run-scada.ps1` launcher that passes an explicit absolute project path.
+- Unique generation for every selected-tag subscription lifetime, including selection re-entry and activation races.
+- Separate configured editor options from `All`-inclusive filter options; unknown device/scan-group references remain visible for repair.
+- Blocking errors separated from non-blocking warnings in row validation and the Errors-only filter.
+- Transactional CSV/TSV import preparation with explicit conflict decisions, deterministic generated IDs when the optional Id column is absent, and no silent identity renaming.
+- Explicit-state bulk editing for enabled/device/datatype/scan group/access/history/MQTT fields, with one candidate validation pass.
+- Delete confirmation abstraction and one-pass per-row quality snapshot seeding without subscription fan-out.
 
 ## Verified
 
 - `dotnet restore Scada.sln --ignore-failed-sources` — PASS.
 - `dotnet build Scada.sln -c Release --no-restore` — PASS with 0 warnings and 0 errors.
-- `dotnet test Scada.sln -c Release --no-build` — PASS; 94 tests, 0 failures (34 App, 32 Runtime, 3 Core, 3 Drivers, 23 Infrastructure).
+- `dotnet test Scada.sln -c Release --no-build` — PASS; 108 tests, 0 failures (47 App, 32 Runtime, 3 Core, 3 Drivers, 23 Infrastructure).
 - `git diff --check` — PASS.
 - WPF startup smoke test — PASS; `Scada.App` stayed running through the startup check and resolved `MainWindow` with resources/templates loaded without a startup DI/XAML exception.
 - Copy-folder portability verification — PASS on a fresh copy outside the repository; restore/build and explicit project-file startup do not depend on the original folder, and the project document remains unchanged.
-- GitNexus post-change review — PASS; no import cycles, no Runtime dependency on App/WPF/Drivers, and no TagCache source change.
+- GitNexus post-change review — PASS; 0 import cycles, no Runtime dependency on App/WPF/Drivers, no TagCache source change, and no direct PLC reads from Tag Manager.
 - UI automation remains out of scope.
 
 ## Not implemented — later milestones
@@ -112,5 +118,6 @@ n PLC
 - Project persistence currently supports schema version 1 only; migrations, multi-process conflict handling and undo/redo are deferred.
 - Project startup requires an explicit canonical `--project-file` path (the supplied launcher provides it); automatic project discovery and hot reload are intentionally not implemented.
 - Tag Manager validation is deterministic and synchronous; full UI automation, advanced tag scaling/offset semantics and runtime reconfiguration without restart remain later work.
+- Import conflict resolution currently offers explicit apply-all for conflict-free imports or append-non-conflicting/cancel for conflicted imports; identity regeneration after a conflict is deferred.
 
 Implementation must follow the ordered milestones in `docs/ROADMAP.md` and the constraints in `docs/SCADA_ARCHITECTURE_V1.md`. Do not jump ahead to MQTT, InfluxDB or other later milestones without explicit approval.
