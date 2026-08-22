@@ -111,6 +111,11 @@ public static class HistoryProfileValidation
     {
         ArgumentNullException.ThrowIfNull(profile);
 
+        if (!Enum.IsDefined(dataType))
+        {
+            return false;
+        }
+
         if (string.Equals(profile.Name, HistoryProfileDefaults.DigitalName, StringComparison.OrdinalIgnoreCase))
         {
             return dataType is TagDataType.Boolean or TagDataType.Int32 or TagDataType.Int64 or TagDataType.String;

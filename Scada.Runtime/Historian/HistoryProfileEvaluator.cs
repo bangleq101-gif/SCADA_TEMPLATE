@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Numerics;
 using Scada.Core.Configuration;
 using Scada.Core.History;
@@ -7,7 +8,7 @@ namespace Scada.Runtime.Historian;
 
 public sealed class HistoryProfileEvaluator(TimeProvider timeProvider)
 {
-    private readonly Dictionary<string, EvaluationState> _states =
+    private readonly ConcurrentDictionary<string, EvaluationState> _states =
         new(StringComparer.OrdinalIgnoreCase);
 
     public HistoryEvaluationResult Evaluate(
@@ -29,40 +30,43 @@ public sealed class HistoryProfileEvaluator(TimeProvider timeProvider)
         }
 
         var state = GetState(tag.Id);
-        if (state.HasSequence && value.Sequence <= state.LastSequence)
+        lock (state.Sync)
         {
-            return HistoryEvaluationResult.Suppressed(state.NextDueTimestamp);
-        }
+            if (state.HasSequence && value.Sequence <= state.LastSequence)
+            {
+                return HistoryEvaluationResult.Suppressed(state.NextDueTimestamp);
+            }
 
-        state.HasSequence = true;
-        state.LastSequence = value.Sequence;
-        if (!state.HasAccepted)
-        {
+            state.HasSequence = true;
+            state.LastSequence = value.Sequence;
+            if (!state.HasAccepted)
+            {
+                return Accept(runtimeId, tag, profile, value, normalized, recordedAtUtc, monotonicTimestamp, state);
+            }
+
+            var qualityChanged = state.LastQuality != value.Quality;
+            if (qualityChanged)
+            {
+                return Accept(runtimeId, tag, profile, value, normalized, recordedAtUtc, monotonicTimestamp, state);
+            }
+
+            if (value.Quality != TagQuality.Good)
+            {
+                return HistoryEvaluationResult.Suppressed(state.NextDueTimestamp);
+            }
+
+            if (profile.Mode == HistoryMode.Periodic || !ValueChanged(tag.DataType, state.LastValue, normalized, profile.Deadband))
+            {
+                return HistoryEvaluationResult.Suppressed(state.NextDueTimestamp);
+            }
+
+            if (!MinimumIntervalElapsed(profile, state, monotonicTimestamp))
+            {
+                return HistoryEvaluationResult.Suppressed(state.NextDueTimestamp);
+            }
+
             return Accept(runtimeId, tag, profile, value, normalized, recordedAtUtc, monotonicTimestamp, state);
         }
-
-        var qualityChanged = state.LastQuality != value.Quality;
-        if (qualityChanged)
-        {
-            return Accept(runtimeId, tag, profile, value, normalized, recordedAtUtc, monotonicTimestamp, state);
-        }
-
-        if (value.Quality != TagQuality.Good)
-        {
-            return HistoryEvaluationResult.Suppressed(state.NextDueTimestamp);
-        }
-
-        if (profile.Mode == HistoryMode.Periodic || !ValueChanged(tag.DataType, state.LastValue, normalized, profile.Deadband))
-        {
-            return HistoryEvaluationResult.Suppressed(state.NextDueTimestamp);
-        }
-
-        if (!MinimumIntervalElapsed(profile, state, monotonicTimestamp))
-        {
-            return HistoryEvaluationResult.Suppressed(state.NextDueTimestamp);
-        }
-
-        return Accept(runtimeId, tag, profile, value, normalized, recordedAtUtc, monotonicTimestamp, state);
     }
 
     public HistoryEvaluationResult EvaluatePeriodic(
@@ -83,17 +87,30 @@ public sealed class HistoryProfileEvaluator(TimeProvider timeProvider)
         }
 
         var state = GetState(tag.Id);
-        if (!state.HasAccepted || value.Quality != TagQuality.Good || profile.Mode == HistoryMode.OnChange)
+        lock (state.Sync)
         {
-            state.NextDueTimestamp = null;
-            return HistoryEvaluationResult.Suppressed();
-        }
+            if (!state.HasAccepted || value.Quality != TagQuality.Good || profile.Mode == HistoryMode.OnChange)
+            {
+                state.NextDueTimestamp = null;
+                return HistoryEvaluationResult.Suppressed();
+            }
 
-        return Accept(runtimeId, tag, profile, value, normalized, recordedAtUtc, monotonicTimestamp, state);
+            return Accept(runtimeId, tag, profile, value, normalized, recordedAtUtc, monotonicTimestamp, state);
+        }
     }
 
-    public long? GetNextDueTimestamp(string tagId) =>
-        _states.TryGetValue(tagId, out var state) ? state.NextDueTimestamp : null;
+    public long? GetNextDueTimestamp(string tagId)
+    {
+        if (!_states.TryGetValue(tagId, out var state))
+        {
+            return null;
+        }
+
+        lock (state.Sync)
+        {
+            return state.NextDueTimestamp;
+        }
+    }
 
     private HistoryEvaluationResult Accept(
         string runtimeId,
@@ -126,16 +143,8 @@ public sealed class HistoryProfileEvaluator(TimeProvider timeProvider)
         return new HistoryEvaluationResult(sample, false, null, state.NextDueTimestamp);
     }
 
-    private EvaluationState GetState(string tagId)
-    {
-        if (!_states.TryGetValue(tagId, out var state))
-        {
-            state = new EvaluationState();
-            _states[tagId] = state;
-        }
-
-        return state;
-    }
+    private EvaluationState GetState(string tagId) =>
+        _states.GetOrAdd(tagId, static _ => new EvaluationState());
 
     private bool MinimumIntervalElapsed(
         HistoryProfileDefinition profile,
@@ -214,6 +223,7 @@ public sealed class HistoryProfileEvaluator(TimeProvider timeProvider)
 
     private sealed class EvaluationState
     {
+        public object Sync { get; } = new();
         public bool HasAccepted { get; set; }
         public bool HasSequence { get; set; }
         public long LastSequence { get; set; }

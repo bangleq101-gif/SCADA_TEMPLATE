@@ -89,6 +89,110 @@ public sealed class HistorianRuntimeServiceTests
     }
 
     [Fact]
+    public async Task DroppedAcceptedSampleKeepsItsPeriodicSchedule()
+    {
+        var tag = CreateHistoryTag();
+        var cache = new TestHistorianTagCache();
+        var store = new TestHistoryStore(blockInitialization: true);
+        var options = CreateOptions(tag);
+        options.Historian.QueueCapacity = 1;
+        options.Historian.BatchSize = 1;
+        options.Historian.FlushIntervalMilliseconds = 10;
+        var profile = options.Historian.Profiles.Single(profile => profile.Name == "Analog");
+        profile.Deadband = 0;
+        profile.MinimumIntervalMilliseconds = 0;
+        profile.MaximumIntervalMilliseconds = 50;
+        await using var service = CreateService(options, cache, store);
+
+        await service.StartAsync(CancellationToken.None);
+        cache.Publish(new TagValue(tag.Id, 1d, TagQuality.Good, DateTimeOffset.UtcNow, 1));
+        cache.Publish(new TagValue(tag.Id, 2d, TagQuality.Good, DateTimeOffset.UtcNow, 2));
+
+        Assert.Equal(1, service.Snapshot.DroppedSamples);
+        store.ReleaseInitialization();
+        await WaitUntilAsync(() => store.WrittenSamples.Any(sample => sample.TagSequence == 2));
+        await service.StopAsync(CancellationToken.None);
+
+        Assert.Contains(store.WrittenSamples, sample => sample.TagSequence == 2);
+    }
+
+    [Fact]
+    public async Task DifferentTagCallbacksDoNotShareOneGlobalEvaluationLock()
+    {
+        var clock = new BlockingFrequencyTimeProvider();
+        var tagA = CreateHistoryTag("T1");
+        var tagB = CreateHistoryTag("T2");
+        var options = CreateOptions(tagA);
+        options.Tags.Add(tagB);
+        var cache = new TestHistorianTagCache();
+        var store = new TestHistoryStore(blockInitialization: true);
+        await using var service = CreateService(options, cache, store, clock);
+
+        await service.StartAsync(CancellationToken.None);
+        clock.BlockNextFrequency();
+        var firstTask = Task.Run(() => cache.Publish(
+            new TagValue(tagA.Id, 1d, TagQuality.Good, clock.GetUtcNow(), 1)));
+        clock.WaitUntilBlocked();
+
+        Task? secondTask = null;
+        try
+        {
+            secondTask = Task.Run(() => cache.Publish(
+                new TagValue(tagB.Id, 1d, TagQuality.Good, clock.GetUtcNow(), 1)));
+            var completed = await Task.WhenAny(secondTask, Task.Delay(TimeSpan.FromSeconds(1)));
+            Assert.Same(secondTask, completed);
+            await secondTask;
+        }
+        finally
+        {
+            clock.ReleaseFrequency();
+            await firstTask;
+            if (secondTask is not null)
+            {
+                await secondTask;
+            }
+
+            store.ReleaseInitialization();
+            await service.StopAsync(CancellationToken.None);
+        }
+    }
+
+    [Fact]
+    public async Task SlowPreflightIsBoundedAndBackgroundInitializationCanStart()
+    {
+        var tag = CreateHistoryTag();
+        var cache = new TestHistorianTagCache();
+        var store = new BlockingPreflightHistoryStore();
+        await using var service = CreateService(CreateOptions(tag), cache, store);
+
+        var startTask = service.StartAsync(CancellationToken.None);
+        await store.PreflightStarted.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        await startTask.WaitAsync(TimeSpan.FromSeconds(2));
+        await store.Initialized.Task.WaitAsync(TimeSpan.FromSeconds(2));
+
+        Assert.Equal(1, store.InitializeCount);
+        store.ReleasePreflight();
+        await service.StopAsync(CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task InitializationRetryBackoffStopsWhenServiceStops()
+    {
+        var tag = CreateHistoryTag();
+        var cache = new TestHistorianTagCache();
+        var store = new TestHistoryStore(failInitializationAttempts: int.MaxValue);
+        var options = CreateOptions(tag);
+        options.Historian.ShutdownDrainTimeoutMilliseconds = 100;
+        await using var service = CreateService(options, cache, store);
+
+        await service.StartAsync(CancellationToken.None);
+        await store.InitializationAttempted.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        await service.StopAsync(CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(2));
+
+        Assert.True(store.InitializeCount >= 1);
+    }
+
+    [Fact]
     public async Task ExhaustedRecoverableBatchIsAbandonedAndLaterBatchContinues()
     {
         var tag = CreateHistoryTag();
@@ -115,8 +219,9 @@ public sealed class HistorianRuntimeServiceTests
     private static HistorianRuntimeService CreateService(
         RuntimeOptions options,
         TestHistorianTagCache cache,
-        TestHistoryStore store) =>
-        new(options, cache, store, NullLogger<HistorianRuntimeService>.Instance, TimeProvider.System);
+        IHistoryStore store,
+        TimeProvider? timeProvider = null) =>
+        new(options, cache, store, NullLogger<HistorianRuntimeService>.Instance, timeProvider ?? TimeProvider.System);
 
     private static RuntimeOptions CreateOptions(TagDefinition tag) => new()
     {
@@ -132,12 +237,12 @@ public sealed class HistorianRuntimeServiceTests
         Tags = [tag]
     };
 
-    private static TagDefinition CreateHistoryTag() => new()
+    private static TagDefinition CreateHistoryTag(string id = "T1") => new()
     {
-        Id = "T1",
-        Name = "Temperature",
+        Id = id,
+        Name = id,
         DeviceId = "SIM01",
-        Address = "A1",
+        Address = id,
         DataType = TagDataType.Double,
         HistoryEnabled = true,
         HistoryProfile = "Analog"
@@ -254,10 +359,14 @@ public sealed class HistorianRuntimeServiceTests
         }
     }
 
-    private sealed class TestHistoryStore(bool blockInitialization = false, int failFirstBatchAttempts = 0) : IHistoryStore
+    private sealed class TestHistoryStore(
+        bool blockInitialization = false,
+        int failFirstBatchAttempts = 0,
+        int failInitializationAttempts = 0) : IHistoryStore
     {
         private readonly bool _blockInitialization = blockInitialization;
         private int _failFirstBatchAttempts = failFirstBatchAttempts;
+        private int _failInitializationAttempts = failInitializationAttempts;
         private readonly TaskCompletionSource<bool> _releaseInitialization =
             new(TaskCreationOptions.RunContinuationsAsynchronously);
         private readonly object _sync = new();
@@ -265,16 +374,26 @@ public sealed class HistorianRuntimeServiceTests
         public TaskCompletionSource<bool> Initialized { get; } =
             new(TaskCreationOptions.RunContinuationsAsynchronously);
 
+        public TaskCompletionSource<bool> InitializationAttempted { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
         public List<HistorySample> WrittenSamples { get; } = [];
 
         public int InitializeCount { get; private set; }
 
-        public HistoryStorePreflightResult Preflight() =>
-            new(HistoryStorePreflightStatus.Ready);
+        public Task<HistoryStorePreflightResult> PreflightAsync(CancellationToken cancellationToken) =>
+            Task.FromResult(new HistoryStorePreflightResult(HistoryStorePreflightStatus.Ready));
 
         public async Task InitializeAsync(CancellationToken cancellationToken)
         {
             InitializeCount++;
+            InitializationAttempted.TrySetResult(true);
+            if (_failInitializationAttempts > 0)
+            {
+                _failInitializationAttempts--;
+                throw new IOException("transient initialization failure");
+            }
+
             if (_blockInitialization)
             {
                 await _releaseInitialization.Task.WaitAsync(cancellationToken);
@@ -304,5 +423,72 @@ public sealed class HistorianRuntimeServiceTests
             Task.FromResult<IReadOnlyList<HistorySample>>([]);
 
         public void ReleaseInitialization() => _releaseInitialization.TrySetResult(true);
+    }
+
+    private sealed class BlockingPreflightHistoryStore : IHistoryStore
+    {
+        private readonly TaskCompletionSource<HistoryStorePreflightResult> _preflight =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public TaskCompletionSource<bool> PreflightStarted { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public TaskCompletionSource<bool> Initialized { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public int InitializeCount { get; private set; }
+
+        public Task<HistoryStorePreflightResult> PreflightAsync(CancellationToken cancellationToken)
+        {
+            PreflightStarted.TrySetResult(true);
+            return _preflight.Task;
+        }
+
+        public Task InitializeAsync(CancellationToken cancellationToken)
+        {
+            InitializeCount++;
+            Initialized.TrySetResult(true);
+            return Task.CompletedTask;
+        }
+
+        public Task WriteBatchAsync(IReadOnlyList<HistorySample> samples, CancellationToken cancellationToken) =>
+            Task.CompletedTask;
+
+        public Task<IReadOnlyList<HistorySample>> QueryAsync(HistoryQuery query, CancellationToken cancellationToken) =>
+            Task.FromResult<IReadOnlyList<HistorySample>>([]);
+
+        public void ReleasePreflight() =>
+            _preflight.TrySetResult(new HistoryStorePreflightResult(HistoryStorePreflightStatus.Ready));
+    }
+
+    private sealed class BlockingFrequencyTimeProvider : TimeProvider
+    {
+        private readonly ManualResetEventSlim _entered = new(false);
+        private readonly ManualResetEventSlim _release = new(false);
+        private int _blockNext;
+
+        public override long TimestampFrequency
+        {
+            get
+            {
+                if (Interlocked.Exchange(ref _blockNext, 0) == 1)
+                {
+                    _entered.Set();
+                    _release.Wait();
+                }
+
+                return TimeSpan.TicksPerSecond;
+            }
+        }
+
+        public override DateTimeOffset GetUtcNow() => DateTimeOffset.UtcNow;
+
+        public override long GetTimestamp() => 0;
+
+        public void BlockNextFrequency() => Volatile.Write(ref _blockNext, 1);
+
+        public void WaitUntilBlocked() => Assert.True(_entered.Wait(TimeSpan.FromSeconds(2)));
+
+        public void ReleaseFrequency() => _release.Set();
     }
 }

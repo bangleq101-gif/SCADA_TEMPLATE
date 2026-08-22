@@ -8,7 +8,7 @@ Milestone 5 — Historian Foundation
 
 Status:
 
-Implemented on `feature/milestone-5-historian-foundation`; source verification is complete and the feature branch is ready for review. No Pull Request has been created yet.
+Implemented and targeted stabilization complete on `feature/milestone-5-historian-foundation`; the feature branch is ready for final source review. No Pull Request has been created yet.
 
 Base commit:
 
@@ -99,16 +99,20 @@ n PLC
 - Core-neutral `HistorySample`, bounded `HistoryQuery` and `IHistoryStore` contracts.
 - Strict history value normalization, non-finite Double rejection, source/recorded/monotonic clock separation and overflow-safe Int64 deadband evaluation.
 - Single monotonic periodic coordinator, subscribe-before-seed with TagValue.Sequence deduplication, bounded `Channel<HistorySample>` and separate rejected/dropped/abandoned/written counters.
+- One coordinator wake/change signal for earlier deadlines and retained periodic scheduling even when an accepted sample is dropped because the queue is full.
+- Per-tag evaluator synchronization instead of one global Historian evaluation lock; same-tag callbacks and periodic evaluations remain serialized.
 - `HistorianRuntimeService` with Disabled/Starting/Healthy/Degraded/Faulted/Stopping states, background initialization/writes, bounded retry, clean intake shutdown and queue drain.
-- `Microsoft.Data.Sqlite` storage under `Scada.Infrastructure/History` with schema version 1, typed value columns, deterministic query ordering, path traversal protection and malformed/newer-schema fault handling.
+- Cancellation-aware bounded storage preflight and capped exponential initialization retry backoff; a recoverable preflight does not delay polling startup.
+- `Microsoft.Data.Sqlite` 10.0.11 storage under `Scada.Infrastructure/History` with schema version 1, typed value columns, deterministic query ordering, path traversal protection, per-connection write PRAGMA configuration and malformed/newer-schema fault handling.
 - Hosted-service ordering and singleton identity: Historian starts before polling while polling remains independent of historian storage failures.
-- Engineering `engineering.history` History Settings workspace with profile editing, protected built-ins, advanced global settings, runtime snapshot/status and restart-required save semantics.
+- Engineering `engineering.history` History Settings workspace with profile editing, protected built-ins, rename validation, shared queue-capacity warnings, save/validation feedback, advanced global settings, runtime snapshot/status and restart-required save semantics.
 
 ## Verified
 
 - `dotnet restore Scada.sln --ignore-failed-sources` — PASS.
-- `dotnet build Scada.sln -c Release --no-restore` — PASS with no compiler errors; the known NU1903 advisory warning for transitive `SQLitePCLRaw.lib.e_sqlite3` is documented below and was not suppressed.
-- `dotnet test Scada.sln -c Release --no-build` — PASS; 142 tests, 0 failures (52 App, 47 Runtime, 7 Core, 3 Drivers, 33 Infrastructure).
+- `dotnet build Scada.sln -c Release --no-restore` — PASS with 0 warnings and 0 errors.
+- `dotnet test Scada.sln -c Release --no-build` — PASS; 153 tests, 0 failures (54 App, 55 Runtime, 8 Core, 3 Drivers, 34 Infrastructure).
+- `dotnet list Scada.sln package --include-transitive --vulnerable` — PASS; no vulnerable packages reported. `SQLitePCLRaw.bundle_e_sqlite3`, `core`, `lib.e_sqlite3` and `provider.e_sqlite3` resolve to 2.1.12 through `Microsoft.Data.Sqlite` 10.0.11.
 - `git diff --check` — PASS.
 - WPF startup smoke test — PASS; `Scada.App` stayed running through the startup check and resolved `MainWindow` with resources/templates loaded without a startup DI/XAML exception.
 - Copy-folder portability verification — PASS on a fresh copy outside the repository; restore/build and explicit project-file startup do not depend on the original folder, and the project document remains unchanged.
@@ -136,7 +140,6 @@ n PLC
 - Project startup requires an explicit canonical `--project-file` path (the supplied launcher provides it); automatic project discovery and hot reload are intentionally not implemented.
 - Tag Manager validation is deterministic and synchronous; full UI automation, advanced tag scaling/offset semantics and runtime reconfiguration without restart remain later work.
 - Import conflict resolution currently offers explicit apply-all for conflict-free imports or append-non-conflicting/cancel for conflicted imports; identity regeneration after a conflict is deferred.
-- The current Microsoft.Data.Sqlite 10.0.10 dependency brings transitive `SQLitePCLRaw.lib.e_sqlite3` 2.1.11, which emits NU1903 for a high-severity advisory during restore/build. Security review or an upstream package update is deferred; security checks were not disabled.
 - Historian retry buffering is process-local and bounded by the in-memory queue; durable buffering, InfluxDB synchronization, retention and historian replay remain later milestones.
 - Historian configuration changes are persisted and marked restart-required; runtime hot reload is intentionally not implemented.
 

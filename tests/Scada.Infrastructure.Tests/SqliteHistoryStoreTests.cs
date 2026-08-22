@@ -10,7 +10,7 @@ namespace Scada.Infrastructure.Tests;
 public sealed class SqliteHistoryStoreTests
 {
     [Fact]
-    public void PathResolverRejectsAbsoluteAndTraversalPaths()
+    public async Task PathResolverRejectsAbsoluteAndTraversalPaths()
     {
         var directory = CreateTempDirectory();
         try
@@ -20,8 +20,8 @@ public sealed class SqliteHistoryStoreTests
             var absolute = new SqliteHistoryStore(projectPath, Path.Combine(directory, "history.db"));
             var traversal = new SqliteHistoryStore(projectPath, "..\\outside.db");
 
-            Assert.Equal("HISTORIAN_DATABASE_PATH_INVALID", absolute.Preflight().ErrorCode);
-            Assert.Equal("HISTORIAN_DATABASE_PATH_OUTSIDE_PROJECT", traversal.Preflight().ErrorCode);
+            Assert.Equal("HISTORIAN_DATABASE_PATH_INVALID", (await absolute.PreflightAsync(CancellationToken.None)).ErrorCode);
+            Assert.Equal("HISTORIAN_DATABASE_PATH_OUTSIDE_PROJECT", (await traversal.PreflightAsync(CancellationToken.None)).ErrorCode);
         }
         finally
         {
@@ -36,7 +36,7 @@ public sealed class SqliteHistoryStoreTests
         try
         {
             var store = CreateStore(directory);
-            Assert.Equal(HistoryStorePreflightStatus.Ready, store.Preflight().Status);
+            Assert.Equal(HistoryStorePreflightStatus.Ready, (await store.PreflightAsync(CancellationToken.None)).Status);
             await store.InitializeAsync(CancellationToken.None);
 
             var source = DateTimeOffset.Parse("2026-01-01T00:00:00Z");
@@ -87,6 +87,36 @@ public sealed class SqliteHistoryStoreTests
     }
 
     [Fact]
+    public async Task WriteConnectionConfigurationAppliesFiniteBusyTimeoutAndNormalSynchronousMode()
+    {
+        var directory = CreateTempDirectory();
+        try
+        {
+            var databasePath = Path.Combine(directory, "Data", "history.db");
+            Directory.CreateDirectory(Path.GetDirectoryName(databasePath)!);
+            await using var connection = new SqliteConnection(new SqliteConnectionStringBuilder
+            {
+                DataSource = databasePath,
+                Mode = SqliteOpenMode.ReadWriteCreate
+            }.ToString());
+            await connection.OpenAsync();
+
+            await SqliteConnectionConfiguration.ConfigureWriteAsync(
+                connection,
+                enableWal: false,
+                cancellationToken: CancellationToken.None);
+
+            Assert.Equal(1L, await ReadPragmaAsync(connection, "synchronous"));
+            Assert.Equal(SqliteConnectionConfiguration.BusyTimeoutMilliseconds,
+                await ReadPragmaAsync(connection, "busy_timeout"));
+        }
+        finally
+        {
+            DeleteDirectory(directory);
+        }
+    }
+
+    [Fact]
     public async Task SchemaUsesUserVersionOneAndDoesNotUseAutoincrement()
     {
         var directory = CreateTempDirectory();
@@ -115,7 +145,7 @@ public sealed class SqliteHistoryStoreTests
     }
 
     [Fact]
-    public void NewerSchemaIsFaultedBeforeRuntimeWrites()
+    public async Task NewerSchemaIsFaultedBeforeRuntimeWrites()
     {
         var directory = CreateTempDirectory();
         try
@@ -134,7 +164,7 @@ public sealed class SqliteHistoryStoreTests
                 command.ExecuteNonQuery();
             }
 
-            var result = CreateStore(directory).Preflight();
+            var result = await CreateStore(directory).PreflightAsync(CancellationToken.None);
 
             Assert.Equal(HistoryStorePreflightStatus.Faulted, result.Status);
             Assert.Equal("HISTORIAN_SQLITE_SCHEMA_TOO_NEW", result.ErrorCode);
@@ -146,7 +176,7 @@ public sealed class SqliteHistoryStoreTests
     }
 
     [Fact]
-    public void CorruptDatabaseIsFaulted()
+    public async Task CorruptDatabaseIsFaulted()
     {
         var directory = CreateTempDirectory();
         try
@@ -155,7 +185,7 @@ public sealed class SqliteHistoryStoreTests
             Directory.CreateDirectory(Path.GetDirectoryName(databasePath)!);
             File.WriteAllText(databasePath, "not a sqlite database");
 
-            var result = CreateStore(directory).Preflight();
+            var result = await CreateStore(directory).PreflightAsync(CancellationToken.None);
 
             Assert.Equal(HistoryStorePreflightStatus.Faulted, result.Status);
             Assert.Equal("HISTORIAN_SQLITE_CORRUPT", result.ErrorCode);
@@ -167,7 +197,7 @@ public sealed class SqliteHistoryStoreTests
     }
 
     [Fact]
-    public void ExistingMalformedHistoryTableIsFaulted()
+    public async Task ExistingMalformedHistoryTableIsFaulted()
     {
         var directory = CreateTempDirectory();
         try
@@ -186,7 +216,7 @@ public sealed class SqliteHistoryStoreTests
                 command.ExecuteNonQuery();
             }
 
-            var result = CreateStore(directory).Preflight();
+            var result = await CreateStore(directory).PreflightAsync(CancellationToken.None);
 
             Assert.Equal(HistoryStorePreflightStatus.Faulted, result.Status);
             Assert.Equal("HISTORIAN_SQLITE_SCHEMA_INVALID", result.ErrorCode);
@@ -198,9 +228,10 @@ public sealed class SqliteHistoryStoreTests
     }
 
     [Fact]
-    public void MissingCanonicalProjectPathIsPermanentFault()
+    public async Task MissingCanonicalProjectPathIsPermanentFault()
     {
-        var result = new SqliteHistoryStore(null, "Data/history.db").Preflight();
+        var result = await new SqliteHistoryStore(null, "Data/history.db")
+            .PreflightAsync(CancellationToken.None);
 
         Assert.Equal(HistoryStorePreflightStatus.Faulted, result.Status);
         Assert.Equal("PROJECT_PATH_REQUIRED", result.ErrorCode);
@@ -218,6 +249,13 @@ public sealed class SqliteHistoryStoreTests
         DateTimeOffset recorded,
         long sequence) => new(
         "Runtime01", tagId, dataType, value, quality, source, recorded, sequence);
+
+    private static async Task<long> ReadPragmaAsync(SqliteConnection connection, string pragma)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = $"PRAGMA {pragma};";
+        return Convert.ToInt64(await command.ExecuteScalarAsync());
+    }
 
     private static string CreateTempDirectory()
     {

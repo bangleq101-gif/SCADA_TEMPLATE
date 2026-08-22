@@ -129,6 +129,10 @@ SqliteHistoryStore → project-relative Data/history.db
 
 The Historian never reads a PLC and never performs SQLite I/O in a TagCache callback. The callback performs evaluation and non-blocking `TryWrite` only. Source timestamps come from `TagValue.Timestamp`, wall-clock `RecordedAtUtc` comes from the historian `TimeProvider`, and monotonic timestamps are runtime-only for throttling and periodic scheduling. Queue overflow, invalid samples, abandoned samples and committed writes remain separate diagnostics.
 
+One `HistorianCoordinator` owns all periodic deadlines and uses one schedule-change signal to wake when a newly scheduled deadline is earlier than the current one. Evaluator state is synchronized per tag, not by one global service lock. The next periodic deadline is scheduled from the evaluator result before queue capacity is checked, so an accepted-but-dropped sample does not lose its periodic schedule.
+
+Historian startup uses bounded cancellation-aware `IHistoryStore.PreflightAsync` and continues recoverable storage work in the background. SQLite write connections independently apply `synchronous=NORMAL` and a finite `busy_timeout`; settings from the initialization connection are not reused implicitly.
+
 TagCache remains the central runtime source. A disconnected device publishes `TagQuality.Disconnected`; a last-known value keeps its original PLC timestamp, while a tag without a valid value gets the failure transition timestamp.
 
 ## Milestone 4 Tag Manager flow

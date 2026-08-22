@@ -35,19 +35,21 @@ public sealed class SqliteHistoryStore : IHistoryStore
 
     public string? DatabasePath => _databasePath;
 
-    public HistoryStorePreflightResult Preflight()
+    public async Task<HistoryStorePreflightResult> PreflightAsync(CancellationToken cancellationToken)
     {
         try
         {
+            cancellationToken.ThrowIfCancellationRequested();
             _databasePath = SqliteHistoryPathResolver.Resolve(_projectPath, _configuredPath);
             if (!File.Exists(_databasePath))
             {
                 return new HistoryStorePreflightResult(HistoryStorePreflightStatus.Ready);
             }
 
-            using var connection = new SqliteConnection(CreateConnectionString(_databasePath, SqliteOpenMode.ReadOnly));
-            connection.Open();
-            var version = ReadUserVersion(connection);
+            await using var connection = new SqliteConnection(CreateConnectionString(_databasePath, SqliteOpenMode.ReadOnly));
+            await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+            await SqliteConnectionConfiguration.ConfigureReadAsync(connection, cancellationToken).ConfigureAwait(false);
+            var version = await ReadUserVersionAsync(connection, cancellationToken).ConfigureAwait(false);
             if (version > SqliteHistorySchema.CurrentVersion)
             {
                 throw new HistoryStorePermanentException(
@@ -55,9 +57,13 @@ public sealed class SqliteHistoryStore : IHistoryStore
                     $"SQLite history schema version {version} is newer than supported version {SqliteHistorySchema.CurrentVersion}.");
             }
 
-            ValidateExistingSchema(connection, version);
+            await ValidateExistingSchemaAsync(connection, version, cancellationToken).ConfigureAwait(false);
 
             return new HistoryStorePreflightResult(HistoryStorePreflightStatus.Ready);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
         }
         catch (HistoryStorePermanentException exception)
         {
@@ -96,8 +102,10 @@ public sealed class SqliteHistoryStore : IHistoryStore
 
         await using var connection = new SqliteConnection(CreateConnectionString(_databasePath, SqliteOpenMode.ReadWriteCreate));
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
-        await ExecuteAsync(connection, "PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA busy_timeout=250;",
-            cancellationToken).ConfigureAwait(false);
+        await SqliteConnectionConfiguration.ConfigureWriteAsync(
+            connection,
+            enableWal: true,
+            cancellationToken: cancellationToken).ConfigureAwait(false);
 
         var version = ReadUserVersion(connection);
         if (version > SqliteHistorySchema.CurrentVersion)
@@ -126,6 +134,10 @@ public sealed class SqliteHistoryStore : IHistoryStore
         _databasePath ??= SqliteHistoryPathResolver.Resolve(_projectPath, _configuredPath);
         await using var connection = new SqliteConnection(CreateConnectionString(_databasePath, SqliteOpenMode.ReadWriteCreate));
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await SqliteConnectionConfiguration.ConfigureWriteAsync(
+            connection,
+            enableWal: false,
+            cancellationToken: cancellationToken).ConfigureAwait(false);
         await using var transaction = (SqliteTransaction)await connection.BeginTransactionAsync(cancellationToken)
             .ConfigureAwait(false);
 
@@ -152,6 +164,7 @@ public sealed class SqliteHistoryStore : IHistoryStore
 
         await using var connection = new SqliteConnection(CreateConnectionString(_databasePath, SqliteOpenMode.ReadOnly));
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await SqliteConnectionConfiguration.ConfigureReadAsync(connection, cancellationToken).ConfigureAwait(false);
         await using var command = connection.CreateCommand();
         command.CommandText = """
             SELECT RuntimeId, TagId, DataType, Quality,
@@ -273,6 +286,16 @@ public sealed class SqliteHistoryStore : IHistoryStore
         return Convert.ToInt64(command.ExecuteScalar(), System.Globalization.CultureInfo.InvariantCulture);
     }
 
+    private static async Task<long> ReadUserVersionAsync(
+        SqliteConnection connection,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = "PRAGMA user_version;";
+        var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+        return Convert.ToInt64(result, System.Globalization.CultureInfo.InvariantCulture);
+    }
+
     private static void ValidateExistingSchema(SqliteConnection connection, long version)
     {
         using var existsCommand = connection.CreateCommand();
@@ -296,6 +319,44 @@ public sealed class SqliteHistoryStore : IHistoryStore
         using var reader = columnsCommand.ExecuteReader();
         var columns = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         while (reader.Read())
+        {
+            columns.Add(reader.GetString(1));
+        }
+
+        if (RequiredHistoryColumns.Any(column => !columns.Contains(column)))
+        {
+            throw new HistoryStorePermanentException(
+                "HISTORIAN_SQLITE_SCHEMA_INVALID",
+                "SQLite history database has an incompatible HistorySamples table.");
+        }
+    }
+
+    private static async Task ValidateExistingSchemaAsync(
+        SqliteConnection connection,
+        long version,
+        CancellationToken cancellationToken)
+    {
+        await using var existsCommand = connection.CreateCommand();
+        existsCommand.CommandText =
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'HistorySamples' LIMIT 1;";
+        var tableExists = await existsCommand.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) is not null;
+        if (!tableExists)
+        {
+            if (version >= SqliteHistorySchema.CurrentVersion)
+            {
+                throw new HistoryStorePermanentException(
+                    "HISTORIAN_SQLITE_SCHEMA_INVALID",
+                    "SQLite history database is missing the HistorySamples table.");
+            }
+
+            return;
+        }
+
+        await using var columnsCommand = connection.CreateCommand();
+        columnsCommand.CommandText = "PRAGMA table_info(HistorySamples);";
+        await using var reader = await columnsCommand.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        var columns = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
         {
             columns.Add(reader.GetString(1));
         }

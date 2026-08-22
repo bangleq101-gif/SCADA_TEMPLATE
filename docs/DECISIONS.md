@@ -186,3 +186,15 @@ SQLite is a local Infrastructure concern behind the Core `IHistoryStore` contrac
 ## D-042 — Historian lifecycle and status UI
 
 `HistorianRuntimeService` is one singleton registered as an `IHostedService` before polling. It subscribes before seeding, starts background storage work without delaying polling, stops intake before shutdown drain and exposes an immutable runtime snapshot. History Settings edits the cloned project session, protects built-in names/deletion, marks saved changes restart-required and never hot-reloads runtime configuration.
+
+## D-043 — Historian deadline wakeup and queue-drop semantics
+
+Milestone 5 keeps one monotonic `HistorianCoordinator` for all tags. A single bounded schedule-change signal wakes the coordinator when a new or rescheduled deadline can become the earliest deadline; no timer or task is created per tag. Evaluator acceptance and its next periodic deadline are historian state decisions, so the deadline is scheduled before the bounded queue write. A full queue increments `DroppedSamples` without deleting the accepted periodic schedule.
+
+## D-044 — Per-tag evaluation state and bounded preflight
+
+Historian evaluator state is stored in concurrent per-tag entries with a small per-entry lock. Different tags do not serialize through one global service lock, while callback and periodic evaluation of the same tag remain serialized. `IHistoryStore.PreflightAsync(CancellationToken)` is cancellation-aware; Runtime applies a short startup budget and treats timeout/operational failure as recoverable so polling is not held behind storage. Initialization recovery uses capped exponential monotonic delays.
+
+## D-045 — SQLite writer connection settings and package graph
+
+SQLite initialization, batch writes and reads use centralized per-connection configuration. Every writer applies `synchronous=NORMAL` and a finite 250 ms `busy_timeout`; WAL/schema setup remains initialization-only. `Microsoft.Data.Sqlite` is pinned centrally at 10.0.11, resolving the SQLitePCLRaw family to 2.1.12 and removing the previously observed NU1903 warning without suppressing package auditing.

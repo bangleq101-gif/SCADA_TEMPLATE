@@ -45,10 +45,13 @@
 - Subscribe before seeding from `ITagCache.TryGet`; use runtime-local `TagValue.Sequence` for duplicate suppression, never as a SQLite key.
 - TagCache callbacks may only evaluate and call bounded queue `TryWrite`. Use `SingleReader`, `SingleWriter=false`, `FullMode=Wait` and `AllowSynchronousContinuations=false`; never block callbacks on storage.
 - Keep `RejectedSamples`, `DroppedSamples`, `AbandonedSamples` and `WrittenSamples` separate. Count writes only after the SQLite transaction commits.
-- Historian startup must validate path/profile state, subscribe before launching background work and return without synchronous SQLite retry. Register Historian hosted service before polling and resolve one singleton instance for runtime status UI.
+- Historian startup must use cancellation-aware bounded preflight, validate path/profile state, subscribe before launching background work and return without synchronous SQLite retry. Recoverable preflight continues in Degraded state while background initialization retries with capped exponential monotonic delays. Register Historian hosted service before polling and resolve one singleton instance for runtime status UI.
+- Keep one coordinator with one schedule-change signal; an earlier due time must wake the coordinator, and an accepted periodic next-due decision remains scheduled even if the current queue write is dropped.
+- Protect evaluator state per tag. Different tags must not share a global evaluation lock; callback and periodic evaluation for the same tag must remain serialized.
 - On shutdown stop intake, dispose subscriptions, stop scheduling, complete and drain the queue within the configured budget, then cancel the writer. Cancellation is cooperative; do not force-kill non-cooperative storage work.
-- SQLite history uses schema `user_version=1`, typed value columns, no `AUTOINCREMENT`, one connection/transaction per batch and deterministic `RecordedAtUtcTicks, Id` query order. Disabled Historian must not create a database.
-- History Settings edits `ProjectEditSession.WorkingProject`, protects built-in profile names/deletion, persists through the normal Save boundary and displays only the running Historian snapshot. No hot reload is allowed.
+- SQLite history uses schema `user_version=1`, typed value columns, no `AUTOINCREMENT`, one connection/transaction per batch and deterministic `RecordedAtUtcTicks, Id` query order. Every write connection must apply finite `busy_timeout` and `synchronous=NORMAL`; disabled Historian must not create a database.
+- `IHistoryStore.PreflightAsync(CancellationToken)` is the compatibility boundary. A store must honor cancellation; Runtime still bounds startup waiting and does not perform SQLite retry loops in `StartAsync`.
+- History Settings edits `ProjectEditSession.WorkingProject`, protects built-in profile names/deletion, rejects reserved/duplicate custom renames without mutation, surfaces shared validation and save failures, persists through the normal Save boundary and displays only the running Historian snapshot. No hot reload is allowed.
 
 ## Runtime polling rules
 

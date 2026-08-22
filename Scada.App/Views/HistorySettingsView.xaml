@@ -62,6 +62,10 @@
                 <Button Content="Refresh status" Command="{Binding RefreshStatusCommand}" Style="{StaticResource SecondaryButtonStyle}" Margin="0,0,6,0" />
                 <Button Content="Revert" Command="{Binding RevertCommand}" Style="{StaticResource SecondaryButtonStyle}" Margin="0,0,6,0" />
                 <Button Content="Save" Command="{Binding SaveCommand}" Style="{StaticResource PrimaryButtonStyle}" />
+                <TextBlock Text="  " />
+                <TextBlock Text="{Binding ValidationSummaryText}" Style="{StaticResource FieldLabelTextStyle}" Margin="8,4,4,4" />
+                <TextBlock Text="{Binding SaveStatusText}" Style="{StaticResource FieldLabelTextStyle}" Margin="8,4,4,4" />
+                <TextBlock Text="{Binding SelectedProfile.RenameValidationMessage}" Style="{StaticResource FieldLabelTextStyle}" Margin="8,4,4,4" />
                 <TextBlock Text="{Binding RuntimeStateText}" Style="{StaticResource FieldLabelTextStyle}" Margin="18,4,4,4" />
                 <TextBlock Text="{Binding StatusText}" Style="{StaticResource FieldLabelTextStyle}" />
                 <TextBlock Text="  Queue: " Style="{StaticResource FieldLabelTextStyle}" />

@@ -58,6 +58,45 @@ public sealed class HistorySettingsTests
     }
 
     [Fact]
+    public void CustomProfileRenameRejectsBuiltInAndDuplicateNamesWithoutMutation()
+    {
+        var options = new RuntimeOptions();
+        var session = new ProjectEditSession(options, null, null);
+        var historian = CreateHistorian(options);
+        var viewModel = new HistorySettingsViewModel(session, historian);
+
+        viewModel.AddProfile("ProfileA");
+        viewModel.AddProfile("ProfileB");
+        var profileA = Assert.Single(viewModel.Profiles, profile => profile.Name == "ProfileA");
+
+        profileA.Name = "Digital";
+        Assert.Equal("ProfileA", profileA.Name);
+        Assert.Contains("reserved", profileA.RenameValidationMessage, StringComparison.OrdinalIgnoreCase);
+
+        profileA.Name = "ProfileB";
+        Assert.Equal("ProfileA", profileA.Name);
+        Assert.Contains("already uses", profileA.RenameValidationMessage, StringComparison.OrdinalIgnoreCase);
+
+        profileA.Name = "RenamedProfile";
+        Assert.Equal("RenamedProfile", profileA.Name);
+        Assert.Null(profileA.RenameValidationMessage);
+    }
+
+    [Fact]
+    public void SaveFailureIsVisibleThroughHistorySettingsStatus()
+    {
+        var options = new RuntimeOptions();
+        var session = new ProjectEditSession(options, null, null);
+        var viewModel = new HistorySettingsViewModel(session, CreateHistorian(options));
+
+        viewModel.SaveCommand.Execute(null);
+
+        Assert.True(viewModel.HasBlockingIssues);
+        Assert.Contains("blocking", viewModel.ValidationSummaryText, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("blocked", viewModel.SaveStatusText, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task HistoryRouteUsesTheSameHistorianServiceInstanceAsTheSettingsViewModel()
     {
         var options = new RuntimeOptions();
@@ -93,8 +132,8 @@ public sealed class HistorySettingsTests
 
     private sealed class DisabledHistoryStore : IHistoryStore
     {
-        public HistoryStorePreflightResult Preflight() =>
-            new(HistoryStorePreflightStatus.Ready);
+        public Task<HistoryStorePreflightResult> PreflightAsync(CancellationToken cancellationToken) =>
+            Task.FromResult(new HistoryStorePreflightResult(HistoryStorePreflightStatus.Ready));
 
         public Task InitializeAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 
@@ -103,5 +142,32 @@ public sealed class HistorySettingsTests
 
         public Task<IReadOnlyList<HistorySample>> QueryAsync(HistoryQuery query, CancellationToken cancellationToken) =>
             Task.FromResult<IReadOnlyList<HistorySample>>([]);
+    }
+
+    private static HistorianRuntimeService CreateHistorian(RuntimeOptions options) =>
+        new(
+            options,
+            new TestTagCache(),
+            new DisabledHistoryStore(),
+            NullLogger<HistorianRuntimeService>.Instance,
+            TimeProvider.System);
+
+    private sealed class TestTagCache : Scada.Runtime.Tags.ITagCache
+    {
+        public bool TryGet(string tagId, out Scada.Core.Tags.TagValue? value)
+        {
+            value = null;
+            return false;
+        }
+
+        public IDisposable Subscribe(string tagId, Action<Scada.Core.Tags.TagValue> callback) =>
+            new DelegateSubscription();
+
+        private sealed class DelegateSubscription : IDisposable
+        {
+            public void Dispose()
+            {
+            }
+        }
     }
 }

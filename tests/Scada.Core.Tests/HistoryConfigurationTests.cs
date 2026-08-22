@@ -91,6 +91,34 @@ public sealed class HistoryConfigurationTests
     }
 
     [Fact]
+    public void QueueCapacityBelowValidHistoryTagsIsAWarning()
+    {
+        var options = CreateOptions();
+        options.Historian.QueueCapacity = 1;
+        options.Tags[0].Enabled = true;
+        options.Tags[0].HistoryEnabled = true;
+        options.Tags[0].HistoryProfile = "Analog";
+        options.Tags.Add(new TagDefinition
+        {
+            Id = "T2",
+            Name = "Second Double",
+            DeviceId = "SIM01",
+            Address = "A2",
+            DataType = TagDataType.Double,
+            Enabled = true,
+            HistoryEnabled = true,
+            HistoryProfile = "Analog"
+        });
+
+        var issues = RuntimeOptionsValidation.CollectIssues(options);
+
+        var warning = Assert.Single(issues, issue =>
+            issue.Code == "HISTORIAN_QUEUE_CAPACITY_BELOW_HISTORY_TAGS");
+        Assert.False(warning.IsBlocking);
+        Assert.Equal(ValidationSeverity.Warning, warning.Severity);
+    }
+
+    [Fact]
     public void HistoryQueryRejectsUnboundedOrReversedRanges()
     {
         var from = DateTimeOffset.Parse("2026-01-01T00:00:00Z");

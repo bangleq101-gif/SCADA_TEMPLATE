@@ -20,9 +20,10 @@ public static class RuntimeOptionsValidation
         }
 
         ValidatePolling(options, issues);
-        issues.AddRange(HistoryProfileValidation.CollectIssues(options.Historian ?? new HistorianOptions()));
+        var historian = options.Historian ?? new HistorianOptions();
+        issues.AddRange(HistoryProfileValidation.CollectIssues(historian));
 
-        var historyRegistry = new HistoryProfileRegistry(options.Historian?.Profiles ?? []);
+        var historyRegistry = new HistoryProfileRegistry(historian.Profiles ?? []);
 
         var scanGroups = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var scanGroup in options.ScanGroups ?? [])
@@ -69,13 +70,37 @@ public static class RuntimeOptionsValidation
 
         var tagIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var tagNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var validHistoryTagCount = 0;
         foreach (var tag in options.Tags ?? [])
         {
             ValidateTag(tag, deviceIds, scanGroups, tagIds, tagNames, historyRegistry, issues);
+            if (IsValidHistorySubscription(tag, historyRegistry))
+            {
+                validHistoryTagCount++;
+            }
+        }
+
+        if (historian.QueueCapacity < validHistoryTagCount)
+        {
+            issues.Add(Warning(
+                "HISTORIAN_QUEUE_CAPACITY_BELOW_HISTORY_TAGS",
+                "Historian",
+                null,
+                nameof(historian.QueueCapacity),
+                $"Historian queue capacity {historian.QueueCapacity} is below the {validHistoryTagCount} valid history-enabled tags; samples may be dropped under load."));
         }
 
         return issues;
     }
+
+    private static bool IsValidHistorySubscription(
+        TagDefinition tag,
+        HistoryProfileRegistry historyRegistry) =>
+        tag.Enabled &&
+        tag.HistoryEnabled &&
+        historyRegistry.TryGet(tag.HistoryProfile, out var profile) &&
+        profile is not null &&
+        HistoryProfileValidation.IsCompatible(tag.DataType, profile);
 
     private static void ValidatePolling(RuntimeOptions options, ICollection<ValidationIssue> issues)
     {

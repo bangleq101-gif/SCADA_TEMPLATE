@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using Scada.App.Services;
+using Scada.Core.Configuration;
 using Scada.Core.History;
 using Scada.Runtime.Historian;
 
@@ -15,6 +16,7 @@ public sealed class HistorySettingsViewModel : INotifyPropertyChanged, IWorkspac
     private string _statusText = "Not started";
     private string _lastErrorText = string.Empty;
     private string _lastWriteText = "Never";
+    private string _saveStatusText = string.Empty;
     private HistoryProfileEditor? _selectedProfile;
 
     public HistorySettingsViewModel(ProjectEditSession session, HistorianRuntimeService historian)
@@ -162,6 +164,19 @@ public sealed class HistorySettingsViewModel : INotifyPropertyChanged, IWorkspac
     public string LastErrorText { get => _lastErrorText; private set => SetField(ref _lastErrorText, value); }
     public string LastWriteText { get => _lastWriteText; private set => SetField(ref _lastWriteText, value); }
     public string StatusText { get => _statusText; private set => SetField(ref _statusText, value); }
+    public string SaveStatusText { get => _saveStatusText; private set => SetField(ref _saveStatusText, value); }
+    public bool HasBlockingIssues => _session.HasBlockingIssues;
+    public string ValidationSummaryText
+    {
+        get
+        {
+            var blockingCount = _session.ValidationIssues.Count(issue => issue.IsBlocking);
+            var warningCount = _session.ValidationIssues.Count(issue => issue.Severity == ValidationSeverity.Warning);
+            return blockingCount == 0 && warningCount == 0
+                ? "Configuration valid."
+                : $"Validation: {blockingCount} blocking issue(s), {warningCount} warning(s).";
+        }
+    }
     public int QueueDepth { get; private set; }
     public long EnqueuedSamples { get; private set; }
     public long WrittenSamples { get; private set; }
@@ -246,7 +261,14 @@ public sealed class HistorySettingsViewModel : INotifyPropertyChanged, IWorkspac
 
     private void Save()
     {
-        _session.TrySave();
+        var saved = _session.TrySave();
+        SaveStatusText = saved
+            ? "Saved successfully."
+            : !string.IsNullOrWhiteSpace(_session.LastErrorMessage)
+                ? $"Save failed: {_session.LastErrorMessage}"
+                : _session.HasBlockingIssues
+                    ? "Save blocked by validation errors."
+                    : "Save failed.";
         RebuildProfiles();
         NotifySessionState();
     }
@@ -254,6 +276,7 @@ public sealed class HistorySettingsViewModel : INotifyPropertyChanged, IWorkspac
     private void Revert()
     {
         _session.Revert();
+        SaveStatusText = "Changes reverted.";
         RebuildProfiles();
         NotifySessionState();
     }
@@ -263,8 +286,31 @@ public sealed class HistorySettingsViewModel : INotifyPropertyChanged, IWorkspac
         Profiles.Clear();
         foreach (var definition in _session.WorkingProject.Historian.Profiles)
         {
-            Profiles.Add(new HistoryProfileEditor(definition, MarkChanged));
+            Profiles.Add(new HistoryProfileEditor(definition, MarkChanged,
+                proposedName => ValidateProfileRename(definition, proposedName)));
         }
+    }
+
+    private string? ValidateProfileRename(HistoryProfileDefinition definition, string proposedName)
+    {
+        if (string.IsNullOrWhiteSpace(proposedName))
+        {
+            return "Profile name is required.";
+        }
+
+        if (HistoryProfileDefaults.RequiredNames.Contains(proposedName, StringComparer.OrdinalIgnoreCase))
+        {
+            return "Built-in profile names are reserved for built-in profiles.";
+        }
+
+        if (_session.WorkingProject.Historian.Profiles.Any(profile =>
+                !ReferenceEquals(profile, definition) &&
+                string.Equals(profile.Name, proposedName, StringComparison.OrdinalIgnoreCase)))
+        {
+            return "Another configured profile already uses this name.";
+        }
+
+        return null;
     }
 
     private void MarkChanged()
@@ -293,6 +339,8 @@ public sealed class HistorySettingsViewModel : INotifyPropertyChanged, IWorkspac
         OnPropertyChanged(nameof(BatchSize));
         OnPropertyChanged(nameof(FlushIntervalMilliseconds));
         OnPropertyChanged(nameof(ShutdownDrainTimeoutMilliseconds));
+        OnPropertyChanged(nameof(HasBlockingIssues));
+        OnPropertyChanged(nameof(ValidationSummaryText));
     }
 
     private bool SetField<T>(ref T field, T value, [CallerMemberName] string? propertyName = null)
@@ -314,11 +362,17 @@ public sealed class HistorySettingsViewModel : INotifyPropertyChanged, IWorkspac
 public sealed class HistoryProfileEditor : INotifyPropertyChanged
 {
     private readonly Action _changed;
+    private readonly Func<string, string?> _validateRename;
+    private string? _renameValidationMessage;
 
-    public HistoryProfileEditor(HistoryProfileDefinition definition, Action changed)
+    public HistoryProfileEditor(
+        HistoryProfileDefinition definition,
+        Action changed,
+        Func<string, string?>? validateRename = null)
     {
         Definition = definition ?? throw new ArgumentNullException(nameof(definition));
         _changed = changed ?? throw new ArgumentNullException(nameof(changed));
+        _validateRename = validateRename ?? (_ => null);
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
@@ -327,17 +381,48 @@ public sealed class HistoryProfileEditor : INotifyPropertyChanged
 
     public bool IsBuiltIn => HistoryProfileDefaults.RequiredNames.Contains(Definition.Name, StringComparer.OrdinalIgnoreCase);
 
+    public string? RenameValidationMessage
+    {
+        get => _renameValidationMessage;
+        private set
+        {
+            if (string.Equals(_renameValidationMessage, value, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            _renameValidationMessage = value;
+            OnPropertyChanged();
+        }
+    }
+
     public string Name
     {
         get => Definition.Name;
         set
         {
-            if (IsBuiltIn || string.Equals(Name, value, StringComparison.Ordinal))
+            var proposedName = value?.Trim() ?? string.Empty;
+            if (string.Equals(Name, proposedName, StringComparison.Ordinal))
             {
+                RenameValidationMessage = null;
                 return;
             }
 
-            Definition.Name = value;
+            if (IsBuiltIn)
+            {
+                RenameValidationMessage = "Built-in profiles cannot be renamed.";
+                return;
+            }
+
+            var validationMessage = _validateRename(proposedName);
+            if (validationMessage is not null)
+            {
+                RenameValidationMessage = validationMessage;
+                return;
+            }
+
+            Definition.Name = proposedName;
+            RenameValidationMessage = null;
             _changed();
             OnPropertyChanged();
         }

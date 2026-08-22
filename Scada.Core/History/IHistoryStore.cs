@@ -2,7 +2,7 @@ namespace Scada.Core.History;
 
 public interface IHistoryStore
 {
-    HistoryStorePreflightResult Preflight();
+    Task<HistoryStorePreflightResult> PreflightAsync(CancellationToken cancellationToken);
 
     Task InitializeAsync(CancellationToken cancellationToken);
 

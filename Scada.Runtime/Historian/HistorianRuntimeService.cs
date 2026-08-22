@@ -15,8 +15,18 @@ public sealed class HistorianRuntimeService : IHostedService, IAsyncDisposable
     private readonly ILogger<HistorianRuntimeService> _logger;
     private readonly TimeProvider _timeProvider;
     private readonly object _sync = new();
-    private readonly object _evaluationSync = new();
     private readonly List<IDisposable> _subscriptions = [];
+    private static readonly TimeSpan PreflightBudget = TimeSpan.FromMilliseconds(500);
+    private static readonly TimeSpan[] InitializationRetryDelays =
+    [
+        TimeSpan.FromMilliseconds(250),
+        TimeSpan.FromMilliseconds(500),
+        TimeSpan.FromSeconds(1),
+        TimeSpan.FromSeconds(2),
+        TimeSpan.FromSeconds(4),
+        TimeSpan.FromSeconds(8),
+        TimeSpan.FromSeconds(10)
+    ];
     private CancellationTokenSource? _lifetimeCts;
     private CancellationTokenSource? _writerCts;
     private HistorianQueue? _queue;
@@ -76,13 +86,13 @@ public sealed class HistorianRuntimeService : IHostedService, IAsyncDisposable
         }
     }
 
-    public Task StartAsync(CancellationToken cancellationToken)
+    public async Task StartAsync(CancellationToken cancellationToken)
     {
         lock (_sync)
         {
             if (_started)
             {
-                return Task.CompletedTask;
+                return;
             }
 
             _started = true;
@@ -91,16 +101,17 @@ public sealed class HistorianRuntimeService : IHostedService, IAsyncDisposable
         if (!_options.Historian.Enabled)
         {
             SetState(HistorianRuntimeState.Disabled, null, null);
-            return Task.CompletedTask;
+            return;
         }
 
         cancellationToken.ThrowIfCancellationRequested();
-        var preflight = _store.Preflight();
+        var preflight = await RunPreflightAsync(cancellationToken).ConfigureAwait(false);
+        cancellationToken.ThrowIfCancellationRequested();
         if (preflight.Status == HistoryStorePreflightStatus.Faulted)
         {
             StopAccepting();
             SetState(HistorianRuntimeState.Faulted, preflight.ErrorCode, preflight.ErrorMessage);
-            return Task.CompletedTask;
+            return;
         }
 
         _queue = new HistorianQueue(_options.Historian.QueueCapacity);
@@ -160,7 +171,6 @@ public sealed class HistorianRuntimeService : IHostedService, IAsyncDisposable
 
         _writerTask = Task.Run(() => WriterLoopAsync(_writerCts.Token), CancellationToken.None);
         _coordinatorTask = Task.Run(() => CoordinatorLoopAsync(_lifetimeCts.Token), CancellationToken.None);
-        return Task.CompletedTask;
     }
 
     public async Task StopAsync(CancellationToken cancellationToken)
@@ -185,6 +195,12 @@ public sealed class HistorianRuntimeService : IHostedService, IAsyncDisposable
         _lifetimeCts?.Cancel();
         _queue?.Complete();
 
+        var coordinatorTask = _coordinatorTask;
+        if (coordinatorTask is not null)
+        {
+            await coordinatorTask.ConfigureAwait(false);
+        }
+
         if (_writerTask is not null)
         {
             using var shutdownCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -208,6 +224,8 @@ public sealed class HistorianRuntimeService : IHostedService, IAsyncDisposable
         _writerCts = null;
         _lifetimeCts?.Dispose();
         _lifetimeCts = null;
+        _coordinator?.Dispose();
+        _coordinator = null;
         _profileRegistry = null;
         _historyTagsById.Clear();
         _started = false;
@@ -222,17 +240,13 @@ public sealed class HistorianRuntimeService : IHostedService, IAsyncDisposable
             return;
         }
 
-        HistoryEvaluationResult result;
-        lock (_evaluationSync)
-        {
-            result = _evaluator.Evaluate(
-                _options.RuntimeId,
-                tag,
-                profile,
-                value,
-                _timeProvider.GetUtcNow(),
-                _timeProvider.GetTimestamp());
-        }
+        var result = _evaluator.Evaluate(
+            _options.RuntimeId,
+            tag,
+            profile,
+            value,
+            _timeProvider.GetUtcNow(),
+            _timeProvider.GetTimestamp());
         EnqueueResult(tag.Id, result);
     }
 
@@ -257,6 +271,11 @@ public sealed class HistorianRuntimeService : IHostedService, IAsyncDisposable
             return;
         }
 
+        if (result.NextDueTimestamp is long nextDueTimestamp)
+        {
+            _coordinator?.Schedule(tagId, nextDueTimestamp);
+        }
+
         if (!_queue.TryWrite(result.Sample))
         {
             Interlocked.Increment(ref _droppedSamples);
@@ -265,10 +284,6 @@ public sealed class HistorianRuntimeService : IHostedService, IAsyncDisposable
         }
 
         Interlocked.Increment(ref _enqueuedSamples);
-        if (result.NextDueTimestamp is not null)
-        {
-            _coordinator?.Schedule(tagId, result.NextDueTimestamp.Value);
-        }
     }
 
     private async Task CoordinatorLoopAsync(CancellationToken cancellationToken)
@@ -295,24 +310,19 @@ public sealed class HistorianRuntimeService : IHostedService, IAsyncDisposable
                     continue;
                 }
 
-                HistoryEvaluationResult result;
-                lock (_evaluationSync)
-                {
-                    result = _evaluator.EvaluatePeriodic(
-                        _options.RuntimeId,
-                        tag,
-                        profile,
-                        value,
-                        _timeProvider.GetUtcNow(),
-                        now);
-                }
+                var result = _evaluator.EvaluatePeriodic(
+                    _options.RuntimeId,
+                    tag,
+                    profile,
+                    value,
+                    _timeProvider.GetUtcNow(),
+                    now);
                 EnqueueResult(tag.Id, result);
             }
 
-            var delay = _coordinator.GetDelay(now);
             try
             {
-                await Task.Delay(delay, _timeProvider, cancellationToken).ConfigureAwait(false);
+                await _coordinator.WaitForNextAsync(now, cancellationToken).ConfigureAwait(false);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -329,6 +339,7 @@ public sealed class HistorianRuntimeService : IHostedService, IAsyncDisposable
         }
 
         var initialized = false;
+        var initializationFailureCount = 0;
         while (!initialized && !cancellationToken.IsCancellationRequested)
         {
             try
@@ -358,10 +369,11 @@ public sealed class HistorianRuntimeService : IHostedService, IAsyncDisposable
                 }
 
                 Interlocked.Increment(ref _writeFailures);
+                var retryDelay = GetInitializationRetryDelay(++initializationFailureCount);
                 SetState(HistorianRuntimeState.Degraded, "HISTORIAN_STORAGE_UNAVAILABLE", exception.Message);
                 try
                 {
-                    await Task.Delay(TimeSpan.FromMilliseconds(250), _timeProvider, cancellationToken)
+                    await Task.Delay(retryDelay, _timeProvider, cancellationToken)
                         .ConfigureAwait(false);
                 }
                 catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -498,4 +510,58 @@ public sealed class HistorianRuntimeService : IHostedService, IAsyncDisposable
 
     private static bool IsPermanent(Exception exception) =>
         exception is HistoryStorePermanentException;
+
+    private async Task<HistoryStorePreflightResult> RunPreflightAsync(CancellationToken cancellationToken)
+    {
+        using var preflightCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        var preflightTask = GetPreflightResultAsync(preflightCts.Token);
+        var timeoutTask = Task.Delay(PreflightBudget, _timeProvider, timeoutCts.Token);
+        var completed = await Task.WhenAny(preflightTask, timeoutTask).ConfigureAwait(false);
+
+        if (completed == preflightTask)
+        {
+            timeoutCts.Cancel();
+            return await preflightTask.ConfigureAwait(false);
+        }
+
+        preflightCts.Cancel();
+        cancellationToken.ThrowIfCancellationRequested();
+        return new HistoryStorePreflightResult(
+            HistoryStorePreflightStatus.Recoverable,
+            "HISTORIAN_PREFLIGHT_TIMEOUT",
+            "Historian storage preflight exceeded its startup budget; initialization will retry in the background.");
+    }
+
+    private async Task<HistoryStorePreflightResult> GetPreflightResultAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await _store.PreflightAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (HistoryStorePermanentException exception)
+        {
+            return new HistoryStorePreflightResult(
+                HistoryStorePreflightStatus.Faulted,
+                exception.Code,
+                exception.Message);
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            return new HistoryStorePreflightResult(
+                HistoryStorePreflightStatus.Recoverable,
+                "HISTORIAN_PREFLIGHT_CANCELLED",
+                "Historian storage preflight was cancelled; initialization will retry in the background.");
+        }
+        catch (Exception exception)
+        {
+            return new HistoryStorePreflightResult(
+                HistoryStorePreflightStatus.Recoverable,
+                "HISTORIAN_PREFLIGHT",
+                exception.Message);
+        }
+    }
+
+    private static TimeSpan GetInitializationRetryDelay(int failureCount) =>
+        InitializationRetryDelays[Math.Min(Math.Max(failureCount - 1, 0), InitializationRetryDelays.Length - 1)];
 }

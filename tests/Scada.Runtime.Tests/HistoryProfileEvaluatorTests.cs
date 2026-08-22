@@ -162,6 +162,68 @@ public sealed class HistoryProfileEvaluatorTests
         Assert.Null(wrongType.Sample);
     }
 
+    [Fact]
+    public async Task DifferentTagEvaluationsDoNotShareOneGlobalLock()
+    {
+        var clock = new BlockingElapsedTimeProvider();
+        var evaluator = new HistoryProfileEvaluator(clock);
+        var profile = Profile("Custom", 0, 0, 1_000);
+        var tagA = CreateTag(TagDataType.Double, "T1");
+        var tagB = CreateTag(TagDataType.Double, "T2");
+
+        evaluator.Evaluate("Runtime01", tagA, profile,
+            new TagValue(tagA.Id, 1d, TagQuality.Good, clock.GetUtcNow(), 1), clock.GetUtcNow(), 0);
+        evaluator.Evaluate("Runtime01", tagB, profile,
+            new TagValue(tagB.Id, 1d, TagQuality.Good, clock.GetUtcNow(), 1), clock.GetUtcNow(), 0);
+
+        clock.BlockNextElapsed();
+        var blockedTagTask = Task.Run(() => evaluator.Evaluate(
+            "Runtime01", tagA, profile,
+            new TagValue(tagA.Id, 2d, TagQuality.Good, clock.GetUtcNow(), 2), clock.GetUtcNow(), 1));
+        clock.WaitUntilBlocked();
+
+        try
+        {
+            var otherTagTask = Task.Run(() => evaluator.Evaluate(
+                "Runtime01", tagB, profile,
+                new TagValue(tagB.Id, 2d, TagQuality.Good, clock.GetUtcNow(), 2), clock.GetUtcNow(), 1));
+            var completed = await Task.WhenAny(otherTagTask, Task.Delay(TimeSpan.FromSeconds(1)));
+
+            Assert.Same(otherTagTask, completed);
+            await otherTagTask;
+        }
+        finally
+        {
+            clock.ReleaseElapsedTime();
+            await blockedTagTask;
+        }
+    }
+
+    [Fact]
+    public async Task SameTagCallbackAndPeriodicEvaluationRemainSerialized()
+    {
+        var clock = new ManualTimeProvider();
+        var evaluator = new HistoryProfileEvaluator(clock);
+        var tag = CreateTag(TagDataType.Double);
+        var profile = Profile("Analog", 0, 0, 1_000);
+        var first = new TagValue(tag.Id, 1d, TagQuality.Good, clock.GetUtcNow(), 1);
+
+        Assert.NotNull(evaluator.Evaluate("Runtime01", tag, profile, first, clock.GetUtcNow(), 0).Sample);
+
+        var evaluations = Enumerable.Range(2, 20).Select(sequence => Task.Run(() =>
+            sequence % 2 == 0
+                ? evaluator.Evaluate(
+                    "Runtime01", tag, profile,
+                    first with { Sequence = sequence }, clock.GetUtcNow(), sequence)
+                : evaluator.EvaluatePeriodic(
+                    "Runtime01", tag, profile,
+                    first with { Sequence = sequence }, clock.GetUtcNow(), sequence)));
+
+        await Task.WhenAll(evaluations);
+
+        Assert.NotNull(evaluator.GetNextDueTimestamp(tag.Id));
+    }
+
     private static TagDefinition CreateTag(TagDataType dataType, string id = "T1") => new()
     {
         Id = id,
@@ -183,4 +245,35 @@ public sealed class HistoryProfileEvaluatorTests
         MinimumIntervalMilliseconds = minimumMilliseconds,
         MaximumIntervalMilliseconds = maximumMilliseconds
     };
+
+    private sealed class BlockingElapsedTimeProvider : TimeProvider
+    {
+        private readonly ManualResetEventSlim _entered = new(false);
+        private readonly ManualResetEventSlim _release = new(false);
+        private int _blockNext;
+
+        public override long TimestampFrequency
+        {
+            get
+            {
+                if (Interlocked.Exchange(ref _blockNext, 0) == 1)
+                {
+                    _entered.Set();
+                    _release.Wait();
+                }
+
+                return TimeSpan.TicksPerSecond;
+            }
+        }
+
+        public override DateTimeOffset GetUtcNow() => DateTimeOffset.UtcNow;
+
+        public override long GetTimestamp() => 0;
+
+        public void BlockNextElapsed() => Volatile.Write(ref _blockNext, 1);
+
+        public void WaitUntilBlocked() => Assert.True(_entered.Wait(TimeSpan.FromSeconds(2)));
+
+        public void ReleaseElapsedTime() => _release.Set();
+    }
 }
