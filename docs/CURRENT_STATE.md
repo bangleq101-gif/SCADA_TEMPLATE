@@ -111,7 +111,7 @@ n PLC
 
 - `dotnet restore Scada.sln --ignore-failed-sources` — PASS.
 - `dotnet build Scada.sln -c Release --no-restore` — PASS with 0 warnings and 0 errors.
-- `dotnet test Scada.sln -c Release --no-build` — PASS; 153 tests, 0 failures (54 App, 55 Runtime, 8 Core, 3 Drivers, 34 Infrastructure).
+- `dotnet test Scada.sln -c Release --no-build` — PASS; 154 tests, 0 failures (54 App, 55 Runtime, 8 Core, 3 Drivers, 34 Infrastructure).
 - `dotnet list Scada.sln package --include-transitive --vulnerable` — PASS; no vulnerable packages reported. `SQLitePCLRaw.bundle_e_sqlite3`, `core`, `lib.e_sqlite3` and `provider.e_sqlite3` resolve to 2.1.12 through `Microsoft.Data.Sqlite` 10.0.11.
 - `git diff --check` — PASS.
 - WPF startup smoke test — PASS; `Scada.App` stayed running through the startup check and resolved `MainWindow` with resources/templates loaded without a startup DI/XAML exception.
