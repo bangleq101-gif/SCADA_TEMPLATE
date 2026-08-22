@@ -125,6 +125,76 @@ public sealed class HistoryProfileEvaluatorTests
     }
 
     [Fact]
+    public void PeriodicEvaluationSuppressesStaleSequenceWithoutRegressingState()
+    {
+        var clock = new ManualTimeProvider();
+        var evaluator = new HistoryProfileEvaluator(clock);
+        var tag = CreateTag(TagDataType.Double);
+        var profile = Profile("Analog", 0, 0, 1_000);
+        var first = new TagValue(tag.Id, 100d, TagQuality.Good, clock.GetUtcNow(), 10);
+        var latest = first with { Value = 200d, Sequence = 11 };
+
+        Assert.NotNull(evaluator.Evaluate("Runtime01", tag, profile, first, clock.GetUtcNow(), 0).Sample);
+        Assert.NotNull(evaluator.Evaluate("Runtime01", tag, profile, latest, clock.GetUtcNow(), 1).Sample);
+
+        var stalePeriodic = evaluator.EvaluatePeriodic(
+            "Runtime01", tag, profile, first, clock.GetUtcNow(), 2);
+        var repeatedLatest = evaluator.Evaluate(
+            "Runtime01", tag, profile, latest with { Sequence = 12 }, clock.GetUtcNow(), 3);
+
+        Assert.Null(stalePeriodic.Sample);
+        Assert.Null(repeatedLatest.Sample);
+    }
+
+    [Fact]
+    public void StalePeriodicGoodValueDoesNotUndoDisconnectedQualityTransition()
+    {
+        var clock = new ManualTimeProvider();
+        var evaluator = new HistoryProfileEvaluator(clock);
+        var tag = CreateTag(TagDataType.Double);
+        var profile = Profile("Analog", 0, 0, 1_000);
+        var good = new TagValue(tag.Id, 100d, TagQuality.Good, clock.GetUtcNow(), 10);
+        var disconnected = good with { Quality = TagQuality.Disconnected, Sequence = 11 };
+
+        Assert.NotNull(evaluator.Evaluate("Runtime01", tag, profile, good, clock.GetUtcNow(), 0).Sample);
+        Assert.NotNull(evaluator.Evaluate("Runtime01", tag, profile, disconnected, clock.GetUtcNow(), 1).Sample);
+
+        var stalePeriodic = evaluator.EvaluatePeriodic(
+            "Runtime01", tag, profile, good, clock.GetUtcNow(), 2);
+        var repeatedDisconnected = evaluator.Evaluate(
+            "Runtime01", tag, profile, disconnected with { Sequence = 12 }, clock.GetUtcNow(), 3);
+
+        Assert.Null(stalePeriodic.Sample);
+        Assert.Null(repeatedDisconnected.Sample);
+    }
+
+    [Fact]
+    public void PeriodicEvaluationAcceptsEqualSequenceWhenDue()
+    {
+        var clock = new ManualTimeProvider();
+        var evaluator = new HistoryProfileEvaluator(clock);
+        var tag = CreateTag(TagDataType.Double);
+        var profile = Profile("Analog", 0, 0, 5_000);
+        var value = new TagValue(tag.Id, 100d, TagQuality.Good, clock.GetUtcNow(), 10);
+
+        Assert.NotNull(evaluator.Evaluate("Runtime01", tag, profile, value, clock.GetUtcNow(), 0).Sample);
+        clock.Advance(TimeSpan.FromSeconds(5));
+
+        var periodic = evaluator.EvaluatePeriodic(
+            "Runtime01", tag, profile, value, clock.GetUtcNow(), clock.GetTimestamp());
+
+        Assert.NotNull(periodic.Sample);
+        Assert.Equal(10, periodic.Sample!.TagSequence);
+
+        clock.Advance(TimeSpan.FromSeconds(5));
+        var newer = value with { Value = 200d, Sequence = 11 };
+        Assert.NotNull(evaluator.EvaluatePeriodic(
+            "Runtime01", tag, profile, newer, clock.GetUtcNow(), clock.GetTimestamp()).Sample);
+        Assert.Null(evaluator.Evaluate(
+            "Runtime01", tag, profile, newer, clock.GetUtcNow(), clock.GetTimestamp()).Sample);
+    }
+
+    [Fact]
     public void Int64DeadbandHandlesOppositeExtremesWithoutOverflow()
     {
         var clock = new ManualTimeProvider();

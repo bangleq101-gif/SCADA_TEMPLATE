@@ -216,6 +216,34 @@ public sealed class HistorianRuntimeServiceTests
         Assert.Equal(4, service.Snapshot.WriteFailures);
     }
 
+    [Fact]
+    public async Task PermanentWriteFaultStopsAcceptingAndDisposesSubscriptions()
+    {
+        var tag = CreateHistoryTag();
+        var cache = new TestHistorianTagCache();
+        var store = new TestHistoryStore(permanentWriteException: new HistoryStorePermanentException(
+            "HISTORIAN_SQLITE_CORRUPT", "corrupt test database"));
+        await using var service = CreateService(CreateOptions(tag), cache, store);
+
+        await service.StartAsync(CancellationToken.None);
+        await store.Initialized.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        cache.Publish(new TagValue(tag.Id, 1d, TagQuality.Good, DateTimeOffset.UtcNow, 1));
+
+        await WaitUntilAsync(() => service.Snapshot.State == HistorianRuntimeState.Faulted);
+
+        Assert.Equal("HISTORIAN_SQLITE_CORRUPT", service.Snapshot.LastErrorCode);
+        Assert.Equal(1, service.Snapshot.EnqueuedSamples);
+        Assert.Equal(1, service.Snapshot.AbandonedSamples);
+        Assert.Equal(0, cache.ActiveSubscriptionCount);
+        Assert.Equal(1, store.WriteBatchCount);
+
+        cache.Publish(new TagValue(tag.Id, 2d, TagQuality.Good, DateTimeOffset.UtcNow, 2));
+        await Task.Delay(25);
+
+        Assert.Equal(1, store.WriteBatchCount);
+        await service.StopAsync(CancellationToken.None);
+    }
+
     private static HistorianRuntimeService CreateService(
         RuntimeOptions options,
         TestHistorianTagCache cache,
@@ -362,11 +390,13 @@ public sealed class HistorianRuntimeServiceTests
     private sealed class TestHistoryStore(
         bool blockInitialization = false,
         int failFirstBatchAttempts = 0,
-        int failInitializationAttempts = 0) : IHistoryStore
+        int failInitializationAttempts = 0,
+        HistoryStorePermanentException? permanentWriteException = null) : IHistoryStore
     {
         private readonly bool _blockInitialization = blockInitialization;
         private int _failFirstBatchAttempts = failFirstBatchAttempts;
         private int _failInitializationAttempts = failInitializationAttempts;
+        private readonly HistoryStorePermanentException? _permanentWriteException = permanentWriteException;
         private readonly TaskCompletionSource<bool> _releaseInitialization =
             new(TaskCreationOptions.RunContinuationsAsynchronously);
         private readonly object _sync = new();
@@ -380,6 +410,8 @@ public sealed class HistorianRuntimeServiceTests
         public List<HistorySample> WrittenSamples { get; } = [];
 
         public int InitializeCount { get; private set; }
+
+        public int WriteBatchCount { get; private set; }
 
         public Task<HistoryStorePreflightResult> PreflightAsync(CancellationToken cancellationToken) =>
             Task.FromResult(new HistoryStorePreflightResult(HistoryStorePreflightStatus.Ready));
@@ -405,6 +437,12 @@ public sealed class HistorianRuntimeServiceTests
         public Task WriteBatchAsync(IReadOnlyList<HistorySample> samples, CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            WriteBatchCount++;
+            if (_permanentWriteException is not null)
+            {
+                throw _permanentWriteException;
+            }
+
             if (_failFirstBatchAttempts > 0 && samples.Any(sample => sample.TagSequence == 1))
             {
                 _failFirstBatchAttempts--;

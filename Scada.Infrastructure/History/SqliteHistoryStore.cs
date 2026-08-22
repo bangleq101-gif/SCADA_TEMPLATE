@@ -81,10 +81,11 @@ public sealed class SqliteHistoryStore : IHistoryStore
         }
         catch (SqliteException exception) when (IsCorrupt(exception))
         {
+            var permanent = CreateCorruptionException(exception);
             return new HistoryStorePreflightResult(
                 HistoryStorePreflightStatus.Faulted,
-                "HISTORIAN_SQLITE_CORRUPT",
-                exception.Message);
+                permanent.Code,
+                permanent.Message);
         }
         catch (Exception exception)
         {
@@ -97,30 +98,45 @@ public sealed class SqliteHistoryStore : IHistoryStore
 
     public async Task InitializeAsync(CancellationToken cancellationToken)
     {
-        _databasePath ??= SqliteHistoryPathResolver.Resolve(_projectPath, _configuredPath);
-        Directory.CreateDirectory(Path.GetDirectoryName(_databasePath)!);
-
-        await using var connection = new SqliteConnection(CreateConnectionString(_databasePath, SqliteOpenMode.ReadWriteCreate));
-        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
-        await SqliteConnectionConfiguration.ConfigureWriteAsync(
-            connection,
-            enableWal: true,
-            cancellationToken: cancellationToken).ConfigureAwait(false);
-
-        var version = ReadUserVersion(connection);
-        if (version > SqliteHistorySchema.CurrentVersion)
+        try
         {
-            throw new HistoryStorePermanentException(
-                "HISTORIAN_SQLITE_SCHEMA_TOO_NEW",
-                $"SQLite history schema version {version} is newer than supported version {SqliteHistorySchema.CurrentVersion}.");
+            _databasePath ??= SqliteHistoryPathResolver.Resolve(_projectPath, _configuredPath);
+            Directory.CreateDirectory(Path.GetDirectoryName(_databasePath)!);
+
+            await using var connection = new SqliteConnection(CreateConnectionString(_databasePath, SqliteOpenMode.ReadWriteCreate));
+            await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+            await SqliteConnectionConfiguration.ConfigureWriteAsync(
+                connection,
+                enableWal: true,
+                cancellationToken: cancellationToken).ConfigureAwait(false);
+
+            var version = ReadUserVersion(connection);
+            if (version > SqliteHistorySchema.CurrentVersion)
+            {
+                throw new HistoryStorePermanentException(
+                    "HISTORIAN_SQLITE_SCHEMA_TOO_NEW",
+                    $"SQLite history schema version {version} is newer than supported version {SqliteHistorySchema.CurrentVersion}.");
+            }
+
+            ValidateExistingSchema(connection, version);
+
+            await ExecuteAsync(connection, SqliteHistorySchema.CreateTableSql, cancellationToken).ConfigureAwait(false);
+            await ExecuteAsync(connection, SqliteHistorySchema.CreateIndexSql, cancellationToken).ConfigureAwait(false);
+            await ExecuteAsync(connection, $"PRAGMA user_version={SqliteHistorySchema.CurrentVersion};", cancellationToken)
+                .ConfigureAwait(false);
         }
-
-        ValidateExistingSchema(connection, version);
-
-        await ExecuteAsync(connection, SqliteHistorySchema.CreateTableSql, cancellationToken).ConfigureAwait(false);
-        await ExecuteAsync(connection, SqliteHistorySchema.CreateIndexSql, cancellationToken).ConfigureAwait(false);
-        await ExecuteAsync(connection, $"PRAGMA user_version={SqliteHistorySchema.CurrentVersion};", cancellationToken)
-            .ConfigureAwait(false);
+        catch (HistoryStorePermanentException)
+        {
+            throw;
+        }
+        catch (UnauthorizedAccessException exception)
+        {
+            throw CreateAccessDeniedException(exception);
+        }
+        catch (SqliteException exception) when (IsCorrupt(exception))
+        {
+            throw CreateCorruptionException(exception);
+        }
     }
 
     public async Task WriteBatchAsync(IReadOnlyList<HistorySample> samples, CancellationToken cancellationToken)
@@ -131,22 +147,37 @@ public sealed class SqliteHistoryStore : IHistoryStore
             return;
         }
 
-        _databasePath ??= SqliteHistoryPathResolver.Resolve(_projectPath, _configuredPath);
-        await using var connection = new SqliteConnection(CreateConnectionString(_databasePath, SqliteOpenMode.ReadWriteCreate));
-        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
-        await SqliteConnectionConfiguration.ConfigureWriteAsync(
-            connection,
-            enableWal: false,
-            cancellationToken: cancellationToken).ConfigureAwait(false);
-        await using var transaction = (SqliteTransaction)await connection.BeginTransactionAsync(cancellationToken)
-            .ConfigureAwait(false);
-
-        foreach (var sample in samples)
+        try
         {
-            await InsertAsync(connection, transaction, sample, cancellationToken).ConfigureAwait(false);
-        }
+            _databasePath ??= SqliteHistoryPathResolver.Resolve(_projectPath, _configuredPath);
+            await using var connection = new SqliteConnection(CreateConnectionString(_databasePath, SqliteOpenMode.ReadWriteCreate));
+            await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+            await SqliteConnectionConfiguration.ConfigureWriteAsync(
+                connection,
+                enableWal: false,
+                cancellationToken: cancellationToken).ConfigureAwait(false);
+            await using var transaction = (SqliteTransaction)await connection.BeginTransactionAsync(cancellationToken)
+                .ConfigureAwait(false);
 
-        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+            foreach (var sample in samples)
+            {
+                await InsertAsync(connection, transaction, sample, cancellationToken).ConfigureAwait(false);
+            }
+
+            await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (HistoryStorePermanentException)
+        {
+            throw;
+        }
+        catch (UnauthorizedAccessException exception)
+        {
+            throw CreateAccessDeniedException(exception);
+        }
+        catch (SqliteException exception) when (IsCorrupt(exception))
+        {
+            throw CreateCorruptionException(exception);
+        }
     }
 
     public async Task<IReadOnlyList<HistorySample>> QueryAsync(
@@ -155,18 +186,20 @@ public sealed class SqliteHistoryStore : IHistoryStore
     {
         ArgumentNullException.ThrowIfNull(query);
         query.Validate();
-        _databasePath ??= SqliteHistoryPathResolver.Resolve(_projectPath, _configuredPath);
-
-        if (!File.Exists(_databasePath))
+        try
         {
-            return [];
-        }
+            _databasePath ??= SqliteHistoryPathResolver.Resolve(_projectPath, _configuredPath);
 
-        await using var connection = new SqliteConnection(CreateConnectionString(_databasePath, SqliteOpenMode.ReadOnly));
-        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
-        await SqliteConnectionConfiguration.ConfigureReadAsync(connection, cancellationToken).ConfigureAwait(false);
-        await using var command = connection.CreateCommand();
-        command.CommandText = """
+            if (!File.Exists(_databasePath))
+            {
+                return [];
+            }
+
+            await using var connection = new SqliteConnection(CreateConnectionString(_databasePath, SqliteOpenMode.ReadOnly));
+            await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+            await SqliteConnectionConfiguration.ConfigureReadAsync(connection, cancellationToken).ConfigureAwait(false);
+            await using var command = connection.CreateCommand();
+            command.CommandText = """
             SELECT RuntimeId, TagId, DataType, Quality,
                    SourceTimestampUtcTicks, RecordedAtUtcTicks,
                    TagSequence, HasValue, ValueInteger, ValueReal, ValueText
@@ -178,45 +211,58 @@ public sealed class SqliteHistoryStore : IHistoryStore
             ORDER BY RecordedAtUtcTicks ASC, Id ASC
             LIMIT $limit;
             """;
-        command.Parameters.AddWithValue("$runtimeId", query.RuntimeId);
-        command.Parameters.AddWithValue("$tagId", query.TagId);
-        command.Parameters.AddWithValue("$fromTicks", query.FromRecordedAtUtc.UtcDateTime.Ticks);
-        command.Parameters.AddWithValue("$toTicks", query.ToRecordedAtUtc.UtcDateTime.Ticks);
-        command.Parameters.AddWithValue("$limit", query.Limit);
+            command.Parameters.AddWithValue("$runtimeId", query.RuntimeId);
+            command.Parameters.AddWithValue("$tagId", query.TagId);
+            command.Parameters.AddWithValue("$fromTicks", query.FromRecordedAtUtc.UtcDateTime.Ticks);
+            command.Parameters.AddWithValue("$toTicks", query.ToRecordedAtUtc.UtcDateTime.Ticks);
+            command.Parameters.AddWithValue("$limit", query.Limit);
 
-        var results = new List<HistorySample>();
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
-        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
-        {
-            var dataType = Enum.Parse<TagDataType>(reader.GetString(2), ignoreCase: true);
-            var quality = Enum.Parse<TagQuality>(reader.GetString(3), ignoreCase: true);
-            var hasValue = reader.GetInt64(7) != 0;
-            object? value = null;
-            if (hasValue)
+            var results = new List<HistorySample>();
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
             {
-                value = dataType switch
+                var dataType = Enum.Parse<TagDataType>(reader.GetString(2), ignoreCase: true);
+                var quality = Enum.Parse<TagQuality>(reader.GetString(3), ignoreCase: true);
+                var hasValue = reader.GetInt64(7) != 0;
+                object? value = null;
+                if (hasValue)
                 {
-                    TagDataType.Boolean => reader.GetInt64(8) != 0,
-                    TagDataType.Int32 => checked((int)reader.GetInt64(8)),
-                    TagDataType.Int64 => reader.GetInt64(8),
-                    TagDataType.Double => reader.GetDouble(9),
-                    TagDataType.String => reader.GetString(10),
-                    _ => throw new InvalidOperationException($"Unsupported stored data type '{dataType}'.")
-                };
+                    value = dataType switch
+                    {
+                        TagDataType.Boolean => reader.GetInt64(8) != 0,
+                        TagDataType.Int32 => checked((int)reader.GetInt64(8)),
+                        TagDataType.Int64 => reader.GetInt64(8),
+                        TagDataType.Double => reader.GetDouble(9),
+                        TagDataType.String => reader.GetString(10),
+                        _ => throw new InvalidOperationException($"Unsupported stored data type '{dataType}'.")
+                    };
+                }
+
+                results.Add(new HistorySample(
+                    reader.GetString(0),
+                    reader.GetString(1),
+                    dataType,
+                    value,
+                    quality,
+                    new DateTimeOffset(reader.GetInt64(4), TimeSpan.Zero),
+                    new DateTimeOffset(reader.GetInt64(5), TimeSpan.Zero),
+                    reader.GetInt64(6)));
             }
 
-            results.Add(new HistorySample(
-                reader.GetString(0),
-                reader.GetString(1),
-                dataType,
-                value,
-                quality,
-                new DateTimeOffset(reader.GetInt64(4), TimeSpan.Zero),
-                new DateTimeOffset(reader.GetInt64(5), TimeSpan.Zero),
-                reader.GetInt64(6)));
+            return results;
         }
-
-        return results;
+        catch (HistoryStorePermanentException)
+        {
+            throw;
+        }
+        catch (UnauthorizedAccessException exception)
+        {
+            throw CreateAccessDeniedException(exception);
+        }
+        catch (SqliteException exception) when (IsCorrupt(exception))
+        {
+            throw CreateCorruptionException(exception);
+        }
     }
 
     private static async Task InsertAsync(
@@ -379,4 +425,16 @@ public sealed class SqliteHistoryStore : IHistoryStore
 
     private static bool IsCorrupt(SqliteException exception) =>
         exception.SqliteErrorCode is 11 or 26;
+
+    private static HistoryStorePermanentException CreateCorruptionException(SqliteException exception) =>
+        new(
+            "HISTORIAN_SQLITE_CORRUPT",
+            "SQLite history database is corrupt or is not a valid SQLite database.",
+            exception);
+
+    private static HistoryStorePermanentException CreateAccessDeniedException(UnauthorizedAccessException exception) =>
+        new(
+            "HISTORIAN_STORAGE_ACCESS_DENIED",
+            "Access to SQLite history storage was denied.",
+            exception);
 }

@@ -197,6 +197,52 @@ public sealed class SqliteHistoryStoreTests
     }
 
     [Fact]
+    public async Task CorruptDatabaseIsTranslatedOutsidePreflight()
+    {
+        var directory = CreateTempDirectory();
+        try
+        {
+            var store = CreateStore(directory);
+            await store.InitializeAsync(CancellationToken.None);
+            var databasePath = store.DatabasePath!;
+
+            SqliteConnection.ClearAllPools();
+            File.WriteAllText(databasePath, "not a sqlite database");
+
+            var initializeException = await Assert.ThrowsAsync<HistoryStorePermanentException>(
+                () => CreateStore(directory).InitializeAsync(CancellationToken.None));
+            var writeException = await Assert.ThrowsAsync<HistoryStorePermanentException>(
+                () => store.WriteBatchAsync(
+                    [Sample(
+                        "T1",
+                        TagDataType.Double,
+                        1d,
+                        TagQuality.Good,
+                        DateTimeOffset.UtcNow,
+                        DateTimeOffset.UtcNow,
+                        1)],
+                    CancellationToken.None));
+            var queryException = await Assert.ThrowsAsync<HistoryStorePermanentException>(
+                () => store.QueryAsync(
+                    new HistoryQuery(
+                        "Runtime01",
+                        "T1",
+                        DateTimeOffset.UtcNow.AddMinutes(-1),
+                        DateTimeOffset.UtcNow.AddMinutes(1),
+                        10),
+                    CancellationToken.None));
+
+            Assert.Equal("HISTORIAN_SQLITE_CORRUPT", initializeException.Code);
+            Assert.Equal("HISTORIAN_SQLITE_CORRUPT", writeException.Code);
+            Assert.Equal("HISTORIAN_SQLITE_CORRUPT", queryException.Code);
+        }
+        finally
+        {
+            DeleteDirectory(directory);
+        }
+    }
+
+    [Fact]
     public async Task ExistingMalformedHistoryTableIsFaulted()
     {
         var directory = CreateTempDirectory();

@@ -89,10 +89,21 @@ public sealed class HistoryProfileEvaluator(TimeProvider timeProvider)
         var state = GetState(tag.Id);
         lock (state.Sync)
         {
+            if (state.HasSequence && value.Sequence < state.LastSequence)
+            {
+                return HistoryEvaluationResult.Suppressed(state.NextDueTimestamp);
+            }
+
             if (!state.HasAccepted || value.Quality != TagQuality.Good || profile.Mode == HistoryMode.OnChange)
             {
                 state.NextDueTimestamp = null;
                 return HistoryEvaluationResult.Suppressed();
+            }
+
+            if (!state.HasSequence || value.Sequence > state.LastSequence)
+            {
+                state.HasSequence = true;
+                state.LastSequence = value.Sequence;
             }
 
             return Accept(runtimeId, tag, profile, value, normalized, recordedAtUtc, monotonicTimestamp, state);
