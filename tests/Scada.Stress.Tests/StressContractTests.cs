@@ -133,7 +133,7 @@ public sealed class StressContractTests
     public void RegressionComparerTreatsChangedMeasurementContractAsObservationalOnly()
     {
         var baseline = ResultFingerprint.Example();
-        var candidate = baseline with { MeasurementContractVersion = "m10-phase-a-v3" };
+        var candidate = baseline with { MeasurementContractVersion = "m10-phase-a-v2" };
 
         Assert.Equal(RegressionVerdict.ObservationalOnly, StressRegressionComparer.Compare(baseline, new StressMetricSummary(), candidate, new StressMetricSummary()).Verdict);
     }
@@ -228,6 +228,33 @@ public sealed class StressContractTests
     }
 
     [Fact]
+    public async Task InFlightWarmupHistoryWriteIsExcludedFromMeasurementPersistedCorrectness()
+    {
+        var inner = new BlockingHistoryStore();
+        var history = new TimedHistoryStore(inner);
+
+        var warmupWrite = history.WriteBatchAsync([Sample()], CancellationToken.None);
+        await inner.WriteStarted.Task;
+        history.BeginMeasurement();
+        inner.AllowWrite.TrySetResult();
+        await warmupWrite;
+
+        await history.WriteBatchAsync([Sample()], CancellationToken.None);
+        const long serviceWrittenSamples = 2; // The service may observe both commits across its boundary.
+        const long persistedMeasurementRows = 1;
+        var correctness = StressCorrectnessEvaluator.Evaluate(new StressQualificationFacts
+        {
+            HistorianPersistedRows = persistedMeasurementRows,
+            HistorianMeasurementSamplesWritten = history.SampleCount
+        });
+
+        Assert.Equal(2, inner.TotalWrittenSamples);
+        Assert.Equal(1, history.SampleCount);
+        Assert.True(serviceWrittenSamples > history.SampleCount);
+        Assert.True(correctness.Passed);
+    }
+
+    [Fact]
     public async Task MqttTransportMarksMissingObservableOrderingFieldAsFailure()
     {
         await using var transport = new StressMqttTransport(TimeSpan.Zero);
@@ -245,7 +272,7 @@ public sealed class StressContractTests
         var json = StressResultWriter.Serialize(result);
 
         Assert.Contains("\"resultSchemaVersion\": 2", json);
-        Assert.Contains("\"measurementContractVersion\": \"m10-phase-a-v2\"", json);
+        Assert.Contains("\"measurementContractVersion\": \"m10-phase-a-v3\"", json);
         Assert.Contains("\"workloadVersion\": \"m10-phase-a-v1\"", json);
         Assert.Contains("\"environmentFingerprint\"", json);
         Assert.Contains("\"changePattern\"", json);
@@ -329,7 +356,8 @@ public sealed class StressContractTests
             if (profile == StressProfile.HistorianHeavy)
             {
                 Assert.NotNull(result.Metrics.Historian);
-                Assert.True(result.Metrics.Historian!.Written > 0);
+                Assert.True(result.Metrics.Historian!.ServiceWrittenSamples > 0);
+                Assert.Equal(result.Metrics.Historian.MeasurementSamplesWritten, result.Metrics.Historian.PersistedRows);
                 Assert.Equal(0, result.Metrics.Historian.Dropped + result.Metrics.Historian.Rejected + result.Metrics.Historian.Abandoned + result.Metrics.Historian.WriteFailures);
             }
             else
@@ -410,6 +438,22 @@ public sealed class StressContractTests
         public Task<HistoryStorePreflightResult> PreflightAsync(CancellationToken cancellationToken) => Task.FromResult(new HistoryStorePreflightResult(HistoryStorePreflightStatus.Ready));
         public Task InitializeAsync(CancellationToken cancellationToken) => Task.CompletedTask;
         public Task WriteBatchAsync(IReadOnlyList<HistorySample> samples, CancellationToken cancellationToken) => Task.CompletedTask;
+        public Task<IReadOnlyList<HistorySample>> QueryAsync(HistoryQuery query, CancellationToken cancellationToken) => Task.FromResult<IReadOnlyList<HistorySample>>([]);
+    }
+
+    private sealed class BlockingHistoryStore : IHistoryStore
+    {
+        public TaskCompletionSource WriteStarted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource AllowWrite { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public long TotalWrittenSamples { get; private set; }
+        public Task<HistoryStorePreflightResult> PreflightAsync(CancellationToken cancellationToken) => Task.FromResult(new HistoryStorePreflightResult(HistoryStorePreflightStatus.Ready));
+        public Task InitializeAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+        public async Task WriteBatchAsync(IReadOnlyList<HistorySample> samples, CancellationToken cancellationToken)
+        {
+            WriteStarted.TrySetResult();
+            await AllowWrite.Task.WaitAsync(cancellationToken);
+            TotalWrittenSamples += samples.Count;
+        }
         public Task<IReadOnlyList<HistorySample>> QueryAsync(HistoryQuery query, CancellationToken cancellationToken) => Task.FromResult<IReadOnlyList<HistorySample>>([]);
     }
 }

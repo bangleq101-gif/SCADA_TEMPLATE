@@ -24,7 +24,7 @@ public sealed record StressWorkload(
 public static class StressWorkloadFactory
 {
     public const string WorkloadVersion = "m10-phase-a-v1";
-    public const string MeasurementContractVersion = "m10-phase-a-v2";
+    public const string MeasurementContractVersion = "m10-phase-a-v3";
     public const int ResultSchemaVersion = 2;
     public const int QualificationDeviceCount = 50;
     public const int QualificationTagsPerDevice = 200;
@@ -187,7 +187,7 @@ public sealed record StressMetricSummary(double CpuPercent = 0, long WorkingSetB
 }
 
 public sealed record HistogramSummary(long Count, long P50, long P95, long P99, long Maximum);
-public sealed record HistorianStressSummary(int SampledQueueHighWater, long Accepted, long Enqueued, long Written, long Rejected, long Dropped, long Abandoned, long WriteFailures, long BatchCount, double BatchesPerSecond, long SamplesWritten, double AverageSamplesPerBatch, HistogramSummary WriteLatencyMicroseconds, double DrainMilliseconds, long DatabaseBytes, long PersistedRows);
+public sealed record HistorianStressSummary(int SampledQueueHighWater, long Accepted, long Enqueued, long ServiceWrittenSamples, long Rejected, long Dropped, long Abandoned, long WriteFailures, long BatchCount, double BatchesPerSecond, long MeasurementSamplesWritten, double AverageSamplesPerBatch, HistogramSummary WriteLatencyMicroseconds, double DrainMilliseconds, long DatabaseBytes, long PersistedRows);
 public sealed record MqttStressSummary(long Published, double PublishedPerSecond, int SampledPendingHighWater, long Coalesced, long Rejected, long Failures, long Reconnects, int MaximumConcurrency, HistogramSummary PublishLatencyMicroseconds, bool SourceTimestampOrderCorrect, long PlcReadsCaused);
 public sealed record DispatcherStressSummary(long UpdateCount, int ActiveSubscriptions, HistogramSummary LatencyMicroseconds, long HeartbeatGaps);
 public sealed record StressCorrectness(int DeviceCount, int TagCount, int TagValueCount, int ActiveSubscriptionsAfterShutdown, bool CleanShutdown, bool Passed, IReadOnlyList<string> Violations);
@@ -260,7 +260,7 @@ public sealed record StressQualificationFacts
     public long HistorianAbandoned { get; init; }
     public long HistorianWriteFailures { get; init; }
     public long HistorianPersistedRows { get; init; }
-    public long HistorianWrittenSamples { get; init; }
+    public long HistorianMeasurementSamplesWritten { get; init; }
     public bool MqttSourceTimestampOrderCorrect { get; init; } = true;
     public long MqttPlcReadsCaused { get; init; }
     public long MqttFailures { get; init; }
@@ -284,7 +284,7 @@ public static class StressCorrectnessEvaluator
         if (facts.HistorianDropped != 0) violations.Add("Historian dropped samples were non-zero.");
         if (facts.HistorianAbandoned != 0) violations.Add("Historian abandoned samples were non-zero.");
         if (facts.HistorianWriteFailures != 0) violations.Add("Historian write failures were non-zero.");
-        if (facts.HistorianPersistedRows != facts.HistorianWrittenSamples) violations.Add("Historian persisted row count does not match written samples.");
+        if (facts.HistorianPersistedRows != facts.HistorianMeasurementSamplesWritten) violations.Add("Historian persisted row count does not match measurement-local written samples.");
         if (!facts.MqttSourceTimestampOrderCorrect) violations.Add("MQTT source-timestamp ordering verification failed.");
         if (facts.MqttPlcReadsCaused != 0) violations.Add("MQTT caused PLC reads.");
         if (facts.MqttFailures != 0) violations.Add("MQTT failures were non-zero.");

@@ -122,7 +122,7 @@ public sealed class StressScenarioRunner
             var mqttEnd = mqtt?.Snapshot;
             var persistedRows = databasePath is null ? 0 : await CountRowsAsync(databasePath, cancellationToken) - persistedRowsStart;
 
-            var historianWritten = historianEnd?.WrittenSamples - (historianStart?.WrittenSamples ?? 0) ?? 0;
+            var historianServiceWrittenSamples = historianEnd?.WrittenSamples - (historianStart?.WrittenSamples ?? 0) ?? 0;
             var metrics = new StressMetricSummary(processEnd.CpuPercent, processEnd.WorkingSet, (cacheEnd.Updates - cacheStart.Updates) / elapsedSeconds,
                 pollingEnd.Jitter.Values.Select(value => value.P95 / 1000.0).DefaultIfEmpty().Max(), (uiEnd?.LatencyMicroseconds.P95 ?? 0) / 1000.0)
             {
@@ -135,7 +135,7 @@ public sealed class StressScenarioRunner
                 SubscriberExceptions = cacheEnd.SubscriberExceptions - cacheStart.SubscriberExceptions,
                 Historian = historianEnd is null ? null : new HistorianStressSummary(historianSampledHighWater,
                     historianEnd.EnqueuedSamples - (historianStart?.EnqueuedSamples ?? 0) + historianEnd.DroppedSamples - (historianStart?.DroppedSamples ?? 0),
-                    historianEnd.EnqueuedSamples - (historianStart?.EnqueuedSamples ?? 0), historianEnd.WrittenSamples - (historianStart?.WrittenSamples ?? 0),
+                    historianEnd.EnqueuedSamples - (historianStart?.EnqueuedSamples ?? 0), historianServiceWrittenSamples,
                     historianEnd.RejectedSamples - (historianStart?.RejectedSamples ?? 0), historianEnd.DroppedSamples - (historianStart?.DroppedSamples ?? 0),
                     historianEnd.AbandonedSamples - (historianStart?.AbandonedSamples ?? 0), historianEnd.WriteFailures - (historianStart?.WriteFailures ?? 0),
                     timedHistory!.BatchCount, timedHistory.BatchCount / elapsedSeconds, timedHistory.SampleCount,
@@ -164,7 +164,7 @@ public sealed class StressScenarioRunner
                 HistorianAbandoned = historianEnd?.AbandonedSamples - (historianStart?.AbandonedSamples ?? 0) ?? 0,
                 HistorianWriteFailures = historianEnd?.WriteFailures - (historianStart?.WriteFailures ?? 0) ?? 0,
                 HistorianPersistedRows = persistedRows,
-                HistorianWrittenSamples = historianWritten,
+                HistorianMeasurementSamplesWritten = timedHistory?.SampleCount ?? 0,
                 MqttSourceTimestampOrderCorrect = mqttTransport?.SourceTimestampOrderCorrect ?? true,
                 MqttPlcReadsCaused = 0,
                 MqttFailures = mqttEnd?.PublishFailures - (mqttStart?.PublishFailures ?? 0) ?? 0,
@@ -226,6 +226,8 @@ public sealed class StressScenarioRunner
         await using var connection = new SqliteConnection($"Data Source={databasePath};Mode=ReadOnly;Pooling=False");
         await connection.OpenAsync(cancellationToken);
         await using var command = connection.CreateCommand();
+        command.CommandText = "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'HistorySamples';";
+        if (Convert.ToInt64(await command.ExecuteScalarAsync(cancellationToken)) == 0) return 0;
         command.CommandText = "SELECT COUNT(*) FROM HistorySamples;";
         return Convert.ToInt64(await command.ExecuteScalarAsync(cancellationToken));
     }

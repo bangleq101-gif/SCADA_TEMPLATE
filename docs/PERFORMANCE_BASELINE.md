@@ -22,11 +22,13 @@ Generated JSON, summaries, CSV, SQLite databases and traces live under ignored `
 
 ## Measurement contract and hard gates
 
-Phase A qualification uses result schema `2` and measurement contract `m10-phase-a-v2`. The measurement contract is part of the compatibility fingerprint, so evidence captured under an earlier contract is observational only.
+Phase A qualification uses result schema `2` and measurement contract `m10-phase-a-v3`. The measurement contract is part of the compatibility fingerprint, so evidence captured under an earlier contract is observational only.
 
 Qualification receives an explicit repository root and expected commit SHA. It rejects a mismatched `HEAD` or a dirty unignored working tree before execution, and records repository root, exact SHA and clean state in the result.
 
-A qualification result passes only when configured device/tag counts and TagCache value count match; polling failures and missed cycles are zero; Historian rejected/dropped/abandoned/write-failure counters are zero and persisted rows equal written samples; MQTT causes no PLC reads and has non-decreasing observable source timestamps; Dispatcher heartbeat gaps are zero; shutdown completes; and zero TagCache subscriptions remain after shutdown. A violation is persisted in `correctness.violations`, sets `correctness.passed` false and makes the harness return a non-zero exit code.
+A qualification result passes only when configured device/tag counts and TagCache value count match; polling failures and missed cycles are zero; Historian rejected/dropped/abandoned/write-failure counters are zero and persisted rows equal measurement-local written samples; MQTT causes no PLC reads and has non-decreasing observable source timestamps; Dispatcher heartbeat gaps are zero; shutdown completes; and zero TagCache subscriptions remain after shutdown. A violation is persisted in `correctness.violations`, sets `correctness.passed` false and makes the harness return a non-zero exit code.
+
+Historian evidence deliberately reports three distinct counters: `ServiceWrittenSamples` is the runtime-service counter delta, `MeasurementSamplesWritten` is the `TimedHistoryStore` measurement-local count, and `PersistedRows` is the persisted measurement-window row count. Only `MeasurementSamplesWritten == PersistedRows` is the hard persisted-data correctness invariant; service writes that began before the boundary may complete afterward and are reported separately.
 
 Historian and MQTT latency/counter collectors begin at the measurement boundary. Their queue/pending high-water values are sampled once per second and are explicitly named `sampled*HighWater`; they are not claims of an exact transient peak.
 
