@@ -9,6 +9,7 @@ public sealed class NavigationService : INotifyPropertyChanged
     public const string MonitoringOnlineTagsRoute = "monitoring.online-tags";
     public const string EngineeringOverviewRoute = "engineering.overview";
     public const string EngineeringTagManagerRoute = "engineering.tag-manager";
+    public const string EngineeringHistoryRoute = "engineering.history";
 
     private readonly IReadOnlyDictionary<string, object> _pages;
     private string _currentRouteKey;
@@ -19,7 +20,8 @@ public sealed class NavigationService : INotifyPropertyChanged
         MachineSettingsViewModel machineSettings,
         MonitoringViewModel monitoring,
         EngineeringViewModel engineering,
-        TagManagerViewModel? tagManager = null)
+        TagManagerViewModel? tagManager = null,
+        HistorySettingsViewModel? historySettings = null)
     {
         ArgumentNullException.ThrowIfNull(operation);
         ArgumentNullException.ThrowIfNull(machineSettings);
@@ -36,6 +38,11 @@ public sealed class NavigationService : INotifyPropertyChanged
         if (tagManager is not null)
         {
             pages[EngineeringTagManagerRoute] = tagManager;
+        }
+
+        if (historySettings is not null)
+        {
+            pages[EngineeringHistoryRoute] = historySettings;
         }
 
         _pages = pages;

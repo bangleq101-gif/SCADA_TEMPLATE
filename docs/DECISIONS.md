@@ -162,3 +162,39 @@ Bulk edits use `Unchanged`, `Mixed` and `Explicit` states rather than a null sen
 ## D-036 — Quality snapshot and destructive action boundaries
 
 Tag Manager row construction seeds each tag from one central `TagCache.TryGet` snapshot without per-row subscriptions. A selected persisted tag owns at most one live subscription. Delete requires an App-layer confirmation adapter; cancellation cannot mutate the working project and no Runtime/TagCache mutation is performed.
+
+## D-037 — Historian project schema migration
+
+Milestone 5 introduces `ProjectDocumentSchema.CurrentVersion = 2`. A v1 project is migrated in memory by adding default `HistorianOptions` while preserving all existing runtime, tag and M4 metadata. Loading does not rewrite the source file; only an explicit Save writes v2. Newer, non-positive and malformed documents remain errors.
+
+## D-038 — Historian profile catalog and configuration authority
+
+The required Digital, Analog, FastAnalog and Custom profiles are centralized in Core and resolved through a case-insensitive registry. When `Scada:Historian:Profiles` is absent, programmatic defaults remain. When the section is present, the bound collection is authoritative, including an empty collection; defaults are cleared before binding and validation reports missing built-ins or other blocking issues.
+
+## D-039 — Historian clocks and sample semantics
+
+Historian samples preserve the normalized `TagValue.Timestamp` as `SourceTimestampUtc` and use a separate `RecordedAtUtc` wall clock. Monotonic `TimeProvider` timestamps are runtime-only for deadband minimum intervals, periodic due times and retry scheduling. TagCache remains authoritative for last-good value/timestamp behavior; quality transitions do not fabricate a new PLC timestamp.
+
+## D-040 — Bounded historian queue and background writer
+
+Runtime historian callbacks perform evaluation and non-blocking bounded `TryWrite` only. A single background consumer batches samples into one SQLite transaction. Invalid, full-queue, abandoned and committed samples use separate counters. Recoverable write failures have finite retries; an exhausted batch is abandoned while later queue items may continue. Permanent storage faults stop intake and transition Historian to Faulted without stopping polling.
+
+## D-041 — SQLite history storage boundary
+
+SQLite is a local Infrastructure concern behind the Core `IHistoryStore` contract. The store resolves `Data/history.db` under the canonical project document directory, rejects absolute/traversal paths, uses `PRAGMA user_version=1`, typed value columns, no `AUTOINCREMENT`, deterministic query ordering and per-batch connections/transactions. Disabled Historian does not create a database, and malformed/newer schemas are permanent runtime faults.
+
+## D-042 — Historian lifecycle and status UI
+
+`HistorianRuntimeService` is one singleton registered as an `IHostedService` before polling. It subscribes before seeding, starts background storage work without delaying polling, stops intake before shutdown drain and exposes an immutable runtime snapshot. History Settings edits the cloned project session, protects built-in names/deletion, marks saved changes restart-required and never hot-reloads runtime configuration.
+
+## D-043 — Historian deadline wakeup and queue-drop semantics
+
+Milestone 5 keeps one monotonic `HistorianCoordinator` for all tags. A single bounded schedule-change signal wakes the coordinator when a new or rescheduled deadline can become the earliest deadline; no timer or task is created per tag. Evaluator acceptance and its next periodic deadline are historian state decisions, so the deadline is scheduled before the bounded queue write. A full queue increments `DroppedSamples` without deleting the accepted periodic schedule.
+
+## D-044 — Per-tag evaluation state and bounded preflight
+
+Historian evaluator state is stored in concurrent per-tag entries with a small per-entry lock. Different tags do not serialize through one global service lock, while callback and periodic evaluation of the same tag remain serialized. `IHistoryStore.PreflightAsync(CancellationToken)` is cancellation-aware; Runtime applies a short startup budget and treats timeout/operational failure as recoverable so polling is not held behind storage. Initialization recovery uses capped exponential monotonic delays.
+
+## D-045 — SQLite writer connection settings and package graph
+
+SQLite initialization, batch writes and reads use centralized per-connection configuration. Every writer applies `synchronous=NORMAL` and a finite 250 ms `busy_timeout`; WAL/schema setup remains initialization-only. `Microsoft.Data.Sqlite` is pinned centrally at 10.0.11, resolving the SQLitePCLRaw family to 2.1.12 and removing the previously observed NU1903 warning without suppressing package auditing.

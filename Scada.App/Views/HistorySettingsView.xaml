@@ -1,0 +1,92 @@
+<UserControl x:Class="Scada.App.Views.HistorySettingsView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controls="clr-namespace:Scada.App.Controls">
+    <controls:WorkspaceLayout Title="History Settings"
+                              Description="Configure historian profiles and project-local storage. Changes require restart."
+                              Style="{StaticResource WorkspaceLayoutStyle}">
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+            <Border Style="{StaticResource CardBorderStyle}" Margin="0,0,0,12">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="220" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <CheckBox Grid.Column="0" Content="Historian enabled" IsChecked="{Binding Enabled, Mode=TwoWay}" VerticalAlignment="Center" Margin="4" />
+                    <TextBlock Grid.Column="2" Text="Database path" Style="{StaticResource FieldLabelTextStyle}" />
+                    <TextBox Grid.Column="3" Text="{Binding DatabasePath, UpdateSourceTrigger=PropertyChanged}" Margin="4" />
+                </Grid>
+            </Border>
+            <Expander Grid.Row="1" Header="Advanced historian settings" IsExpanded="False" Margin="0,0,0,12">
+                <Border Style="{StaticResource CardBorderStyle}" Padding="8">
+                    <UniformGrid Columns="4">
+                        <StackPanel Margin="4">
+                            <TextBlock Text="Queue capacity" Style="{StaticResource FieldLabelTextStyle}" />
+                            <TextBox Text="{Binding QueueCapacity, UpdateSourceTrigger=PropertyChanged}" />
+                        </StackPanel>
+                        <StackPanel Margin="4">
+                            <TextBlock Text="Batch size" Style="{StaticResource FieldLabelTextStyle}" />
+                            <TextBox Text="{Binding BatchSize, UpdateSourceTrigger=PropertyChanged}" />
+                        </StackPanel>
+                        <StackPanel Margin="4">
+                            <TextBlock Text="Flush interval (ms)" Style="{StaticResource FieldLabelTextStyle}" />
+                            <TextBox Text="{Binding FlushIntervalMilliseconds, UpdateSourceTrigger=PropertyChanged}" />
+                        </StackPanel>
+                        <StackPanel Margin="4">
+                            <TextBlock Text="Shutdown drain (ms)" Style="{StaticResource FieldLabelTextStyle}" />
+                            <TextBox Text="{Binding ShutdownDrainTimeoutMilliseconds, UpdateSourceTrigger=PropertyChanged}" />
+                        </StackPanel>
+                    </UniformGrid>
+                </Border>
+            </Expander>
+            <DataGrid Grid.Row="2" ItemsSource="{Binding Profiles}" SelectedItem="{Binding SelectedProfile, Mode=TwoWay}" Style="{StaticResource TagManagerDataGridStyle}" Margin="0,0,0,12">
+                <DataGrid.Columns>
+                    <DataGridTextColumn Header="Name" Binding="{Binding Name, UpdateSourceTrigger=PropertyChanged}" Width="*" />
+                    <DataGridComboBoxColumn Header="Mode" SelectedItemBinding="{Binding Mode, UpdateSourceTrigger=PropertyChanged}" ItemsSource="{Binding Source={x:Static controls:HistorySettingsViewModes.All}}" Width="170" />
+                    <DataGridTextColumn Header="Deadband" Binding="{Binding Deadband, UpdateSourceTrigger=PropertyChanged}" Width="100" />
+                    <DataGridTextColumn Header="Minimum (ms)" Binding="{Binding MinimumIntervalMilliseconds, UpdateSourceTrigger=PropertyChanged}" Width="120" />
+                    <DataGridTextColumn Header="Maximum (ms)" Binding="{Binding MaximumIntervalMilliseconds, UpdateSourceTrigger=PropertyChanged}" Width="120" />
+                </DataGrid.Columns>
+            </DataGrid>
+            <WrapPanel Grid.Row="3">
+                <Button Content="Add profile" Command="{Binding AddProfileCommand}" Style="{StaticResource SecondaryButtonStyle}" Margin="0,0,6,0" />
+                <Button Content="Delete profile" Command="{Binding DeleteProfileCommand}" CommandParameter="{Binding SelectedProfile}" Style="{StaticResource SecondaryButtonStyle}" Margin="0,0,6,0" />
+                <Button Content="Refresh status" Command="{Binding RefreshStatusCommand}" Style="{StaticResource SecondaryButtonStyle}" Margin="0,0,6,0" />
+                <Button Content="Revert" Command="{Binding RevertCommand}" Style="{StaticResource SecondaryButtonStyle}" Margin="0,0,6,0" />
+                <Button Content="Save" Command="{Binding SaveCommand}" Style="{StaticResource PrimaryButtonStyle}" />
+                <TextBlock Text="  " />
+                <TextBlock Text="{Binding ValidationSummaryText}" Style="{StaticResource FieldLabelTextStyle}" Margin="8,4,4,4" />
+                <TextBlock Text="{Binding SaveStatusText}" Style="{StaticResource FieldLabelTextStyle}" Margin="8,4,4,4" />
+                <TextBlock Text="{Binding SelectedProfile.RenameValidationMessage}" Style="{StaticResource FieldLabelTextStyle}" Margin="8,4,4,4" />
+                <TextBlock Text="{Binding RuntimeStateText}" Style="{StaticResource FieldLabelTextStyle}" Margin="18,4,4,4" />
+                <TextBlock Text="{Binding StatusText}" Style="{StaticResource FieldLabelTextStyle}" />
+                <TextBlock Text="  Queue: " Style="{StaticResource FieldLabelTextStyle}" />
+                <TextBlock Text="{Binding QueueDepth}" Style="{StaticResource FieldLabelTextStyle}" />
+                <TextBlock Text="  Written: " Style="{StaticResource FieldLabelTextStyle}" />
+                <TextBlock Text="{Binding WrittenSamples}" Style="{StaticResource FieldLabelTextStyle}" />
+                <TextBlock Text="  Rejected: " Style="{StaticResource FieldLabelTextStyle}" />
+                <TextBlock Text="{Binding RejectedSamples}" Style="{StaticResource FieldLabelTextStyle}" />
+                <TextBlock Text="  Dropped: " Style="{StaticResource FieldLabelTextStyle}" />
+                <TextBlock Text="{Binding DroppedSamples}" Style="{StaticResource FieldLabelTextStyle}" />
+                <TextBlock Text="  Abandoned: " Style="{StaticResource FieldLabelTextStyle}" />
+                <TextBlock Text="{Binding AbandonedSamples}" Style="{StaticResource FieldLabelTextStyle}" />
+                <TextBlock Text="  Failures: " Style="{StaticResource FieldLabelTextStyle}" />
+                <TextBlock Text="{Binding WriteFailures}" Style="{StaticResource FieldLabelTextStyle}" />
+                <TextBlock Text="  Last write: " Style="{StaticResource FieldLabelTextStyle}" />
+                <TextBlock Text="{Binding LastWriteText}" Style="{StaticResource FieldLabelTextStyle}" />
+                <TextBlock Text="  Restart required: " Style="{StaticResource FieldLabelTextStyle}" />
+                <TextBlock Text="{Binding RestartRequired}" Style="{StaticResource FieldLabelTextStyle}" />
+                <TextBlock Text="  Error: " Style="{StaticResource FieldLabelTextStyle}" />
+                <TextBlock Text="{Binding LastErrorText}" Style="{StaticResource FieldLabelTextStyle}" />
+            </WrapPanel>
+        </Grid>
+    </controls:WorkspaceLayout>
+</UserControl>

@@ -24,6 +24,10 @@ public sealed class ShellViewModel : INotifyPropertyChanged
         {
             engineeringChildren.Add(new NavigationItem("Tag Manager", NavigationService.EngineeringTagManagerRoute));
         }
+        if (_navigation.HasRoute(NavigationService.EngineeringHistoryRoute))
+        {
+            engineeringChildren.Add(new NavigationItem("History Settings", NavigationService.EngineeringHistoryRoute));
+        }
 
         NavigationItems =
         [

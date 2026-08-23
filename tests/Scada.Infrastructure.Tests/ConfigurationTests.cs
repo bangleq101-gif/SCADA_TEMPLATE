@@ -1,5 +1,6 @@
 using Scada.Core.Configuration;
 using Scada.Core.Devices;
+using Scada.Core.History;
 using Scada.Core.Tags;
 using Scada.Infrastructure.Configuration;
 using Microsoft.Extensions.Configuration;
@@ -141,6 +142,43 @@ public sealed class ConfigurationTests
                 Assert.Equal("VerySlow", verySlow.Name);
                 Assert.Equal(5_000, verySlow.IntervalMilliseconds);
             });
+    }
+
+    [Fact]
+    public void PresentHistorianProfilesReplaceDefaultsInsteadOfMerging()
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Scada:Historian:Profiles:0:Name"] = "Digital",
+                ["Scada:Historian:Profiles:0:Mode"] = "OnChange",
+                ["Scada:Historian:Profiles:0:MaximumIntervalMilliseconds"] = "0"
+            })
+            .Build();
+
+        var options = ConfigurationRegistration.CreateOptions(configuration);
+
+        var profile = Assert.Single(options.Historian.Profiles);
+        Assert.Equal("Digital", profile.Name);
+        Assert.DoesNotContain(options.Historian.Profiles, candidate => candidate.Name == "Analog");
+    }
+
+    [Fact]
+    public void PresentEmptyHistorianProfilesRemainEmptyForAuthoritativeValidation()
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Scada:Historian:Profiles"] = string.Empty
+            })
+            .Build();
+
+        var options = ConfigurationRegistration.CreateOptions(configuration);
+
+        Assert.Empty(options.Historian.Profiles);
+        Assert.Contains(
+            HistoryProfileValidation.CollectIssues(options.Historian),
+            issue => issue.Code == "HISTORY_PROFILE_REQUIRED_BUILTIN");
     }
 
     private sealed class TestServiceCollection : List<ServiceDescriptor>, IServiceCollection

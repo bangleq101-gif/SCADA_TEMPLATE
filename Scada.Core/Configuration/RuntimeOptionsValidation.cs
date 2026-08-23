@@ -1,12 +1,10 @@
 using Scada.Core.Tags;
+using Scada.Core.History;
 
 namespace Scada.Core.Configuration;
 
 public static class RuntimeOptionsValidation
 {
-    private static readonly HashSet<string> HistoryProfiles =
-        new(StringComparer.OrdinalIgnoreCase) { "Digital", "Analog", "FastAnalog", "Custom" };
-
     private static readonly HashSet<string> MqttProfiles =
         new(StringComparer.OrdinalIgnoreCase) { "Default" };
 
@@ -22,6 +20,10 @@ public static class RuntimeOptionsValidation
         }
 
         ValidatePolling(options, issues);
+        var historian = options.Historian ?? new HistorianOptions();
+        issues.AddRange(HistoryProfileValidation.CollectIssues(historian));
+
+        var historyRegistry = new HistoryProfileRegistry(historian.Profiles ?? []);
 
         var scanGroups = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var scanGroup in options.ScanGroups ?? [])
@@ -68,13 +70,37 @@ public static class RuntimeOptionsValidation
 
         var tagIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var tagNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var validHistoryTagCount = 0;
         foreach (var tag in options.Tags ?? [])
         {
-            ValidateTag(tag, deviceIds, scanGroups, tagIds, tagNames, issues);
+            ValidateTag(tag, deviceIds, scanGroups, tagIds, tagNames, historyRegistry, issues);
+            if (IsValidHistorySubscription(tag, historyRegistry))
+            {
+                validHistoryTagCount++;
+            }
+        }
+
+        if (historian.QueueCapacity < validHistoryTagCount)
+        {
+            issues.Add(Warning(
+                "HISTORIAN_QUEUE_CAPACITY_BELOW_HISTORY_TAGS",
+                "Historian",
+                null,
+                nameof(historian.QueueCapacity),
+                $"Historian queue capacity {historian.QueueCapacity} is below the {validHistoryTagCount} valid history-enabled tags; samples may be dropped under load."));
         }
 
         return issues;
     }
+
+    private static bool IsValidHistorySubscription(
+        TagDefinition tag,
+        HistoryProfileRegistry historyRegistry) =>
+        tag.Enabled &&
+        tag.HistoryEnabled &&
+        historyRegistry.TryGet(tag.HistoryProfile, out var profile) &&
+        profile is not null &&
+        HistoryProfileValidation.IsCompatible(tag.DataType, profile);
 
     private static void ValidatePolling(RuntimeOptions options, ICollection<ValidationIssue> issues)
     {
@@ -98,6 +124,7 @@ public static class RuntimeOptionsValidation
         ISet<string> scanGroups,
         ISet<string> tagIds,
         ISet<string> tagNames,
+        HistoryProfileRegistry historyRegistry,
         ICollection<ValidationIssue> issues)
     {
         if (string.IsNullOrWhiteSpace(tag.Id))
@@ -156,15 +183,22 @@ public static class RuntimeOptionsValidation
                 $"Tag '{tag.Id}' minimum cannot be greater than maximum."));
         }
 
+        HistoryProfileDefinition? historyProfile = null;
         if (tag.HistoryEnabled && string.IsNullOrWhiteSpace(tag.HistoryProfile))
         {
             issues.Add(Error("HISTORY_PROFILE_REQUIRED", "Tag", tag.Id, nameof(tag.HistoryProfile),
                 $"Tag '{tag.Id}' requires a history profile when history is enabled."));
         }
-        else if (!string.IsNullOrWhiteSpace(tag.HistoryProfile) && !HistoryProfiles.Contains(tag.HistoryProfile))
+        else if (!string.IsNullOrWhiteSpace(tag.HistoryProfile) && !historyRegistry.TryGet(tag.HistoryProfile, out historyProfile))
         {
             issues.Add(Warning("HISTORY_PROFILE_UNKNOWN", "Tag", tag.Id, nameof(tag.HistoryProfile),
-                $"History profile '{tag.HistoryProfile}' is not a built-in M4 profile and will be preserved."));
+                $"History profile '{tag.HistoryProfile}' is not configured and will be preserved."));
+        }
+        else if (tag.HistoryEnabled && historyProfile is not null &&
+                 !HistoryProfileValidation.IsCompatible(tag.DataType, historyProfile))
+        {
+            issues.Add(Warning("HISTORY_PROFILE_TYPE_INCOMPATIBLE", "Tag", tag.Id, nameof(tag.DataType),
+                $"Tag '{tag.Id}' data type '{tag.DataType}' is incompatible with history profile '{historyProfile.Name}'; Historian will skip it."));
         }
 
         if (tag.MqttPublishEnabled && string.IsNullOrWhiteSpace(tag.MqttProfile))

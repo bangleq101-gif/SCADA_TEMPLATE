@@ -22,17 +22,36 @@
 ## Tag Manager rules
 
 - Use an explicit absolute project path. Do not search parent folders, infer a source-tree project or fall back to the application output directory.
-- Treat `project.json` schema version 1 as the whole project-document authority. Preserve tag order and save atomically; do not silently replace malformed or invalid existing documents with defaults.
+- Treat the versioned `project.json` document as the whole project-document authority. Preserve tag order and save atomically; migrate v1 to the current v2 model in memory without silently replacing malformed or invalid existing documents with defaults.
 - Keep startup, saved and working project snapshots isolated through deep cloning. Mark runtime-affecting edits restart-required; do not add hot reload or runtime reconfiguration in this milestone.
 - Keep Tag Manager editing in `Scada.App`; it must not read PLCs or add a second runtime data path.
 - Use one disposable selected-row TagCache subscription for runtime quality observation. Do not create a subscription per row or fan out to the whole table.
 - Keep validation rules in the shared Core validation source so load and edit behavior agree. Blocking issues reject save; warning metadata is preserved.
+- Use `ProjectDocumentSchema.CurrentVersion` as the single schema version source. v1 migration is in-memory and explicit Save is the upgrade boundary; do not scatter schema literals through App or Infrastructure.
 - Use deterministic quoted CSV/TSV codecs for interchange. Do not use naive `Split(',')` parsing and do not place JSON on the primary clipboard path.
 - Treat CSV/TSV import as a prepare/decide/apply transaction. Never silently suffix, overwrite or regenerate a supplied conflicting Id/name.
 - Keep editor option lists separate from filter option lists; `All` is a filter sentinel and is never an editable DeviceId or ScanGroup value.
 - Model bulk fields as `Unchanged`, `Mixed` or `Explicit`; apply only explicit fields to one cloned candidate and validate once.
 - Seed row quality from one central TagCache snapshot per row. Keep live subscriptions limited to the selected persisted tag and invalidate every old selection generation.
 - Destructive delete requires an App-layer confirmation adapter; cancellation must leave the working project unchanged.
+
+## Historian rules
+
+- Historian consumes the central `TagCache` only. It must not read PLCs, call `IPlcDriver`, perform SQLite I/O in callbacks, or make polling await storage.
+- Keep `IHistoryStore`, `HistorySample` and query contracts in `Scada.Core`; keep SQLite provider types, SQL and project-relative path resolution in `Scada.Infrastructure`.
+- Keep the four required built-in profiles centralized and use a case-insensitive registry. A present `Historian:Profiles` configuration collection is authoritative; an absent collection retains defaults.
+- Normalize values by declared tag type before enqueueing. Reject malformed and non-finite values without broad culture conversions. Preserve `TagValue.Timestamp` as the source timestamp and use a separate wall-clock `RecordedAtUtc`.
+- Use monotonic `TimeProvider.GetTimestamp()` semantics for minimum intervals, maximum periodic due times and retry timing. Never persist monotonic timestamps.
+- Subscribe before seeding from `ITagCache.TryGet`; use runtime-local `TagValue.Sequence` for duplicate suppression, never as a SQLite key.
+- TagCache callbacks may only evaluate and call bounded queue `TryWrite`. Use `SingleReader`, `SingleWriter=false`, `FullMode=Wait` and `AllowSynchronousContinuations=false`; never block callbacks on storage.
+- Keep `RejectedSamples`, `DroppedSamples`, `AbandonedSamples` and `WrittenSamples` separate. Count writes only after the SQLite transaction commits.
+- Historian startup must use cancellation-aware bounded preflight, validate path/profile state, subscribe before launching background work and return without synchronous SQLite retry. Recoverable preflight continues in Degraded state while background initialization retries with capped exponential monotonic delays. Register Historian hosted service before polling and resolve one singleton instance for runtime status UI.
+- Keep one coordinator with one schedule-change signal; an earlier due time must wake the coordinator, and an accepted periodic next-due decision remains scheduled even if the current queue write is dropped.
+- Protect evaluator state per tag. Different tags must not share a global evaluation lock; callback and periodic evaluation for the same tag must remain serialized.
+- On shutdown stop intake, dispose subscriptions, stop scheduling, complete and drain the queue within the configured budget, then cancel the writer. Cancellation is cooperative; do not force-kill non-cooperative storage work.
+- SQLite history uses schema `user_version=1`, typed value columns, no `AUTOINCREMENT`, one connection/transaction per batch and deterministic `RecordedAtUtcTicks, Id` query order. Every write connection must apply finite `busy_timeout` and `synchronous=NORMAL`; disabled Historian must not create a database.
+- `IHistoryStore.PreflightAsync(CancellationToken)` is the compatibility boundary. A store must honor cancellation; Runtime still bounds startup waiting and does not perform SQLite retry loops in `StartAsync`.
+- History Settings edits `ProjectEditSession.WorkingProject`, protects built-in profile names/deletion, rejects reserved/duplicate custom renames without mutation, surfaces shared validation and save failures, persists through the normal Save boundary and displays only the running Historian snapshot. No hot reload is allowed.
 
 ## Runtime polling rules
 

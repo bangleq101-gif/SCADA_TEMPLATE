@@ -10,6 +10,7 @@
         <DataTemplate DataType="{x:Type vm:MonitoringViewModel}"><views:MonitoringView /></DataTemplate>
         <DataTemplate DataType="{x:Type vm:EngineeringViewModel}"><views:EngineeringView /></DataTemplate>
         <DataTemplate DataType="{x:Type vm:TagManagerViewModel}"><views:TagManagerView /></DataTemplate>
+        <DataTemplate DataType="{x:Type vm:HistorySettingsViewModel}"><views:HistorySettingsView /></DataTemplate>
         <HierarchicalDataTemplate x:Key="NavigationItemTemplate"
                                   ItemsSource="{Binding Children}"
                                   ItemContainerStyle="{StaticResource NavigationTreeViewItemStyle}">

@@ -100,7 +100,7 @@ public sealed class ProjectPersistenceTests
     [Theory]
     [InlineData(0)]
     [InlineData(-1)]
-    [InlineData(2)]
+    [InlineData(3)]
     public void UnsupportedProjectSchemaVersionsAreRejected(int schemaVersion)
     {
         AssertSchemaRejected($"{{\"SchemaVersion\":{schemaVersion},\"Scada\":{{}}}}", "schema");
@@ -113,7 +113,7 @@ public sealed class ProjectPersistenceTests
     }
 
     [Fact]
-    public void FirstSaveCreatesVersionOneDocument()
+    public void FirstSaveCreatesVersionTwoDocument()
     {
         var directory = CreateTempDirectory();
         try
@@ -123,7 +123,35 @@ public sealed class ProjectPersistenceTests
 
             var text = File.ReadAllText(Path.Combine(directory, "project.json"));
             Assert.Contains("SchemaVersion", text, StringComparison.Ordinal);
-            Assert.Equal(1, store.Load()!.SchemaVersion);
+            Assert.Equal(ProjectDocumentSchema.CurrentVersion, store.Load()!.SchemaVersion);
+        }
+        finally
+        {
+            DeleteDirectory(directory);
+        }
+    }
+
+    [Fact]
+    public void LoadingV1MigratesInMemoryWithoutRewritingTheSourceFile()
+    {
+        var directory = CreateTempDirectory();
+        try
+        {
+            var path = Path.Combine(directory, "project.json");
+            const string original = "{\"SchemaVersion\":1,\"Scada\":{\"RuntimeId\":\"Runtime01\",\"Devices\":[{\"Id\":\"SIM01\",\"DriverType\":\"Simulator\"}],\"Tags\":[]}}";
+            File.WriteAllText(path, original);
+            var store = new ProjectConfigurationStore(new ProjectPath(path));
+
+            var loaded = store.Load();
+
+            Assert.NotNull(loaded);
+            Assert.Equal(ProjectDocumentSchema.CurrentVersion, loaded!.SchemaVersion);
+            Assert.NotEqual(original, JsonSerializer.Serialize(loaded));
+            Assert.Equal(original, File.ReadAllText(path));
+
+            store.Save(loaded);
+
+            Assert.Contains($"\"SchemaVersion\": {ProjectDocumentSchema.CurrentVersion}", File.ReadAllText(path), StringComparison.Ordinal);
         }
         finally
         {
