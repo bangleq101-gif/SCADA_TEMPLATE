@@ -18,7 +18,7 @@ Merge commit:
 
 Milestone 7:
 
-Implemented on `feature/milestone-7-mqtt`; pending final verification and source review/PR.
+Implemented on `feature/milestone-7-mqtt`; PR #9 remains open and pending independent re-review after final MQTT publisher stabilization.
 
 Current M7 scope is publisher-only: MQTT consumes the central TagCache, applies bounded latest-state coalescing and publishes through an Infrastructure-only MQTTnet transport. MQTT Write, command subscriptions and PLC-write paths are not implemented.
 
