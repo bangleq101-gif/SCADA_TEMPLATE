@@ -1,6 +1,7 @@
 using Scada.Stress;
 using Scada.Core.Mqtt;
 using Scada.Core.Configuration;
+using Scada.Core.History;
 using Scada.Core.Tags;
 using Scada.Runtime.Mqtt;
 using Scada.Runtime.Tags;
@@ -60,6 +61,17 @@ public sealed class StressContractTests
     }
 
     [Fact]
+    public void HistogramDistinguishesTenMillisecondsFromThirteenMilliseconds()
+    {
+        var histogram = new BoundedHistogram();
+        for (var index = 0; index < 95; index++) histogram.Record(10_000);
+        for (var index = 0; index < 5; index++) histogram.Record(13_000);
+
+        Assert.InRange(histogram.Percentile(.95), 10_000, 11_000);
+        Assert.InRange(histogram.Percentile(.99), 13_000, 14_000);
+    }
+
+    [Fact]
     public void PollingJitterAggregationIsDeterministic()
     {
         var collector = new PollingMetricsCollector();
@@ -81,9 +93,149 @@ public sealed class StressContractTests
         var baseline = ResultFingerprint.Example() with { MachineName = "A" };
         var candidate = baseline with { MachineName = "B" };
 
-        var result = StressRegressionComparer.Compare(baseline, candidate, new StressMetricSummary());
+        var result = StressRegressionComparer.Compare(baseline, new StressMetricSummary(), candidate, new StressMetricSummary());
 
         Assert.Equal(RegressionVerdict.ObservationalOnly, result.Verdict);
+    }
+
+    [Fact]
+    public void RegressionComparerFailsCompatibleCpuRegression()
+    {
+        var fingerprint = ResultFingerprint.Example();
+        var result = StressRegressionComparer.Compare(
+            fingerprint, new StressMetricSummary(CpuPercent: 100),
+            fingerprint, new StressMetricSummary(CpuPercent: 116));
+
+        Assert.Equal(RegressionVerdict.Fail, result.Verdict);
+    }
+
+    [Fact]
+    public void RegressionComparerFailsCompatibleUpdateRateRegression()
+    {
+        var fingerprint = ResultFingerprint.Example();
+        var result = StressRegressionComparer.Compare(
+            fingerprint, new StressMetricSummary(UpdatesPerSecond: 100),
+            fingerprint, new StressMetricSummary(UpdatesPerSecond: 89));
+
+        Assert.Equal(RegressionVerdict.Fail, result.Verdict);
+    }
+
+    [Fact]
+    public void RegressionComparerPassesCompatibleUnchangedCandidate()
+    {
+        var fingerprint = ResultFingerprint.Example();
+        var metrics = new StressMetricSummary(CpuPercent: 10, WorkingSetBytes: 1000, UpdatesPerSecond: 100, ScanJitterP95Milliseconds: 10, DispatcherP95Milliseconds: 10);
+
+        Assert.Equal(RegressionVerdict.Pass, StressRegressionComparer.Compare(fingerprint, metrics, fingerprint, metrics).Verdict);
+    }
+
+    [Fact]
+    public void RegressionComparerTreatsChangedMeasurementContractAsObservationalOnly()
+    {
+        var baseline = ResultFingerprint.Example();
+        var candidate = baseline with { MeasurementContractVersion = "m10-phase-a-v3" };
+
+        Assert.Equal(RegressionVerdict.ObservationalOnly, StressRegressionComparer.Compare(baseline, new StressMetricSummary(), candidate, new StressMetricSummary()).Verdict);
+    }
+
+    [Fact]
+    public void RegressionComparerAppliesRelativeAndNoiseFloorToJitter()
+    {
+        var fingerprint = ResultFingerprint.Example();
+        var beneathFloor = StressRegressionComparer.Compare(
+            fingerprint, new StressMetricSummary(ScanJitterP95Milliseconds: 10),
+            fingerprint, new StressMetricSummary(ScanJitterP95Milliseconds: 11.9));
+        var aboveFloor = StressRegressionComparer.Compare(
+            fingerprint, new StressMetricSummary(ScanJitterP95Milliseconds: 10),
+            fingerprint, new StressMetricSummary(ScanJitterP95Milliseconds: 12.1));
+
+        Assert.Equal(RegressionVerdict.Pass, beneathFloor.Verdict);
+        Assert.Equal(RegressionVerdict.Fail, aboveFloor.Verdict);
+    }
+
+    [Fact]
+    public void RunSeriesUsesMedianAndRequiresCompatibleFingerprints()
+    {
+        var fingerprint = ResultFingerprint.Example();
+        var runs = new[]
+        {
+            CreateResult(fingerprint, 100),
+            CreateResult(fingerprint, 120),
+            CreateResult(fingerprint, 110)
+        };
+
+        var aggregate = StressRunSeries.Aggregate(runs);
+
+        Assert.Equal(110, aggregate.Metrics.UpdatesPerSecond);
+        Assert.Equal(100, aggregate.Range.Minimum.UpdatesPerSecond);
+        Assert.Equal(120, aggregate.Range.Maximum.UpdatesPerSecond);
+    }
+
+    [Fact]
+    public void CorrectnessEvaluatorMakesRepresentativeHardGateViolationsFail()
+    {
+        var result = StressCorrectnessEvaluator.Evaluate(new StressQualificationFacts
+        {
+            ExpectedDeviceCount = 50,
+            ActualDeviceCount = 49,
+            ExpectedTagCount = 10_000,
+            ActualTagCount = 10_000,
+            TagCacheValueCount = 9_999,
+            PollingFailures = 1,
+            MissedCycles = 1,
+            HistorianDropped = 1,
+            MqttSourceTimestampOrderCorrect = false,
+            DispatcherHeartbeatGaps = 1,
+            ActiveSubscriptionsAfterShutdown = 1,
+            ShutdownCompleted = false,
+            UnhandledSubsystemFailure = true
+        });
+
+        Assert.False(result.Passed);
+        Assert.False(result.CleanShutdown);
+        Assert.NotEmpty(result.Violations);
+    }
+
+    [Fact]
+    public void QualificationIdentityRejectsWrongShaAndDirtyRepository()
+    {
+        var verdict = StressQualificationIdentity.Evaluate(
+            "D:\\SCADA\\SCADA_TEMPLATE-M10", "expected", "D:\\SCADA\\SCADA_TEMPLATE-M10", "actual", false);
+
+        Assert.False(verdict.IsValid);
+        Assert.Contains(verdict.Violations, violation => violation.Contains("SHA", StringComparison.Ordinal));
+        Assert.Contains(verdict.Violations, violation => violation.Contains("dirty", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public async Task MeasurementBoundaryExcludesWarmupHistoryAndMqttSamples()
+    {
+        var history = new TimedHistoryStore(new InMemoryHistoryStore());
+        await history.WriteBatchAsync([Sample()], CancellationToken.None);
+        history.BeginMeasurement();
+        await history.WriteBatchAsync([Sample()], CancellationToken.None);
+
+        await using var transport = new StressMqttTransport(TimeSpan.Zero);
+        await transport.ConnectAsync(ConnectRequest(), CancellationToken.None);
+        await transport.PublishAsync(Request("before"), CancellationToken.None);
+        transport.BeginMeasurement();
+        await transport.PublishAsync(Request("after"), CancellationToken.None);
+
+        Assert.Equal(1, history.BatchCount);
+        Assert.Equal(1, history.WriteLatency.Count);
+        Assert.Equal(1, transport.MeasurementPublishedCount);
+        Assert.Equal(1, transport.PublishLatency.Count);
+    }
+
+    [Fact]
+    public async Task MqttTransportMarksMissingObservableOrderingFieldAsFailure()
+    {
+        await using var transport = new StressMqttTransport(TimeSpan.Zero);
+        await transport.ConnectAsync(ConnectRequest(), CancellationToken.None);
+        transport.BeginMeasurement();
+        await transport.PublishAsync(new MqttPublishRequest("scada/t1", System.Text.Encoding.UTF8.GetBytes("{\"value\":1}"), MqttQualityOfService.AtMostOnce, false), CancellationToken.None);
+
+        Assert.False(transport.SourceTimestampOrderCorrect);
     }
 
     [Fact]
@@ -92,7 +244,8 @@ public sealed class StressContractTests
         var result = StressRunResult.CreateEmpty(StressProfile.RuntimeBaseline, ResultFingerprint.Example());
         var json = StressResultWriter.Serialize(result);
 
-        Assert.Contains("\"resultSchemaVersion\": 1", json);
+        Assert.Contains("\"resultSchemaVersion\": 2", json);
+        Assert.Contains("\"measurementContractVersion\": \"m10-phase-a-v2\"", json);
         Assert.Contains("\"workloadVersion\": \"m10-phase-a-v1\"", json);
         Assert.Contains("\"environmentFingerprint\"", json);
         Assert.Contains("\"changePattern\"", json);
@@ -100,16 +253,17 @@ public sealed class StressContractTests
     }
 
     [Fact]
-    public async Task FakeMqttTransportTracksLatestSequenceLatencyAndConcurrency()
+    public async Task FakeMqttTransportTracksMeasurementLocalTimestampOrderLatencyAndConcurrency()
     {
         await using var transport = new StressMqttTransport(TimeSpan.FromMilliseconds(1));
         await transport.ConnectAsync(new MqttConnectRequest("localhost", 1883, MqttProtocolVersion.V311, "stress", null, null, false, 30, TimeSpan.FromSeconds(1)), CancellationToken.None);
-        await Task.WhenAll(Enumerable.Range(1, 20).Select(sequence =>
-            transport.PublishAsync(new MqttPublishRequest("scada/t1", System.Text.Encoding.UTF8.GetBytes($"{{\"sequence\":{sequence}}}"), MqttQualityOfService.AtMostOnce, false), CancellationToken.None)));
+        transport.BeginMeasurement();
+        for (var sequence = 1; sequence <= 20; sequence++)
+            await transport.PublishAsync(new MqttPublishRequest("scada/t1", System.Text.Encoding.UTF8.GetBytes($"{{\"value\":{sequence},\"sourceTimestampUtc\":\"2026-01-01T00:00:{sequence:00}Z\"}}"), MqttQualityOfService.AtMostOnce, false), CancellationToken.None);
 
-        Assert.Equal(20, transport.PublishedCount);
-        Assert.Equal(20, transport.LatestSequenceByTopic["scada/t1"]);
-        Assert.True(transport.MaximumConcurrency > 1);
+        Assert.Equal(20, transport.MeasurementPublishedCount);
+        Assert.True(transport.SourceTimestampOrderCorrect);
+        Assert.Equal(1, transport.MaximumConcurrency);
         Assert.True(transport.PublishLatency.Count == 20);
     }
 
@@ -202,6 +356,7 @@ public sealed class StressContractTests
         await using var transport = new StressMqttTransport(TimeSpan.Zero);
         await using var service = new MqttRuntimeService(options, cache, transport, NullLogger<MqttRuntimeService>.Instance, TimeProvider.System);
         await service.StartAsync(CancellationToken.None);
+        transport.BeginMeasurement();
         for (var sequence = 1; sequence <= 20; sequence++) cache.Upsert(new TagUpdate("T1", sequence, TagQuality.Good, DateTimeOffset.UtcNow.AddTicks(sequence)));
         for (var attempt = 0; attempt < 100 && transport.PublishedCount == 0; attempt++) await Task.Delay(10);
         await service.StopAsync(CancellationToken.None);
@@ -237,5 +392,24 @@ public sealed class StressContractTests
             Assert.Equal(0, result.Correctness.ActiveSubscriptionsAfterShutdown);
         }
         finally { if (Directory.Exists(output)) Directory.Delete(output, true); }
+    }
+
+    private static StressRunResult CreateResult(ResultFingerprint fingerprint, double updates) =>
+        StressRunResult.CreateEmpty(StressProfile.RuntimeBaseline, fingerprint) with
+        {
+            Metrics = new StressMetricSummary(UpdatesPerSecond: updates)
+        };
+
+    private static HistorySample Sample() => new("runtime", "tag", TagDataType.Int32, 1, TagQuality.Good, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow, 1);
+
+    private static MqttConnectRequest ConnectRequest() => new("localhost", 1883, MqttProtocolVersion.V311, "stress", null, null, false, 30, TimeSpan.FromSeconds(1));
+    private static MqttPublishRequest Request(string value) => new("scada/t1", System.Text.Encoding.UTF8.GetBytes($"{{\"value\":\"{value}\",\"sourceTimestampUtc\":\"2026-01-01T00:00:00Z\"}}"), MqttQualityOfService.AtMostOnce, false);
+
+    private sealed class InMemoryHistoryStore : IHistoryStore
+    {
+        public Task<HistoryStorePreflightResult> PreflightAsync(CancellationToken cancellationToken) => Task.FromResult(new HistoryStorePreflightResult(HistoryStorePreflightStatus.Ready));
+        public Task InitializeAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+        public Task WriteBatchAsync(IReadOnlyList<HistorySample> samples, CancellationToken cancellationToken) => Task.CompletedTask;
+        public Task<IReadOnlyList<HistorySample>> QueryAsync(HistoryQuery query, CancellationToken cancellationToken) => Task.FromResult<IReadOnlyList<HistorySample>>([]);
     }
 }

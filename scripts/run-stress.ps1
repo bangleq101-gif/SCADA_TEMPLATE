@@ -8,6 +8,8 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $repositoryRoot = Split-Path -Parent $PSScriptRoot
+$expectedGitSha = (git -C $repositoryRoot rev-parse HEAD).Trim()
+if (-not $Smoke -and -not [string]::IsNullOrWhiteSpace((git -C $repositoryRoot status --porcelain --untracked-files=all))) { throw 'Qualification requires a clean repository worktree.' }
 $deviceCount = if ($Smoke) { 5 } else { 50 }
 $tagsPerDevice = 200
 $warmup = if ($Smoke) { 2 } elseif ($Profile -eq 'CombinedWorstCase') { 120 } else { 60 }
@@ -25,6 +27,9 @@ for ($run = 1; $run -le $Repetitions; $run++) {
         --measurement-seconds $measurement `
         --output $output `
         --instrumentation (-not $InstrumentationOff).ToString().ToLowerInvariant() `
-        --power-mode $powerMode
+        --power-mode $powerMode `
+        --repository-root $repositoryRoot `
+        --expected-git-sha $expectedGitSha `
+        --qualification (-not $Smoke).ToString().ToLowerInvariant()
     if ($LASTEXITCODE -ne 0) { throw "Stress run $run failed with exit code $LASTEXITCODE." }
 }

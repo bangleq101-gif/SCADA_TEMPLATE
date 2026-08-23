@@ -13,7 +13,7 @@ public static class StressProgram
     {
         if (args.Contains("--help", StringComparer.OrdinalIgnoreCase))
         {
-            Console.WriteLine("--profile <RuntimeBaseline|HistorianHeavy|MqttHeavy|UiActive|CombinedWorstCase> --devices <n> --tags-per-device <n> --warmup-seconds <n> --measurement-seconds <n> --output <path> --instrumentation <true|false> --power-mode <value>");
+            Console.WriteLine("--profile <RuntimeBaseline|HistorianHeavy|MqttHeavy|UiActive|CombinedWorstCase> --devices <n> --tags-per-device <n> --warmup-seconds <n> --measurement-seconds <n> --output <path> --instrumentation <true|false> --power-mode <value> --repository-root <path> --expected-git-sha <sha> --qualification <true|false>");
             return 0;
         }
         try
@@ -28,11 +28,14 @@ public static class StressProgram
                 output, bool.Parse(Get(values, "instrumentation", "true")),
                 int.Parse(Get(values, "seed", StressWorkloadFactory.DefaultSeed.ToString())),
                 Enum.Parse<ValueChangePattern>(Get(values, "change-pattern", "EveryFourthRead"), true),
-                Get(values, "power-mode", "AC"));
+                Get(values, "power-mode", "AC"),
+                Get(values, "repository-root", Directory.GetCurrentDirectory()),
+                Get(values, "expected-git-sha", string.Empty),
+                bool.Parse(Get(values, "qualification", "false")));
             var result = await new StressScenarioRunner().RunAsync(settings, ConsoleCancellation.Token);
             Console.WriteLine($"RESULT={Path.Combine(output, "result.json")}");
-            Console.WriteLine($"PROFILE={result.Scenario} UPDATES_PER_SEC={result.Metrics.UpdatesPerSecond:F2} CLEAN={result.Correctness.CleanShutdown}");
-            return result.Correctness.CleanShutdown ? 0 : 2;
+            Console.WriteLine($"PROFILE={result.Scenario} UPDATES_PER_SEC={result.Metrics.UpdatesPerSecond:F2} PASS={result.Correctness.Passed}");
+            return result.Correctness.Passed ? 0 : 2;
         }
         catch (Exception exception) { Console.Error.WriteLine(exception); return 1; }
     }

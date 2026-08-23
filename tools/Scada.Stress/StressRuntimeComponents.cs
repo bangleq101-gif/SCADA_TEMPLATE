@@ -51,22 +51,33 @@ public sealed class StressSimulatorDriver(ValueChangePattern pattern, int seed) 
 
 public sealed class TimedHistoryStore(IHistoryStore inner) : IHistoryStore
 {
-    private long _batchCount, _sampleCount;
+    private long _batchCount, _sampleCount, _measurementGeneration;
     public BoundedHistogram WriteLatency { get; } = new();
     public long BatchCount => Interlocked.Read(ref _batchCount);
     public long SampleCount => Interlocked.Read(ref _sampleCount);
     public void BeginMeasurement()
     {
+        Interlocked.Increment(ref _measurementGeneration);
         Interlocked.Exchange(ref _batchCount, 0);
         Interlocked.Exchange(ref _sampleCount, 0);
+        WriteLatency.Reset();
     }
     public Task<HistoryStorePreflightResult> PreflightAsync(CancellationToken cancellationToken) => inner.PreflightAsync(cancellationToken);
     public Task InitializeAsync(CancellationToken cancellationToken) => inner.InitializeAsync(cancellationToken);
     public async Task WriteBatchAsync(IReadOnlyList<HistorySample> samples, CancellationToken cancellationToken)
     {
+        var generation = Volatile.Read(ref _measurementGeneration);
         var started = Stopwatch.GetTimestamp();
-        try { await inner.WriteBatchAsync(samples, cancellationToken); Interlocked.Increment(ref _batchCount); Interlocked.Add(ref _sampleCount, samples.Count); }
-        finally { WriteLatency.Record((long)(Stopwatch.GetElapsedTime(started).TotalMilliseconds * 1000)); }
+        try { await inner.WriteBatchAsync(samples, cancellationToken); }
+        finally
+        {
+            if (generation != 0 && generation == Volatile.Read(ref _measurementGeneration))
+            {
+                Interlocked.Increment(ref _batchCount);
+                Interlocked.Add(ref _sampleCount, samples.Count);
+                WriteLatency.Record((long)(Stopwatch.GetElapsedTime(started).TotalMilliseconds * 1000));
+            }
+        }
     }
     public Task<IReadOnlyList<HistorySample>> QueryAsync(HistoryQuery query, CancellationToken cancellationToken) => inner.QueryAsync(query, cancellationToken);
 }

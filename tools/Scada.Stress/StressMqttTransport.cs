@@ -7,43 +7,70 @@ namespace Scada.Stress;
 
 public sealed class StressMqttTransport(TimeSpan latency) : IMqttTransport
 {
-    private int _connected, _concurrency, _maximumConcurrency;
+    private int _connected, _measurementConcurrency, _maximumConcurrency;
     private long _published;
-    private int _latestSequenceCorrect = 1;
+    private long _measurementGeneration;
+    private int _sourceTimestampOrderCorrect = 1;
     public bool IsConnected => Volatile.Read(ref _connected) != 0;
-    public long PublishedCount => Interlocked.Read(ref _published);
+    public long MeasurementPublishedCount => Interlocked.Read(ref _published);
+    public long PublishedCount => MeasurementPublishedCount;
     public int MaximumConcurrency => Volatile.Read(ref _maximumConcurrency);
     public BoundedHistogram PublishLatency { get; } = new();
-    public ConcurrentDictionary<string, long> LatestSequenceByTopic { get; } = new(StringComparer.Ordinal);
-    public ConcurrentDictionary<string, DateTimeOffset> LatestTimestampByTopic { get; } = new(StringComparer.Ordinal);
-    public bool LatestSequenceCorrect => Volatile.Read(ref _latestSequenceCorrect) != 0;
+    public ConcurrentDictionary<string, DateTimeOffset> LatestSourceTimestampByTopic { get; } = new(StringComparer.Ordinal);
+    public ConcurrentDictionary<string, byte[]> LatestPayloadByTopic { get; } = new(StringComparer.Ordinal);
+    public bool SourceTimestampOrderCorrect => Volatile.Read(ref _sourceTimestampOrderCorrect) != 0;
+
+    public void BeginMeasurement()
+    {
+        Interlocked.Increment(ref _measurementGeneration);
+        Interlocked.Exchange(ref _published, 0);
+        Interlocked.Exchange(ref _measurementConcurrency, 0);
+        Interlocked.Exchange(ref _maximumConcurrency, 0);
+        Volatile.Write(ref _sourceTimestampOrderCorrect, 1);
+        PublishLatency.Reset();
+        LatestSourceTimestampByTopic.Clear();
+        LatestPayloadByTopic.Clear();
+    }
 
     public Task<MqttConnectionResult> ConnectAsync(MqttConnectRequest request, CancellationToken cancellationToken) { cancellationToken.ThrowIfCancellationRequested(); Volatile.Write(ref _connected, 1); return Task.FromResult(new MqttConnectionResult(true)); }
     public async Task PublishAsync(MqttPublishRequest request, CancellationToken cancellationToken)
     {
-        var concurrent = Interlocked.Increment(ref _concurrency);
-        Max(ref _maximumConcurrency, concurrent);
+        var generation = Volatile.Read(ref _measurementGeneration);
+        var isMeasurement = generation != 0;
+        var concurrent = isMeasurement ? Interlocked.Increment(ref _measurementConcurrency) : 0;
+        if (isMeasurement) Max(ref _maximumConcurrency, concurrent);
         var started = Stopwatch.GetTimestamp();
         try
         {
             if (latency > TimeSpan.Zero) await Task.Delay(latency, cancellationToken);
             using var document = JsonDocument.Parse(request.Payload);
-            if (document.RootElement.TryGetProperty("sequence", out var sequence) || document.RootElement.TryGetProperty("tagSequence", out sequence))
-                LatestSequenceByTopic.AddOrUpdate(request.Topic, sequence.GetInt64(), (_, current) => Math.Max(current, sequence.GetInt64()));
-            if (document.RootElement.TryGetProperty("sourceTimestampUtc", out var timestampElement) && timestampElement.TryGetDateTimeOffset(out var timestamp))
+            var timestamp = default(DateTimeOffset);
+            var hasSourceTimestamp = document.RootElement.TryGetProperty("sourceTimestampUtc", out var timestampElement) && timestampElement.TryGetDateTimeOffset(out timestamp);
+            if (generation == Volatile.Read(ref _measurementGeneration) && isMeasurement && !hasSourceTimestamp)
             {
-                LatestTimestampByTopic.AddOrUpdate(request.Topic, timestamp, (_, current) =>
+                Volatile.Write(ref _sourceTimestampOrderCorrect, 0);
+            }
+            else if (generation == Volatile.Read(ref _measurementGeneration) && isMeasurement && hasSourceTimestamp)
+            {
+                LatestSourceTimestampByTopic.AddOrUpdate(request.Topic, timestamp, (_, current) =>
                 {
-                    if (timestamp < current) Volatile.Write(ref _latestSequenceCorrect, 0);
+                    if (timestamp < current) Volatile.Write(ref _sourceTimestampOrderCorrect, 0);
                     return timestamp > current ? timestamp : current;
                 });
             }
-            Interlocked.Increment(ref _published);
+            if (generation == Volatile.Read(ref _measurementGeneration) && isMeasurement)
+            {
+                LatestPayloadByTopic[request.Topic] = request.Payload.ToArray();
+                Interlocked.Increment(ref _published);
+            }
         }
         finally
         {
-            PublishLatency.Record((long)(Stopwatch.GetElapsedTime(started).TotalMilliseconds * 1000));
-            Interlocked.Decrement(ref _concurrency);
+            if (generation == Volatile.Read(ref _measurementGeneration) && isMeasurement)
+            {
+                PublishLatency.Record((long)(Stopwatch.GetElapsedTime(started).TotalMilliseconds * 1000));
+                Interlocked.Decrement(ref _measurementConcurrency);
+            }
         }
     }
     public Task DisconnectAsync(CancellationToken cancellationToken) { Volatile.Write(ref _connected, 0); return Task.CompletedTask; }

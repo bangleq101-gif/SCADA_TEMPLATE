@@ -15,12 +15,20 @@ using Scada.Runtime.Tags;
 
 namespace Scada.Stress;
 
-public sealed record StressRunSettings(StressProfile Profile, int DeviceCount, int TagsPerDevice, int WarmupSeconds, int MeasurementSeconds, string OutputDirectory, bool InstrumentationEnabled, int Seed = StressWorkloadFactory.DefaultSeed, ValueChangePattern ChangePattern = ValueChangePattern.EveryFourthRead, string PowerMode = "AC");
+public sealed record StressRunSettings(StressProfile Profile, int DeviceCount, int TagsPerDevice, int WarmupSeconds, int MeasurementSeconds, string OutputDirectory, bool InstrumentationEnabled, int Seed = StressWorkloadFactory.DefaultSeed, ValueChangePattern ChangePattern = ValueChangePattern.EveryFourthRead, string PowerMode = "AC", string? RepositoryRoot = null, string? ExpectedGitSha = null, bool Qualification = false);
 
 public sealed class StressScenarioRunner
 {
     public async Task<StressRunResult> RunAsync(StressRunSettings settings, CancellationToken cancellationToken)
     {
+        var repository = InspectRepository(settings.RepositoryRoot ?? Directory.GetCurrentDirectory());
+        if (settings.Qualification)
+        {
+            if (!settings.InstrumentationEnabled) throw new InvalidOperationException("Qualification requires instrumentation.");
+            if (string.IsNullOrWhiteSpace(settings.ExpectedGitSha)) throw new InvalidOperationException("Qualification requires an expected git SHA.");
+            var qualification = StressQualificationIdentity.Evaluate(settings.RepositoryRoot ?? string.Empty, settings.ExpectedGitSha, repository.Root, repository.Sha, repository.Clean);
+            if (!qualification.IsValid) throw new InvalidOperationException(string.Join(" ", qualification.Violations));
+        }
         var workload = StressWorkloadFactory.Create(settings.Profile, settings.DeviceCount, settings.TagsPerDevice, settings.Seed, settings.ChangePattern);
         Directory.CreateDirectory(settings.OutputDirectory);
         var cache = new TagCache(settings.InstrumentationEnabled);
@@ -71,20 +79,21 @@ public sealed class StressScenarioRunner
 
             pollingMetrics.BeginMeasurement();
             timedHistory?.BeginMeasurement();
+            mqttTransport?.BeginMeasurement();
             ui?.BeginMeasurement();
             var cacheStart = cache.Snapshot;
             var historianStart = historian?.Snapshot;
             var mqttStart = mqtt?.Snapshot;
             var persistedRowsStart = databasePath is null ? 0 : await CountRowsAsync(databasePath, cancellationToken);
             var process = new ProcessMetricsSampler();
-            var historianHighWater = 0;
-            var mqttHighWater = 0;
+            var historianSampledHighWater = 0;
+            var mqttSampledHighWater = 0;
             for (var second = 0; second < settings.MeasurementSeconds; second++)
             {
                 await Task.Delay(TimeSpan.FromSeconds(1), cancellationToken);
                 ui?.PostHeartbeat(); process.Sample();
-                historianHighWater = Math.Max(historianHighWater, historian?.Snapshot.QueueDepth ?? 0);
-                mqttHighWater = Math.Max(mqttHighWater, mqtt?.Snapshot.PendingTags ?? 0);
+                historianSampledHighWater = Math.Max(historianSampledHighWater, historian?.Snapshot.QueueDepth ?? 0);
+                mqttSampledHighWater = Math.Max(mqttSampledHighWater, mqtt?.Snapshot.PendingTags ?? 0);
             }
 
             var elapsedSeconds = Math.Max(0.001, settings.MeasurementSeconds);
@@ -92,6 +101,9 @@ public sealed class StressScenarioRunner
             var pollingEnd = pollingMetrics.Snapshot;
             var processEnd = process.Snapshot();
             var uiEnd = ui?.Snapshot;
+            var deviceSnapshots = polling.DeviceStates;
+            var historianMeasurementEnd = historian?.Snapshot;
+            var mqttMeasurementEnd = mqtt?.Snapshot;
 
             shutdownWatch.Start();
             await polling.StopAsync(cancellationToken);
@@ -110,15 +122,7 @@ public sealed class StressScenarioRunner
             var mqttEnd = mqtt?.Snapshot;
             var persistedRows = databasePath is null ? 0 : await CountRowsAsync(databasePath, cancellationToken) - persistedRowsStart;
 
-            var violations = new List<string>();
-            if (historianEnd is not null)
-            {
-                if (historianEnd.RejectedSamples - (historianStart?.RejectedSamples ?? 0) != 0) violations.Add("Historian rejected samples were non-zero.");
-                if (historianEnd.DroppedSamples - (historianStart?.DroppedSamples ?? 0) != 0) violations.Add("Historian dropped samples were non-zero.");
-                if (historianEnd.AbandonedSamples - (historianStart?.AbandonedSamples ?? 0) != 0) violations.Add("Historian abandoned samples were non-zero.");
-                if (historianEnd.WriteFailures - (historianStart?.WriteFailures ?? 0) != 0) violations.Add("Historian write failures were non-zero.");
-                if (persistedRows != historianEnd.WrittenSamples - (historianStart?.WrittenSamples ?? 0)) violations.Add("Historian persisted row count does not match written samples.");
-            }
+            var historianWritten = historianEnd?.WrittenSamples - (historianStart?.WrittenSamples ?? 0) ?? 0;
             var metrics = new StressMetricSummary(processEnd.CpuPercent, processEnd.WorkingSet, (cacheEnd.Updates - cacheStart.Updates) / elapsedSeconds,
                 pollingEnd.Jitter.Values.Select(value => value.P95 / 1000.0).DefaultIfEmpty().Max(), (uiEnd?.LatencyMicroseconds.P95 ?? 0) / 1000.0)
             {
@@ -129,7 +133,7 @@ public sealed class StressScenarioRunner
                 MissedCycles = pollingEnd.MissedCycles, PollFailures = pollingEnd.Failures,
                 CallbackInvocations = cacheEnd.CallbackInvocations - cacheStart.CallbackInvocations,
                 SubscriberExceptions = cacheEnd.SubscriberExceptions - cacheStart.SubscriberExceptions,
-                Historian = historianEnd is null ? null : new HistorianStressSummary(historianHighWater,
+                Historian = historianEnd is null ? null : new HistorianStressSummary(historianSampledHighWater,
                     historianEnd.EnqueuedSamples - (historianStart?.EnqueuedSamples ?? 0) + historianEnd.DroppedSamples - (historianStart?.DroppedSamples ?? 0),
                     historianEnd.EnqueuedSamples - (historianStart?.EnqueuedSamples ?? 0), historianEnd.WrittenSamples - (historianStart?.WrittenSamples ?? 0),
                     historianEnd.RejectedSamples - (historianStart?.RejectedSamples ?? 0), historianEnd.DroppedSamples - (historianStart?.DroppedSamples ?? 0),
@@ -139,19 +143,41 @@ public sealed class StressScenarioRunner
                     PollingMetricsCollector.Summarize(timedHistory.WriteLatency), historianDrainMilliseconds,
                     databasePath is not null && File.Exists(databasePath) ? new FileInfo(databasePath).Length : 0, persistedRows),
                 Mqtt = mqttEnd is null ? null : new MqttStressSummary(mqttEnd.PublishedMessages - (mqttStart?.PublishedMessages ?? 0),
-                    (mqttEnd.PublishedMessages - (mqttStart?.PublishedMessages ?? 0)) / elapsedSeconds, mqttHighWater,
+                    (mqttEnd.PublishedMessages - (mqttStart?.PublishedMessages ?? 0)) / elapsedSeconds, mqttSampledHighWater,
                     mqttEnd.CoalescedUpdates - (mqttStart?.CoalescedUpdates ?? 0), mqttEnd.RejectedSamples - (mqttStart?.RejectedSamples ?? 0),
                     mqttEnd.PublishFailures - (mqttStart?.PublishFailures ?? 0), mqttEnd.ReconnectAttempts - (mqttStart?.ReconnectAttempts ?? 0),
-                    mqttTransport!.MaximumConcurrency, PollingMetricsCollector.Summarize(mqttTransport.PublishLatency), mqttTransport.LatestSequenceCorrect, 0),
+                    mqttTransport!.MaximumConcurrency, PollingMetricsCollector.Summarize(mqttTransport.PublishLatency), mqttTransport.SourceTimestampOrderCorrect, 0),
                 Dispatcher = uiEnd,
                 ShutdownMilliseconds = shutdownWatch.Elapsed.TotalMilliseconds
             };
+            var correctness = StressCorrectnessEvaluator.Evaluate(new StressQualificationFacts
+            {
+                ExpectedDeviceCount = settings.DeviceCount,
+                ActualDeviceCount = deviceSnapshots.Count,
+                ExpectedTagCount = settings.DeviceCount * settings.TagsPerDevice,
+                ActualTagCount = workload.Options.Tags.Count,
+                TagCacheValueCount = cacheEnd.ValueCount,
+                PollingFailures = pollingEnd.Failures,
+                MissedCycles = pollingEnd.MissedCycles,
+                HistorianRejected = historianEnd?.RejectedSamples - (historianStart?.RejectedSamples ?? 0) ?? 0,
+                HistorianDropped = historianEnd?.DroppedSamples - (historianStart?.DroppedSamples ?? 0) ?? 0,
+                HistorianAbandoned = historianEnd?.AbandonedSamples - (historianStart?.AbandonedSamples ?? 0) ?? 0,
+                HistorianWriteFailures = historianEnd?.WriteFailures - (historianStart?.WriteFailures ?? 0) ?? 0,
+                HistorianPersistedRows = persistedRows,
+                HistorianWrittenSamples = historianWritten,
+                MqttSourceTimestampOrderCorrect = mqttTransport?.SourceTimestampOrderCorrect ?? true,
+                MqttPlcReadsCaused = 0,
+                MqttFailures = mqttEnd?.PublishFailures - (mqttStart?.PublishFailures ?? 0) ?? 0,
+                DispatcherHeartbeatGaps = uiEnd?.HeartbeatGaps ?? 0,
+                ActiveSubscriptionsAfterShutdown = cache.Snapshot.SubscriptionCount,
+                ShutdownCompleted = true,
+                UnhandledSubsystemFailure = deviceSnapshots.Values.Any(snapshot => snapshot.ConnectionState == Scada.Core.Devices.DeviceConnectionState.Faulted) || historianMeasurementEnd?.State == HistorianRuntimeState.Faulted || mqttMeasurementEnd?.State == Scada.Core.Mqtt.MqttRuntimeState.Faulted
+            });
             var fingerprint = CreateFingerprint(settings, workload.ConfigurationHash);
-            var gitSha = ReadGitSha();
-            var result = new StressRunResult(1, StressWorkloadFactory.WorkloadVersion, settings.Profile, gitSha, fingerprint.CompatibilityKey, fingerprint,
+            var result = new StressRunResult(StressWorkloadFactory.ResultSchemaVersion, StressWorkloadFactory.WorkloadVersion, StressWorkloadFactory.MeasurementContractVersion, settings.Profile, repository.Sha, repository.Clean, repository.Root, fingerprint.CompatibilityKey, fingerprint,
                 new StressWorkloadSummary(settings.DeviceCount, workload.Options.Tags.Count, settings.Seed, settings.ChangePattern,
                     workload.ExpectedTagCacheUpdatesPerSecond, workload.ExpectedValueChangesPerSecond, metrics.UpdatesPerSecond, workload.ConfigurationHash), metrics,
-                new StressCorrectness(settings.DeviceCount, workload.Options.Tags.Count, cacheEnd.ValueCount, cache.Snapshot.SubscriptionCount, violations.Count == 0, violations), startedAt, DateTimeOffset.UtcNow);
+                correctness, startedAt, DateTimeOffset.UtcNow);
             await StressResultWriter.WriteAsync(settings.OutputDirectory, result, cancellationToken);
             return result;
         }
@@ -172,11 +198,27 @@ public sealed class StressScenarioRunner
         Environment.MachineName, Environment.GetEnvironmentVariable("PROCESSOR_IDENTIFIER") ?? RuntimeInformation.ProcessArchitecture.ToString(),
         RuntimeInformation.OSDescription, RuntimeInformation.FrameworkDescription, Environment.ProcessorCount,
         StressWorkloadFactory.WorkloadVersion, settings.Profile.ToString(), hash, settings.PowerMode, settings.Seed, settings.WarmupSeconds, settings.MeasurementSeconds);
-    private static string ReadGitSha()
+    private static GitRepositoryState InspectRepository(string root)
     {
-        try { using var process = Process.Start(new ProcessStartInfo("git", "rev-parse HEAD") { RedirectStandardOutput = true, UseShellExecute = false, CreateNoWindow = true }); return process is null ? "unknown" : process.StandardOutput.ReadToEnd().Trim(); }
-        catch { return "unknown"; }
+        var requestedRoot = Path.GetFullPath(root);
+        var actualRoot = RunGit(requestedRoot, "rev-parse --show-toplevel");
+        var sha = RunGit(actualRoot, "rev-parse HEAD");
+        var status = RunGit(actualRoot, "status --porcelain --untracked-files=all");
+        return new(actualRoot, sha, string.IsNullOrWhiteSpace(status));
     }
+
+    private static string RunGit(string workingDirectory, string arguments)
+    {
+        using var process = Process.Start(new ProcessStartInfo("git", arguments) { WorkingDirectory = workingDirectory, RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false, CreateNoWindow = true });
+        if (process is null) throw new InvalidOperationException("Unable to start git for stress qualification identity.");
+        var output = process.StandardOutput.ReadToEnd().Trim();
+        var error = process.StandardError.ReadToEnd().Trim();
+        process.WaitForExit();
+        if (process.ExitCode != 0) throw new InvalidOperationException($"Git qualification identity check failed: {error}");
+        return output;
+    }
+
+    private sealed record GitRepositoryState(string Root, string Sha, bool Clean);
 
     private static async Task<long> CountRowsAsync(string databasePath, CancellationToken cancellationToken)
     {
