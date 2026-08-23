@@ -2,6 +2,8 @@
 
 Architecture V1 is approved.
 
+Post-M6 baseline stabilization: Influx durable outbox SQLite connection/WAL concurrency issue corrected.
+
 Current implementation milestone:
 
 Milestone 6 — InfluxDB Provider
@@ -135,7 +137,7 @@ n PLC
 
 - `dotnet restore Scada.sln --ignore-failed-sources` — PASS.
 - `dotnet build Scada.sln -c Release --no-restore` — PASS with 0 warnings and 0 errors.
-- `dotnet test Scada.sln -c Release --no-build` — PASS; 197 tests, 0 failures (60 App, 59 Runtime, 17 Core, 3 Drivers, 58 Infrastructure).
+- `dotnet test Scada.sln -c Release --no-build` — PASS; 199 tests, 0 failures (60 App, 59 Runtime, 17 Core, 3 Drivers, 60 Infrastructure).
 - `dotnet list Scada.sln package --include-transitive --vulnerable` — PASS; no vulnerable packages reported. `SQLitePCLRaw.bundle_e_sqlite3`, `core`, `lib.e_sqlite3` and `provider.e_sqlite3` resolve to 2.1.12 through `Microsoft.Data.Sqlite` 10.0.11.
 - `git diff --check` — PASS.
 - InfluxDB package audit — PASS; no vulnerable packages reported.

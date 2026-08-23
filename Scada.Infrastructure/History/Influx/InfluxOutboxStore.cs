@@ -813,8 +813,7 @@ public sealed class InfluxOutboxStore : IAsyncDisposable
         var connection = new SqliteConnection(new SqliteConnectionStringBuilder
         {
             DataSource = databasePath,
-            Mode = mode,
-            Cache = SqliteCacheMode.Shared
+            Mode = mode
         }.ToString());
         try
         {
@@ -828,7 +827,7 @@ public sealed class InfluxOutboxStore : IAsyncDisposable
             {
                 await SqliteConnectionConfiguration.ConfigureWriteAsync(
                     connection,
-                    enableWal: true,
+                    enableWal: mode == SqliteOpenMode.ReadWriteCreate,
                     cancellationToken).ConfigureAwait(false);
             }
             return connection;
