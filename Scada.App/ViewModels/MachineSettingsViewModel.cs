@@ -48,12 +48,13 @@ public sealed class MachineSettingsViewModel : IWorkspaceLifecycle, IDisposable,
     public void Dispose() { if (_disposed) return; _disposed = true; Deactivate(); _session.PropertyChanged -= OnSessionChanged; foreach (var page in Pages) page.Dispose(); }
     private void RebuildPages()
     {
-        var selectedId = SelectedPage?.Id; foreach (var page in Pages) page.Dispose(); Pages.Clear(); PageGroups.Clear();
+        var selectedId = SelectedPage?.Id; var drafts = Pages.SelectMany(page => page.Editors.Select(editor => (Key: page.Id + "/" + editor.Id, editor.EditValueText))).ToDictionary(item => item.Key, item => item.EditValueText, StringComparer.OrdinalIgnoreCase); foreach (var page in Pages) page.Dispose(); Pages.Clear(); PageGroups.Clear();
         foreach (var page in _session.WorkingProject.MachineSettings.Pages.Where(page => page.IsVisible || ShowHiddenConfiguration).OrderBy(page => page.Group, StringComparer.Ordinal).ThenBy(page => page.Order).ThenBy(page => page.Id, StringComparer.Ordinal)) Pages.Add(new MachineSettingsPageViewModel(page, _session, _cache, _dispatcher, ShowHiddenConfiguration));
         foreach (var group in Pages.GroupBy(page => page.Group ?? string.Empty, StringComparer.Ordinal).OrderBy(group => group.Key, StringComparer.Ordinal)) PageGroups.Add(new MachineSettingsPageGroupViewModel(group.Key, group));
+        foreach (var page in Pages) foreach (var editor in page.Editors) if (drafts.TryGetValue(page.Id + "/" + editor.Id, out var draft)) editor.EditValueText = draft;
         SelectedPage = Pages.FirstOrDefault(page => string.Equals(page.Id, selectedId, StringComparison.OrdinalIgnoreCase)) ?? Pages.FirstOrDefault();
     }
-    private void OnSessionChanged(object? sender, PropertyChangedEventArgs args) { if (args.PropertyName is nameof(ProjectEditSession.WorkingProject) or nameof(ProjectEditSession.SavedProject)) RebuildPages(); OnPropertyChanged(nameof(IsDirty)); OnPropertyChanged(nameof(RestartRequired)); OnPropertyChanged(nameof(ValidationIssues)); OnPropertyChanged(nameof(HasBlockingIssues)); OnPropertyChanged(nameof(LastErrorMessage)); }
+    private void OnSessionChanged(object? sender, PropertyChangedEventArgs args) { if (args.PropertyName is nameof(ProjectEditSession.WorkingProject)) RebuildPages(); OnPropertyChanged(nameof(IsDirty)); OnPropertyChanged(nameof(RestartRequired)); OnPropertyChanged(nameof(ValidationIssues)); OnPropertyChanged(nameof(HasBlockingIssues)); OnPropertyChanged(nameof(LastErrorMessage)); }
     private void OnPropertyChanged([CallerMemberName] string? name = null) => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
 }
 

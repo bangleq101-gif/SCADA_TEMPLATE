@@ -191,6 +191,17 @@ public sealed class MachineSettingsTests
         Assert.Contains(viewModel.Pages, page => page.Id == "hidden");
     }
 
+    [Fact]
+    public void VisibilityRebuildAndProjectSavePreserveUnappliedDrafts()
+    {
+        var options = Options();
+        options.MachineSettings.Pages.Add(new MachineSettingsPageDefinition { Id = "hidden", Title = "Hidden", IsVisible = false });
+        var viewModel = new MachineSettingsViewModel(new ProjectEditSession(options, null, null), new TestTagCache(), new ImmediateDispatcher());
+        viewModel.SelectedPage!.Editors[0].EditValueText = "77";
+        viewModel.ShowHiddenConfiguration = true;
+        Assert.Equal("77", viewModel.SelectedPage!.Editors[0].EditValueText);
+    }
+
     private static RuntimeOptions Options() => new() { MachineSettings = new MachineSettingsOptions { Pages = [new MachineSettingsPageDefinition { Id = "machine", Title = "Machine", Parameters = [new MachineParameterDefinition { Id = "one", Name = "One", ValueType = MachineParameterValueType.Integer, Value = "10" }, new MachineParameterDefinition { Id = "two", Name = "Two", ValueType = MachineParameterValueType.Integer, Value = "20" }] }] } };
     private static RuntimeOptions LiveOptions() => new() { Tags = [new TagDefinition { Id = "live", Name = "Live", DeviceId = "SIM", Address = "X", Enabled = true }], MachineSettings = new MachineSettingsOptions { Pages = [new MachineSettingsPageDefinition { Id = "a", Title = "A", Parameters = [new MachineParameterDefinition { Id = "a1", Name = "A1", ValueType = MachineParameterValueType.Integer, Value = "1", LiveTagId = "live" }] }] } };
     private sealed class ImmediateDispatcher : IMachineSettingsDispatcher { public void Post(Action action) => action(); }
