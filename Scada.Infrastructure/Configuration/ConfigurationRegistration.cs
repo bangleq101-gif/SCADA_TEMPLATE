@@ -25,6 +25,12 @@ public static class ConfigurationRegistration
             options.Historian.Profiles.Clear();
         }
 
+        var mqttProfiles = scadaSection.GetSection(nameof(RuntimeOptions.Mqtt)).GetSection("Profiles");
+        if (mqttProfiles.Exists() || mqttProfiles.Value is not null)
+        {
+            options.Mqtt.Profiles.Clear();
+        }
+
         scadaSection.Bind(options);
         return options;
     }

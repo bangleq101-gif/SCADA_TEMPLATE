@@ -1,6 +1,10 @@
 
 # Architecture Decisions
 
+## D53 — MQTT publisher uses TagCache latest-state coalescing
+
+Milestone 7 publishes selected tags from the central TagCache only. MQTT is publisher-only and uses one latest pending value per tag while a broker is unavailable; it is not a durable event historian. MQTTnet is isolated in Infrastructure behind Core transport contracts, while Runtime owns profile evaluation, coalescing and reconnect orchestration. MQTT Write, command subscriptions and PLC-write paths remain out of scope.
+
 ## D-001 — Copy-folder portability
 
 `SCADA_TEMPLATE` is copied as a complete folder to create a new SCADA project. The copied repository must build and run independently. Project references are relative, and no internal SCADA source dependency may exist outside the repository.

@@ -10,6 +10,7 @@ public sealed class NavigationService : INotifyPropertyChanged
     public const string EngineeringOverviewRoute = "engineering.overview";
     public const string EngineeringTagManagerRoute = "engineering.tag-manager";
     public const string EngineeringHistoryRoute = "engineering.history";
+    public const string EngineeringMqttRoute = "engineering.mqtt";
 
     private readonly IReadOnlyDictionary<string, object> _pages;
     private string _currentRouteKey;
@@ -21,7 +22,8 @@ public sealed class NavigationService : INotifyPropertyChanged
         MonitoringViewModel monitoring,
         EngineeringViewModel engineering,
         TagManagerViewModel? tagManager = null,
-        HistorySettingsViewModel? historySettings = null)
+        HistorySettingsViewModel? historySettings = null,
+        MqttSettingsViewModel? mqttSettings = null)
     {
         ArgumentNullException.ThrowIfNull(operation);
         ArgumentNullException.ThrowIfNull(machineSettings);
@@ -44,6 +46,7 @@ public sealed class NavigationService : INotifyPropertyChanged
         {
             pages[EngineeringHistoryRoute] = historySettings;
         }
+        if (mqttSettings is not null) pages[EngineeringMqttRoute] = mqttSettings;
 
         _pages = pages;
 

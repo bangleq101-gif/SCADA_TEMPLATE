@@ -23,6 +23,9 @@ public static class ProjectDocumentMigrator
                 case 2:
                     MigrateV2ToV3(document);
                     break;
+                case 3:
+                    MigrateV3ToV4(document);
+                    break;
                 default:
                     throw new ProjectDocumentException(
                         $"Project schema version {document.SchemaVersion} cannot be migrated.");
@@ -46,6 +49,13 @@ public static class ProjectDocumentMigrator
         document.Scada.Historian.StorageProvider = HistoryStorageProvider.SQLite;
         document.Scada.Historian.Influx ??= new InfluxDbOptions();
         document.SchemaVersion = 3;
+    }
+
+    private static void MigrateV3ToV4(ProjectDocument document)
+    {
+        EnsureScada(document);
+        document.Scada!.Mqtt ??= new Scada.Core.Mqtt.MqttOptions();
+        document.SchemaVersion = 4;
     }
 
     private static void EnsureScada(ProjectDocument document)
