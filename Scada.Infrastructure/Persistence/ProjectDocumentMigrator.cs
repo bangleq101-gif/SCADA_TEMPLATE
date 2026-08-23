@@ -26,6 +26,9 @@ public static class ProjectDocumentMigrator
                 case 3:
                     MigrateV3ToV4(document);
                     break;
+                case 4:
+                    MigrateV4ToV5(document);
+                    break;
                 default:
                     throw new ProjectDocumentException(
                         $"Project schema version {document.SchemaVersion} cannot be migrated.");
@@ -56,6 +59,13 @@ public static class ProjectDocumentMigrator
         EnsureScada(document);
         document.Scada!.Mqtt ??= new Scada.Core.Mqtt.MqttOptions();
         document.SchemaVersion = 4;
+    }
+
+    private static void MigrateV4ToV5(ProjectDocument document)
+    {
+        EnsureScada(document);
+        document.Scada!.MachineSettings ??= new Scada.Core.MachineSettings.MachineSettingsOptions();
+        document.SchemaVersion = 5;
     }
 
     private static void EnsureScada(ProjectDocument document)

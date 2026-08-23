@@ -31,21 +31,6 @@ public sealed class OperationViewModel(RuntimeOptions options) : IWorkspaceLifec
     }
 }
 
-public sealed class MachineSettingsViewModel : IWorkspaceLifecycle
-{
-    public bool IsActive { get; private set; }
-
-    public void Activate()
-    {
-        IsActive = true;
-    }
-
-    public void Deactivate()
-    {
-        IsActive = false;
-    }
-}
-
 public sealed class EngineeringViewModel : IWorkspaceLifecycle
 {
     public bool IsActive { get; private set; }

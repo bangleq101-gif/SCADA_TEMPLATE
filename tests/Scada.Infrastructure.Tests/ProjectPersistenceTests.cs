@@ -101,7 +101,7 @@ public sealed class ProjectPersistenceTests
     [Theory]
     [InlineData(0)]
     [InlineData(-1)]
-    [InlineData(5)]
+[InlineData(6)]
     public void UnsupportedProjectSchemaVersionsAreRejected(int schemaVersion)
     {
         AssertSchemaRejected($"{{\"SchemaVersion\":{schemaVersion},\"Scada\":{{}}}}", "schema");
@@ -133,7 +133,7 @@ public sealed class ProjectPersistenceTests
     }
 
     [Fact]
-    public void LoadingV2MigratesToV4WithoutRewritingTheSourceFile()
+    public void LoadingV2MigratesToV5WithoutRewritingTheSourceFile()
     {
         var directory = CreateTempDirectory();
         try
@@ -146,7 +146,8 @@ public sealed class ProjectPersistenceTests
             var loaded = store.Load();
 
             Assert.NotNull(loaded);
-            Assert.Equal(4, loaded!.SchemaVersion);
+            Assert.Equal(5, loaded!.SchemaVersion);
+            Assert.Empty(loaded!.Scada!.MachineSettings.Pages);
             Assert.Equal("Runtime02", loaded.Scada!.RuntimeId);
             Assert.True(loaded.Scada.Historian.Enabled);
             Assert.Equal("Data/custom.db", loaded.Scada.Historian.DatabasePath);
@@ -161,7 +162,7 @@ public sealed class ProjectPersistenceTests
     }
 
     [Fact]
-    public void LoadingV1PerformsSequentialMigrationAndSaveWritesV4()
+    public void LoadingV1PerformsSequentialMigrationAndSaveWritesV5()
     {
         var directory = CreateTempDirectory();
         try
@@ -173,7 +174,7 @@ public sealed class ProjectPersistenceTests
 
             var loaded = store.Load()!;
 
-            Assert.Equal(4, loaded.SchemaVersion);
+            Assert.Equal(5, loaded.SchemaVersion);
             Assert.True(loaded.Scada!.Historian.Enabled);
             Assert.Equal("Data/v1.db", loaded.Scada.Historian.DatabasePath);
             Assert.Equal(HistoryStorageProvider.SQLite, loaded.Scada.Historian.StorageProvider);
@@ -181,7 +182,7 @@ public sealed class ProjectPersistenceTests
 
             store.Save(loaded);
 
-            Assert.Contains("\"SchemaVersion\": 4", File.ReadAllText(path), StringComparison.Ordinal);
+            Assert.Contains("\"SchemaVersion\": 5", File.ReadAllText(path), StringComparison.Ordinal);
         }
         finally
         {

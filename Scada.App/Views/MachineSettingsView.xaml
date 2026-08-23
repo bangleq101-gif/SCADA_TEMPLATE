@@ -5,8 +5,13 @@
     <controls:WorkspaceLayout Title="Machine Settings"
                               Description="Machine-specific settings workspace."
                               Style="{StaticResource WorkspaceLayoutStyle}">
-        <Border Style="{StaticResource CardBorderStyle}">
-            <TextBlock Text="Machine settings" Style="{StaticResource CardTitleTextStyle}" />
-        </Border>
+        <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="220"/><ColumnDefinition Width="16"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+            <Border Style="{StaticResource CardBorderStyle}"><ListBox ItemsSource="{Binding Pages}" SelectedItem="{Binding SelectedPage}" DisplayMemberPath="Title" /></Border>
+            <ScrollViewer Grid.Column="2" VerticalScrollBarVisibility="Auto"><StackPanel DataContext="{Binding SelectedPage}">
+                <TextBlock Text="{Binding Title}" Style="{StaticResource CardTitleTextStyle}"/><TextBlock Text="{Binding Description}" Style="{StaticResource WorkspaceDescriptionTextStyle}"/>
+                <ItemsControl ItemsSource="{Binding Groups}" ItemTemplate="{StaticResource ParameterGroupTemplate}"/>
+                <WrapPanel Margin="0,12,0,0"><Button Content="Apply page" Command="{Binding DataContext.ApplyPageCommand, RelativeSource={RelativeSource AncestorType=UserControl}}" Style="{StaticResource PrimaryButtonStyle}"/><Button Content="Revert page" Command="{Binding DataContext.RevertPageCommand, RelativeSource={RelativeSource AncestorType=UserControl}}" Style="{StaticResource SecondaryButtonStyle}" Margin="8,0,0,0"/><TextBlock Text="{Binding ApplyStatus}" Margin="12,4,0,0"/></WrapPanel>
+            </StackPanel></ScrollViewer>
+        </Grid>
     </controls:WorkspaceLayout>
 </UserControl>

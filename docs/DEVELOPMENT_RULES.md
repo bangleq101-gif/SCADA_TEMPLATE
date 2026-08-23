@@ -17,6 +17,7 @@
 - Monitoring must own TagCache subscriptions only while active. Activation is idempotent, deactivation disposes owned subscriptions, and queued callbacks must re-check their activation generation before updating rows.
 - WPF Dispatcher marshaling belongs in `Scada.App`. Views and ViewModels must consume TagCache data and must not read PLCs directly.
 - Reuse `WorkspaceLayout` and ResourceDictionary styles for workspace page structure and semantic colors. Do not add a third-party UI framework for the Shell.
+- Machine Settings parameter values are canonical Core text values. Page Apply must validate all drafts before one `ProjectEditSession.MarkChanged()` call; no editor mutates the project or writes a PLC per keystroke. Optional live values use logical TagCache IDs only and active-page subscription ownership.
 - Product UI must not expose milestone, foundation, placeholder or fabricated health-status text.
 
 ## Tag Manager rules
