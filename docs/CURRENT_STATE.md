@@ -8,8 +8,8 @@ Milestone 6 — InfluxDB Provider
 
 Status:
 
-Implemented and stabilization fixes applied on `feature/milestone-6-influxdb-provider`;
-pending final source review and PR.
+Implemented, stabilized and source-reviewed on `feature/milestone-6-influxdb-provider`;
+pending PR.
 
 ## Implemented in Milestone 1
 
