@@ -8,8 +8,15 @@ Milestone 6 — InfluxDB Provider
 
 Status:
 
-Implemented, stabilized and source-reviewed on `feature/milestone-6-influxdb-provider`;
-pending PR.
+Completed and merged to `main` via PR #6.
+
+Merge commit:
+
+`4590577d5023f66556d89ba803360daca531c4cb`
+
+Milestone 7:
+
+NOT STARTED
 
 ## Implemented in Milestone 1
 
