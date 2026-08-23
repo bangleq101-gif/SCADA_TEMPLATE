@@ -66,8 +66,7 @@ public partial class App : Application
             {
                 builder.Services.AddSingleton<BufferedInfluxHistoryStore>(services =>
                     new BufferedInfluxHistoryStore(
-                        projectPath ?? throw new InvalidOperationException(
-                            "A canonical project path is required for the InfluxDB provider."),
+                        projectPath,
                         startupOptions.Historian,
                         services.GetRequiredService<Microsoft.Extensions.Logging.ILogger<BufferedInfluxHistoryStore>>(),
                         services.GetRequiredService<TimeProvider>()));
@@ -99,6 +98,7 @@ public partial class App : Application
             builder.Services.AddSingleton<IDeleteConfirmation, WpfDeleteConfirmation>();
             builder.Services.AddSingleton<IHistoryBufferConfirmation, WpfHistoryBufferConfirmation>();
             builder.Services.AddSingleton<IHistoryConnectionTester, InfluxHistoryConnectionTester>();
+            builder.Services.AddSingleton<IHistoryRetentionManager, InfluxHistoryRetentionManager>();
             builder.Services.AddSingleton<OperationViewModel>();
             builder.Services.AddSingleton<MachineSettingsViewModel>();
             builder.Services.AddSingleton<MonitoringViewModel>();

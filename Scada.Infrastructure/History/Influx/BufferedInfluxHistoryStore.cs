@@ -14,14 +14,15 @@ namespace Scada.Infrastructure.History.Influx;
 public sealed class BufferedInfluxHistoryStore : IHistoryStore, IHistoryStoreDiagnostics, IHistoryStoreMaintenance
 {
     private const int MaximumIsolationAttempts = 20_000;
-    private readonly ProjectPath _projectPath;
+    private readonly ProjectPath? _projectPath;
     private readonly InfluxDbOptions _options;
     private readonly ILogger<BufferedInfluxHistoryStore> _logger;
     private readonly TimeProvider _timeProvider;
     private readonly InfluxOutboxStore _outbox;
     private readonly IInfluxTransport? _injectedTransport;
     private readonly SemaphoreSlim _initializeGate = new(1, 1);
-    private readonly SemaphoreSlim _workSignal = new(0);
+    private readonly SemaphoreSlim _workSignal = new(0, 1);
+    private readonly SemaphoreSlim _remoteSyncGate = new(1, 1);
     private readonly object _sync = new();
     private readonly string _destinationFingerprint;
     private CancellationTokenSource? _lifetimeCts;
@@ -44,13 +45,13 @@ public sealed class BufferedInfluxHistoryStore : IHistoryStore, IHistoryStoreDia
     private bool _disposed;
 
     public BufferedInfluxHistoryStore(
-        ProjectPath projectPath,
+        ProjectPath? projectPath,
         HistorianOptions historianOptions,
         ILogger<BufferedInfluxHistoryStore> logger,
         TimeProvider timeProvider,
         IInfluxTransport? transport = null)
     {
-        _projectPath = projectPath ?? throw new ArgumentNullException(nameof(projectPath));
+        _projectPath = projectPath;
         ArgumentNullException.ThrowIfNull(historianOptions);
         _options = historianOptions.Influx ?? new InfluxDbOptions();
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
@@ -62,7 +63,7 @@ public sealed class BufferedInfluxHistoryStore : IHistoryStore, IHistoryStoreDia
 
     public string DestinationFingerprint => _destinationFingerprint;
 
-    public string BufferPath => _outbox.DatabasePath;
+    public string? BufferPath => _outbox.DatabasePath;
 
     public HistoryStoreDiagnosticsSnapshot Snapshot
     {
@@ -141,15 +142,6 @@ public sealed class BufferedInfluxHistoryStore : IHistoryStore, IHistoryStoreDia
         {
             SignalWork();
         }
-
-        await RefreshDiagnosticsAsync(
-                Snapshot.State is HistoryStoreState.Online or HistoryStoreState.Resynchronizing
-                    ? Snapshot.State
-                    : HistoryStoreState.Buffering,
-                Snapshot.LastErrorCode,
-                Snapshot.LastErrorMessage,
-                cancellationToken)
-            .ConfigureAwait(false);
     }
 
     public async Task<IReadOnlyList<HistorySample>> QueryAsync(
@@ -160,6 +152,12 @@ public sealed class BufferedInfluxHistoryStore : IHistoryStore, IHistoryStoreDia
         query.Validate();
         ThrowIfDisposed();
         EnsureInitialized();
+
+        if (InfluxPointTimestamp.IsAtOrBelowMinimum(query.ToRecordedAtUtc) ||
+            InfluxPointTimestamp.IsAboveMaximum(query.FromRecordedAtUtc))
+        {
+            return [];
+        }
 
         var transport = TryGetTransport(out var configurationError);
         if (transport is null)
@@ -179,9 +177,9 @@ public sealed class BufferedInfluxHistoryStore : IHistoryStore, IHistoryStoreDia
                 .ConfigureAwait(false);
             var start = InfluxPointTimestamp.TryGetBaseNanoseconds(query.FromRecordedAtUtc, out var startNanoseconds)
                 ? startNanoseconds
-                : 0L;
+                : InfluxPointTimestamp.MinNanoseconds;
             var hasStop = InfluxPointTimestamp.TryGetBaseNanoseconds(query.ToRecordedAtUtc, out var stopNanoseconds);
-            if (lastRemoteTimestamp is long previous && previous < long.MaxValue)
+            if (lastRemoteTimestamp is long previous && previous >= InfluxPointTimestamp.MinNanoseconds && previous < InfluxPointTimestamp.MaxNanoseconds)
             {
                 var widenedStop = previous + 1;
                 if (!hasStop || widenedStop > stopNanoseconds)
@@ -292,10 +290,18 @@ public sealed class BufferedInfluxHistoryStore : IHistoryStore, IHistoryStoreDia
     {
         ThrowIfDisposed();
         EnsureInitialized();
-        await _outbox.ClearDestinationBufferAsync(_destinationFingerprint, cancellationToken).ConfigureAwait(false);
-        await RefreshDiagnosticsAsync(Snapshot.State, Snapshot.LastErrorCode, Snapshot.LastErrorMessage, cancellationToken)
-            .ConfigureAwait(false);
-        return new HistoryStoreOperationResult(true);
+        await _remoteSyncGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await _outbox.ClearDestinationBufferAsync(_destinationFingerprint, cancellationToken).ConfigureAwait(false);
+            await RefreshDiagnosticsAsync(Snapshot.State, Snapshot.LastErrorCode, Snapshot.LastErrorMessage, cancellationToken)
+                .ConfigureAwait(false);
+            return new HistoryStoreOperationResult(true);
+        }
+        finally
+        {
+            _remoteSyncGate.Release();
+        }
     }
 
     public async Task<HistoryStoreOperationResult> ClearPreviousDestinationBufferAsync(
@@ -351,6 +357,7 @@ public sealed class BufferedInfluxHistoryStore : IHistoryStore, IHistoryStoreDia
         _lifetimeCts?.Dispose();
         _initializeGate.Dispose();
         _workSignal.Dispose();
+        _remoteSyncGate.Dispose();
     }
 
     private async Task ResynchronizationLoopAsync(CancellationToken cancellationToken)
@@ -363,6 +370,20 @@ public sealed class BufferedInfluxHistoryStore : IHistoryStore, IHistoryStoreDia
             if (transport is null)
             {
                 SetState(HistoryStoreState.ConfigurationRequired, configurationError.Code, configurationError.Message);
+                try
+                {
+                    await RefreshDiagnosticsAsync(
+                            HistoryStoreState.ConfigurationRequired,
+                            configurationError.Code,
+                            configurationError.Message,
+                            cancellationToken)
+                        .ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    return;
+                }
+
                 await WaitForWorkOrDelayAsync(
                         TimeSpan.FromMilliseconds(_options.ReconnectMaxDelayMilliseconds),
                         cancellationToken)
@@ -438,6 +459,21 @@ public sealed class BufferedInfluxHistoryStore : IHistoryStore, IHistoryStoreDia
         IInfluxTransport transport,
         CancellationToken cancellationToken)
     {
+        await _remoteSyncGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            return await SyncPendingCoreAsync(transport, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            _remoteSyncGate.Release();
+        }
+    }
+
+    private async Task<bool> SyncPendingCoreAsync(
+        IInfluxTransport transport,
+        CancellationToken cancellationToken)
+    {
         var diagnostics = await _outbox.ReadDiagnosticsAsync(_destinationFingerprint, cancellationToken)
             .ConfigureAwait(false);
         var rows = await _outbox.ReadPendingAsync(
@@ -468,7 +504,27 @@ public sealed class BufferedInfluxHistoryStore : IHistoryStore, IHistoryStoreDia
             }
             else
             {
-                pending.Add(row);
+                try
+                {
+                    _ = InfluxHistoryPointMapper.ToLineProtocol(row, _options.Measurement);
+                    pending.Add(row);
+                }
+                catch (HistoryStorePermanentException exception)
+                {
+                    _logger.LogWarning(
+                        "Influx history row {RowId} was classified as terminal for {ErrorCode}: {ErrorMessage}",
+                        row.Id,
+                        exception.Code,
+                        exception.Message);
+                    await _outbox.MarkTerminalAsync(
+                            _destinationFingerprint,
+                            row.Id,
+                            expired: false,
+                            exception.Code,
+                            exception.Message,
+                            cancellationToken)
+                        .ConfigureAwait(false);
+                }
             }
         }
 
@@ -660,9 +716,9 @@ public sealed class BufferedInfluxHistoryStore : IHistoryStore, IHistoryStoreDia
                 _options.Organization,
                 _options.Bucket,
                 token!,
-                Math.Max(
-                    _options.ConnectionTimeoutMilliseconds,
-                    Math.Max(_options.WriteTimeoutMilliseconds, _options.QueryTimeoutMilliseconds))));
+                _options.ConnectionTimeoutMilliseconds,
+                _options.WriteTimeoutMilliseconds,
+                _options.QueryTimeoutMilliseconds));
             configurationError = (string.Empty, string.Empty);
             return _transport;
         }
@@ -687,9 +743,17 @@ public sealed class BufferedInfluxHistoryStore : IHistoryStore, IHistoryStoreDia
 
     private void SignalWork()
     {
+        TryReleaseWorkSignal(_workSignal);
+    }
+
+    internal static void TryReleaseWorkSignal(SemaphoreSlim signal)
+    {
         try
         {
-            _workSignal.Release();
+            signal.Release();
+        }
+        catch (SemaphoreFullException)
+        {
         }
         catch (ObjectDisposedException)
         {
@@ -864,8 +928,8 @@ public sealed class BufferedInfluxHistoryStore : IHistoryStore, IHistoryStoreDia
             _snapshot = _snapshot with
             {
                 State = state,
-                LastErrorCode = errorCode ?? _snapshot.LastErrorCode,
-                LastErrorMessage = errorMessage ?? _snapshot.LastErrorMessage
+                LastErrorCode = errorCode,
+                LastErrorMessage = errorMessage
             };
         }
     }

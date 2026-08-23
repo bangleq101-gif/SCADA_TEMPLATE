@@ -96,6 +96,21 @@ public sealed class HistoryConfigurationTests
     }
 
     [Fact]
+    public void DisabledInfluxHistorianDoesNotRequireRemoteConfiguration()
+    {
+        var options = CreateOptions();
+        options.Historian.Enabled = false;
+        options.Historian.StorageProvider = HistoryStorageProvider.InfluxDb2;
+        options.Historian.Influx.Organization = "org";
+        options.Historian.Influx.Bucket = "bucket";
+        options.Historian.Influx.TokenReference = "env:SCADA_INFLUX_TOKEN";
+
+        Assert.DoesNotContain(
+            RuntimeOptionsValidation.CollectIssues(options),
+            issue => issue.Code.StartsWith("INFLUX_", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void InfluxValidationRejectsInvalidCapacityBatchAndReconnectRange()
     {
         var options = CreateOptions();

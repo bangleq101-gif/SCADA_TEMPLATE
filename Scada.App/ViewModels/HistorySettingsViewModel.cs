@@ -8,7 +8,7 @@ using Scada.Runtime.Historian;
 
 namespace Scada.App.ViewModels;
 
-public sealed class HistorySettingsViewModel : INotifyPropertyChanged, IWorkspaceLifecycle
+public sealed class HistorySettingsViewModel : INotifyPropertyChanged, IWorkspaceLifecycle, IDisposable
 {
     private readonly ProjectEditSession _session;
     private readonly HistorianRuntimeService _historian;
@@ -16,7 +16,10 @@ public sealed class HistorySettingsViewModel : INotifyPropertyChanged, IWorkspac
     private readonly IHistoryStoreMaintenance? _storeMaintenance;
     private readonly IHistoryBufferConfirmation? _bufferConfirmation;
     private readonly IHistoryConnectionTester? _connectionTester;
+    private readonly IHistoryRetentionManager? _retentionManager;
     private bool _isActive;
+    private long _activationGeneration;
+    private bool _disposed;
     private string _statusText = "Not started";
     private string _lastErrorText = string.Empty;
     private string _lastWriteText = "Never";
@@ -29,7 +32,8 @@ public sealed class HistorySettingsViewModel : INotifyPropertyChanged, IWorkspac
         IHistoryStoreDiagnostics? storeDiagnostics = null,
         IHistoryStoreMaintenance? storeMaintenance = null,
         IHistoryBufferConfirmation? bufferConfirmation = null,
-        IHistoryConnectionTester? connectionTester = null)
+        IHistoryConnectionTester? connectionTester = null,
+        IHistoryRetentionManager? retentionManager = null)
     {
         _session = session ?? throw new ArgumentNullException(nameof(session));
         _historian = historian ?? throw new ArgumentNullException(nameof(historian));
@@ -37,6 +41,7 @@ public sealed class HistorySettingsViewModel : INotifyPropertyChanged, IWorkspac
         _storeMaintenance = storeMaintenance;
         _bufferConfirmation = bufferConfirmation;
         _connectionTester = connectionTester;
+        _retentionManager = retentionManager;
         Profiles = [];
         SaveCommand = new RelayCommand(_ => Save());
         RevertCommand = new RelayCommand(_ => Revert());
@@ -49,10 +54,10 @@ public sealed class HistorySettingsViewModel : INotifyPropertyChanged, IWorkspac
             }
         });
         RefreshStatusCommand = new RelayCommand(_ => RefreshStatus());
-        TestConnectionCommand = new RelayCommand(_ => _ = TestConnectionAsync());
-        ApplyRetentionCommand = new RelayCommand(_ => _ = ApplyRetentionAsync());
-        ClearCurrentBufferCommand = new RelayCommand(_ => _ = ClearCurrentBufferAsync());
-        ClearPreviousBufferCommand = new RelayCommand(_ => _ = ClearPreviousBufferAsync());
+        TestConnectionCommand = new AsyncRelayCommand(TestConnectionAsync);
+        ApplyRetentionCommand = new AsyncRelayCommand(ApplyRetentionAsync);
+        ClearCurrentBufferCommand = new AsyncRelayCommand(ClearCurrentBufferAsync);
+        ClearPreviousBufferCommand = new AsyncRelayCommand(ClearPreviousBufferAsync);
         _session.PropertyChanged += OnSessionPropertyChanged;
         RebuildProfiles();
         RefreshStatus();
@@ -73,10 +78,10 @@ public sealed class HistorySettingsViewModel : INotifyPropertyChanged, IWorkspac
     public RelayCommand AddProfileCommand { get; }
     public RelayCommand DeleteProfileCommand { get; }
     public RelayCommand RefreshStatusCommand { get; }
-    public RelayCommand TestConnectionCommand { get; }
-    public RelayCommand ApplyRetentionCommand { get; }
-    public RelayCommand ClearCurrentBufferCommand { get; }
-    public RelayCommand ClearPreviousBufferCommand { get; }
+    public AsyncRelayCommand TestConnectionCommand { get; }
+    public AsyncRelayCommand ApplyRetentionCommand { get; }
+    public AsyncRelayCommand ClearCurrentBufferCommand { get; }
+    public AsyncRelayCommand ClearPreviousBufferCommand { get; }
 
     public Array StorageProviders { get; } = Enum.GetValues<HistoryStorageProvider>();
 
@@ -334,11 +339,36 @@ public sealed class HistorySettingsViewModel : INotifyPropertyChanged, IWorkspac
 
     public void Activate()
     {
+        _activationGeneration++;
         IsActive = true;
         RefreshStatus();
     }
 
-    public void Deactivate() => IsActive = false;
+    public void Deactivate()
+    {
+        _activationGeneration++;
+        IsActive = false;
+        TestConnectionCommand.Cancel();
+        ApplyRetentionCommand.Cancel();
+        ClearCurrentBufferCommand.Cancel();
+        ClearPreviousBufferCommand.Cancel();
+    }
+
+    public void Dispose()
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        _disposed = true;
+        _session.PropertyChanged -= OnSessionPropertyChanged;
+        Deactivate();
+        TestConnectionCommand.Dispose();
+        ApplyRetentionCommand.Dispose();
+        ClearCurrentBufferCommand.Dispose();
+        ClearPreviousBufferCommand.Dispose();
+    }
 
     public void RefreshStatus()
     {
@@ -581,7 +611,7 @@ public sealed class HistorySettingsViewModel : INotifyPropertyChanged, IWorkspac
         OnPropertyChanged(nameof(ValidationSummaryText));
     }
 
-    private async Task TestConnectionAsync()
+    private async Task TestConnectionAsync(CancellationToken commandCancellationToken)
     {
         if (!IsInfluxSelected)
         {
@@ -590,58 +620,119 @@ public sealed class HistorySettingsViewModel : INotifyPropertyChanged, IWorkspac
             return;
         }
 
-        var result = _connectionTester is not null
-            ? await _connectionTester.TestAsync(
-                    ProjectSnapshotCloner.Clone(_session.WorkingProject).Historian.Influx,
-                    CancellationToken.None)
-                .ConfigureAwait(false)
-            : _storeDiagnostics is not null
-                ? await _storeDiagnostics.ProbeAsync(CancellationToken.None).ConfigureAwait(false)
-                : new HistoryStoreOperationResult(false, "INFLUX_TEST_UNAVAILABLE", "No connection tester is registered.");
-        SaveStatusText = result.Succeeded
-            ? "Connection and bucket access verified. Write permission will be exercised by normal historian operation."
-            : $"Connection test failed: {result.ErrorCode}.";
-        RefreshStatus();
-        OnPropertyChanged(nameof(SaveStatusText));
+        var generation = _activationGeneration;
+        using var operationCts = CreateOperationCts(commandCancellationToken);
+        try
+        {
+            var result = _connectionTester is not null
+                ? await _connectionTester.TestAsync(
+                        ProjectSnapshotCloner.Clone(_session.WorkingProject).Historian.Influx,
+                        operationCts.Token)
+                : _storeDiagnostics is not null
+                    ? await _storeDiagnostics.ProbeAsync(operationCts.Token)
+                    : new HistoryStoreOperationResult(false, "INFLUX_TEST_UNAVAILABLE", "No connection tester is registered.");
+            if (!IsCurrentOperation(generation, operationCts.Token))
+            {
+                return;
+            }
+
+            SaveStatusText = result.Succeeded
+                ? "Connection and bucket access verified. Write permission will be exercised by normal historian operation."
+                : $"Connection test failed: {result.ErrorCode}.";
+            RefreshStatus();
+            OnPropertyChanged(nameof(SaveStatusText));
+        }
+        catch (OperationCanceledException) when (operationCts.IsCancellationRequested)
+        {
+        }
+        catch (Exception)
+        {
+            SetOperationFailure(generation, operationCts.Token, "Connection test failed: INFLUX_CONNECTION_FAILED.");
+        }
     }
 
-    private async Task ApplyRetentionAsync()
+    private async Task ApplyRetentionAsync(CancellationToken commandCancellationToken)
     {
-        if (_storeMaintenance is null)
+        var generation = _activationGeneration;
+        if (!IsInfluxSelected || _retentionManager is null)
         {
             SaveStatusText = "Retention management is available when InfluxDB is the active provider.";
         }
         else
         {
-            var result = await _storeMaintenance.ApplyRetentionAsync(CancellationToken.None).ConfigureAwait(false);
-            SaveStatusText = result.Succeeded
-                ? "Retention applied."
-                : $"Retention apply failed: {result.ErrorCode}.";
+            using var operationCts = CreateOperationCts(commandCancellationToken);
+            try
+            {
+                var candidate = ProjectSnapshotCloner.Clone(_session.WorkingProject).Historian.Influx;
+                var result = await _retentionManager.ApplyAsync(candidate, operationCts.Token);
+                if (!IsCurrentOperation(generation, operationCts.Token))
+                {
+                    return;
+                }
+
+                SaveStatusText = result.Succeeded
+                    ? "Retention applied."
+                    : $"Retention apply failed: {result.ErrorCode}.";
+            }
+            catch (OperationCanceledException) when (operationCts.IsCancellationRequested)
+            {
+                return;
+            }
+            catch (Exception)
+            {
+                SetOperationFailure(generation, operationCts.Token, "Retention apply failed: INFLUX_RETENTION_FAILED.");
+                return;
+            }
+        }
+
+        if (!IsCurrentOperation(generation, commandCancellationToken))
+        {
+            return;
         }
 
         RefreshStatus();
         OnPropertyChanged(nameof(SaveStatusText));
     }
 
-    private async Task ClearCurrentBufferAsync()
+    private async Task ClearCurrentBufferAsync(CancellationToken commandCancellationToken)
     {
         if (_storeMaintenance is null || _bufferConfirmation is null)
         {
             return;
         }
 
-        if (!_bufferConfirmation.Confirm("Clear current destination buffer", PendingSamples - OrphanedDestinationSamples))
+        if (!_bufferConfirmation.Confirm("Clear current destination buffer", PendingSamples))
         {
             return;
         }
 
-        var result = await _storeMaintenance.ClearCurrentBufferAsync(CancellationToken.None).ConfigureAwait(false);
-        SaveStatusText = result.Succeeded ? "Current destination buffer cleared." : $"Clear failed: {result.ErrorCode}.";
+        var generation = _activationGeneration;
+        using var operationCts = CreateOperationCts(commandCancellationToken);
+        try
+        {
+            var result = await _storeMaintenance.ClearCurrentBufferAsync(operationCts.Token);
+            if (!IsCurrentOperation(generation, operationCts.Token))
+            {
+                return;
+            }
+
+            SaveStatusText = result.Succeeded ? "Current destination buffer cleared." : $"Clear failed: {result.ErrorCode}.";
+        }
+        catch (OperationCanceledException) when (operationCts.IsCancellationRequested)
+        {
+            return;
+        }
+        catch (Exception)
+        {
+            SetOperationFailure(generation, operationCts.Token, "Clear failed: INFLUX_BUFFER_CLEAR_FAILED.");
+            return;
+        }
+
         RefreshStatus();
         OnPropertyChanged(nameof(SaveStatusText));
     }
 
-    private async Task ClearPreviousBufferAsync()
+    private async Task ClearPreviousBufferAsync(CancellationToken commandCancellationToken)
     {
         if (_storeMaintenance is null || _bufferConfirmation is null || string.IsNullOrWhiteSpace(PreviousDestinationFingerprint))
         {
@@ -655,11 +746,52 @@ public sealed class HistorySettingsViewModel : INotifyPropertyChanged, IWorkspac
             return;
         }
 
-        var result = await _storeMaintenance.ClearPreviousDestinationBufferAsync(
-                PreviousDestinationFingerprint,
-                CancellationToken.None)
-            .ConfigureAwait(false);
-        SaveStatusText = result.Succeeded ? "Previous destination buffer cleared." : $"Clear failed: {result.ErrorCode}.";
+        var generation = _activationGeneration;
+        using var operationCts = CreateOperationCts(commandCancellationToken);
+        try
+        {
+            var result = await _storeMaintenance.ClearPreviousDestinationBufferAsync(
+                    PreviousDestinationFingerprint,
+                    operationCts.Token);
+            if (!IsCurrentOperation(generation, operationCts.Token))
+            {
+                return;
+            }
+
+            SaveStatusText = result.Succeeded ? "Previous destination buffer cleared." : $"Clear failed: {result.ErrorCode}.";
+        }
+        catch (OperationCanceledException) when (operationCts.IsCancellationRequested)
+        {
+            return;
+        }
+        catch (Exception)
+        {
+            SetOperationFailure(generation, operationCts.Token, "Clear failed: INFLUX_BUFFER_CLEAR_FAILED.");
+            return;
+        }
+
+        RefreshStatus();
+        OnPropertyChanged(nameof(SaveStatusText));
+    }
+
+    private CancellationTokenSource CreateOperationCts(CancellationToken commandCancellationToken)
+    {
+        var operationCts = CancellationTokenSource.CreateLinkedTokenSource(commandCancellationToken);
+        operationCts.CancelAfter(Math.Clamp(Math.Max(ConnectionTimeoutMilliseconds, 30_000), 1, 300_000));
+        return operationCts;
+    }
+
+    private bool IsCurrentOperation(long generation, CancellationToken cancellationToken) =>
+        IsActive && generation == _activationGeneration && !cancellationToken.IsCancellationRequested;
+
+    private void SetOperationFailure(long generation, CancellationToken cancellationToken, string message)
+    {
+        if (!IsCurrentOperation(generation, cancellationToken))
+        {
+            return;
+        }
+
+        SaveStatusText = message;
         RefreshStatus();
         OnPropertyChanged(nameof(SaveStatusText));
     }

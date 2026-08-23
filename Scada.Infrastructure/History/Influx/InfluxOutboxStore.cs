@@ -38,20 +38,20 @@ public sealed record InfluxOutboxDiagnostics(
 public sealed class InfluxOutboxStore : IAsyncDisposable
 {
     private const string PendingState = "Pending";
-    private readonly ProjectPath _projectPath;
+    private readonly ProjectPath? _projectPath;
     private readonly string _configuredPath;
     private readonly SemaphoreSlim _initializeGate = new(1, 1);
     private string? _databasePath;
     private bool _initialized;
     private bool _disposed;
 
-    public InfluxOutboxStore(ProjectPath projectPath, string configuredPath)
+    public InfluxOutboxStore(ProjectPath? projectPath, string configuredPath)
     {
-        _projectPath = projectPath ?? throw new ArgumentNullException(nameof(projectPath));
         _configuredPath = configuredPath;
+        _projectPath = projectPath;
     }
 
-    public string DatabasePath => _databasePath ??= InfluxHistoryPathResolver.Resolve(_projectPath, _configuredPath);
+    public string? DatabasePath => _databasePath;
 
     public async Task<HistoryStorePreflightResult> PreflightAsync(CancellationToken cancellationToken)
     {
@@ -59,13 +59,13 @@ public sealed class InfluxOutboxStore : IAsyncDisposable
         {
             ThrowIfDisposed();
             cancellationToken.ThrowIfCancellationRequested();
-            _ = DatabasePath;
-            if (!File.Exists(DatabasePath))
+            var databasePath = GetDatabasePath();
+            if (!File.Exists(databasePath))
             {
                 return new HistoryStorePreflightResult(HistoryStorePreflightStatus.Ready);
             }
 
-            await using var connection = await OpenConnectionAsync(DatabasePath, SqliteOpenMode.ReadOnly, cancellationToken)
+            await using var connection = await OpenConnectionAsync(databasePath, SqliteOpenMode.ReadOnly, cancellationToken)
                 .ConfigureAwait(false);
             var version = await ReadUserVersionAsync(connection, cancellationToken).ConfigureAwait(false);
             if (version > InfluxOutboxSchema.CurrentVersion)
@@ -126,9 +126,10 @@ public sealed class InfluxOutboxStore : IAsyncDisposable
                 return;
             }
 
-            Directory.CreateDirectory(Path.GetDirectoryName(DatabasePath)!);
+            var databasePath = GetDatabasePath();
+            Directory.CreateDirectory(Path.GetDirectoryName(databasePath)!);
             await using var connection = await OpenConnectionAsync(
-                DatabasePath,
+                databasePath,
                 SqliteOpenMode.ReadWriteCreate,
                 cancellationToken).ConfigureAwait(false);
             var version = await ReadUserVersionAsync(connection, cancellationToken).ConfigureAwait(false);
@@ -185,7 +186,7 @@ public sealed class InfluxOutboxStore : IAsyncDisposable
         try
         {
             await using var connection = await OpenConnectionAsync(
-                DatabasePath,
+                GetDatabasePath(),
                 SqliteOpenMode.ReadWrite,
                 cancellationToken).ConfigureAwait(false);
             await using var transaction = (SqliteTransaction)await connection.BeginTransactionAsync(cancellationToken)
@@ -204,11 +205,17 @@ public sealed class InfluxOutboxStore : IAsyncDisposable
                 string sampleKey;
                 try
                 {
+                    InfluxHistoryPointMapper.ValidateSample(sample);
                     sampleKey = InfluxSampleKey.Create(destinationFingerprint, sample);
                 }
                 catch (ArgumentException exception)
                 {
                     rejections.Add(new InfluxSampleRejection("INFLUX_VALUE_TYPE_INVALID", exception.Message));
+                    continue;
+                }
+                catch (HistoryStorePermanentException exception)
+                {
+                    rejections.Add(new InfluxSampleRejection(exception.Code, exception.Message));
                     continue;
                 }
 
@@ -327,7 +334,7 @@ public sealed class InfluxOutboxStore : IAsyncDisposable
             throw new ArgumentOutOfRangeException(nameof(limit));
         }
 
-        await using var connection = await OpenConnectionAsync(DatabasePath, SqliteOpenMode.ReadOnly, cancellationToken)
+        await using var connection = await OpenConnectionAsync(GetDatabasePath(), SqliteOpenMode.ReadOnly, cancellationToken)
             .ConfigureAwait(false);
         await using var command = connection.CreateCommand();
         command.CommandText = """
@@ -366,7 +373,7 @@ public sealed class InfluxOutboxStore : IAsyncDisposable
 
         ThrowIfDisposed();
         EnsureInitialized();
-        await using var connection = await OpenConnectionAsync(DatabasePath, SqliteOpenMode.ReadWrite, cancellationToken)
+        await using var connection = await OpenConnectionAsync(GetDatabasePath(), SqliteOpenMode.ReadWrite, cancellationToken)
             .ConfigureAwait(false);
         await using var transaction = (SqliteTransaction)await connection.BeginTransactionAsync(cancellationToken)
             .ConfigureAwait(false);
@@ -402,7 +409,7 @@ public sealed class InfluxOutboxStore : IAsyncDisposable
 
         ThrowIfDisposed();
         EnsureInitialized();
-        await using var connection = await OpenConnectionAsync(DatabasePath, SqliteOpenMode.ReadWrite, cancellationToken)
+        await using var connection = await OpenConnectionAsync(GetDatabasePath(), SqliteOpenMode.ReadWrite, cancellationToken)
             .ConfigureAwait(false);
         await using var transaction = (SqliteTransaction)await connection.BeginTransactionAsync(cancellationToken)
             .ConfigureAwait(false);
@@ -456,7 +463,7 @@ public sealed class InfluxOutboxStore : IAsyncDisposable
     {
         ThrowIfDisposed();
         EnsureInitialized();
-        await using var connection = await OpenConnectionAsync(DatabasePath, SqliteOpenMode.ReadWrite, cancellationToken)
+        await using var connection = await OpenConnectionAsync(GetDatabasePath(), SqliteOpenMode.ReadWrite, cancellationToken)
             .ConfigureAwait(false);
         await using var transaction = (SqliteTransaction)await connection.BeginTransactionAsync(cancellationToken)
             .ConfigureAwait(false);
@@ -486,22 +493,22 @@ public sealed class InfluxOutboxStore : IAsyncDisposable
     {
         ThrowIfDisposed();
         EnsureInitialized();
-        await using var connection = await OpenConnectionAsync(DatabasePath, SqliteOpenMode.ReadOnly, cancellationToken)
+        await using var connection = await OpenConnectionAsync(GetDatabasePath(), SqliteOpenMode.ReadOnly, cancellationToken)
             .ConfigureAwait(false);
         await using var command = connection.CreateCommand();
         command.CommandText = """
             SELECT
-                (SELECT COUNT(*) FROM InfluxOutbox),
+                (SELECT COUNT(*) FROM InfluxOutbox WHERE DestinationFingerprint = $fingerprint),
                 (SELECT COUNT(*) FROM InfluxOutbox WHERE DestinationFingerprint <> $fingerprint),
-                COALESCE((SELECT SUM(SyncedSamples) FROM InfluxOutboxMetadata), 0),
-                COALESCE((SELECT SUM(RemoteRejectedSamples) FROM InfluxOutboxMetadata), 0),
-                COALESCE((SELECT SUM(ExpiredSamples) FROM InfluxOutboxMetadata), 0),
-                COALESCE((SELECT SUM(BufferFullRejections) FROM InfluxOutboxMetadata), 0),
-                COALESCE((SELECT SUM(SyncFailures) FROM InfluxOutboxMetadata), 0),
-                COALESCE((SELECT SUM(ConsecutiveFailures) FROM InfluxOutboxMetadata), 0),
-                (SELECT MAX(LastRemoteSuccessUtcTicks) FROM InfluxOutboxMetadata),
-                (SELECT LastErrorCode FROM InfluxOutboxMetadata WHERE LastErrorCode IS NOT NULL ORDER BY rowid DESC LIMIT 1),
-                (SELECT LastErrorMessage FROM InfluxOutboxMetadata WHERE LastErrorMessage IS NOT NULL ORDER BY rowid DESC LIMIT 1),
+                COALESCE((SELECT SyncedSamples FROM InfluxOutboxMetadata WHERE DestinationFingerprint = $fingerprint), 0),
+                COALESCE((SELECT RemoteRejectedSamples FROM InfluxOutboxMetadata WHERE DestinationFingerprint = $fingerprint), 0),
+                COALESCE((SELECT ExpiredSamples FROM InfluxOutboxMetadata WHERE DestinationFingerprint = $fingerprint), 0),
+                COALESCE((SELECT BufferFullRejections FROM InfluxOutboxMetadata WHERE DestinationFingerprint = $fingerprint), 0),
+                COALESCE((SELECT SyncFailures FROM InfluxOutboxMetadata WHERE DestinationFingerprint = $fingerprint), 0),
+                COALESCE((SELECT ConsecutiveFailures FROM InfluxOutboxMetadata WHERE DestinationFingerprint = $fingerprint), 0),
+                (SELECT LastRemoteSuccessUtcTicks FROM InfluxOutboxMetadata WHERE DestinationFingerprint = $fingerprint),
+                (SELECT LastErrorCode FROM InfluxOutboxMetadata WHERE DestinationFingerprint = $fingerprint),
+                (SELECT LastErrorMessage FROM InfluxOutboxMetadata WHERE DestinationFingerprint = $fingerprint),
                 (SELECT LastKnownRetentionSeconds FROM InfluxOutboxMetadata WHERE DestinationFingerprint = $fingerprint);
             """;
         command.Parameters.AddWithValue("$fingerprint", currentFingerprint);
@@ -530,7 +537,7 @@ public sealed class InfluxOutboxStore : IAsyncDisposable
     {
         ThrowIfDisposed();
         EnsureInitialized();
-        await using var connection = await OpenConnectionAsync(DatabasePath, SqliteOpenMode.ReadOnly, cancellationToken)
+        await using var connection = await OpenConnectionAsync(GetDatabasePath(), SqliteOpenMode.ReadOnly, cancellationToken)
             .ConfigureAwait(false);
         await using var command = connection.CreateCommand();
         command.CommandText = """
@@ -551,7 +558,7 @@ public sealed class InfluxOutboxStore : IAsyncDisposable
     {
         ThrowIfDisposed();
         EnsureInitialized();
-        await using var connection = await OpenConnectionAsync(DatabasePath, SqliteOpenMode.ReadWrite, cancellationToken)
+        await using var connection = await OpenConnectionAsync(GetDatabasePath(), SqliteOpenMode.ReadWrite, cancellationToken)
             .ConfigureAwait(false);
         await using var command = connection.CreateCommand();
         command.CommandText = "DELETE FROM InfluxOutbox WHERE DestinationFingerprint = $fingerprint;";
@@ -566,7 +573,7 @@ public sealed class InfluxOutboxStore : IAsyncDisposable
     {
         ThrowIfDisposed();
         EnsureInitialized();
-        await using var connection = await OpenConnectionAsync(DatabasePath, SqliteOpenMode.ReadWrite, cancellationToken)
+        await using var connection = await OpenConnectionAsync(GetDatabasePath(), SqliteOpenMode.ReadWrite, cancellationToken)
             .ConfigureAwait(false);
         await using var transaction = (SqliteTransaction)await connection.BeginTransactionAsync(cancellationToken)
             .ConfigureAwait(false);
@@ -593,7 +600,7 @@ public sealed class InfluxOutboxStore : IAsyncDisposable
 
     private async Task IncrementBufferFullRejectionsAsync(string fingerprint, CancellationToken cancellationToken)
     {
-        await using var connection = await OpenConnectionAsync(DatabasePath, SqliteOpenMode.ReadWrite, cancellationToken)
+        await using var connection = await OpenConnectionAsync(GetDatabasePath(), SqliteOpenMode.ReadWrite, cancellationToken)
             .ConfigureAwait(false);
         await using var transaction = (SqliteTransaction)await connection.BeginTransactionAsync(cancellationToken)
             .ConfigureAwait(false);
@@ -610,7 +617,7 @@ public sealed class InfluxOutboxStore : IAsyncDisposable
     {
         ThrowIfDisposed();
         EnsureInitialized();
-        await using var connection = await OpenConnectionAsync(DatabasePath, SqliteOpenMode.ReadWrite, cancellationToken)
+        await using var connection = await OpenConnectionAsync(GetDatabasePath(), SqliteOpenMode.ReadWrite, cancellationToken)
             .ConfigureAwait(false);
         await using var transaction = (SqliteTransaction)await connection.BeginTransactionAsync(cancellationToken)
             .ConfigureAwait(false);
@@ -974,6 +981,18 @@ public sealed class InfluxOutboxStore : IAsyncDisposable
         {
             throw new InvalidOperationException("Influx outbox has not been initialized.");
         }
+    }
+
+    private string GetDatabasePath()
+    {
+        if (_projectPath is null)
+        {
+            throw new HistoryStorePermanentException(
+                "PROJECT_PATH_REQUIRED",
+                "A canonical project path is required for the InfluxDB local buffer.");
+        }
+
+        return _databasePath ??= InfluxHistoryPathResolver.Resolve(_projectPath, _configuredPath);
     }
 
     private void ThrowIfDisposed()

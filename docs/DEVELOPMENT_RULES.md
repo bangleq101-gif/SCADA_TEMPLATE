@@ -62,6 +62,17 @@
 - Use `HistorySample.RecordedAtUtc` for remote nanosecond `_time`; query exact recorded ticks and widen only the remote scan window for timestamp rollback. History queries are remote-only and do not include pending local outbox rows.
 - Preserve rows for generic 400, 429, 5xx, timeout, offline and configuration failures. Only a transport-confirmed point-specific 400 may be bounded-split and terminally reject an isolated poison row; later rows must continue.
 - Retention changes are explicit maintenance operations. Startup and Test Connection are non-mutating; the History Settings Test Connection checks a candidate configuration without writing data. Remote failure must not stop local buffering or PLC polling.
+- Do not resolve an Influx buffer path until local preflight or initialization; never fall back to the working directory or application output directory. A missing canonical project path is a structured `PROJECT_PATH_REQUIRED` store fault.
+- Map the official InfluxDB.Client exception/status types directly. Do not use reflection or provider response-text parsing, and do not label a generic production HTTP 400 as point-specific.
+- Keep connection, write and query operation timeouts separate. Cancellation remains cooperative; the transport must honor the token and its operation-level timeout.
+- Treat the SQLite append commit as the durable write success boundary. Do not add a second cancellable diagnostics operation after commit that can turn a committed batch into a failed caller operation.
+- Use a bounded one-bit work signal. Repeated appends coalesce wake-ups; they must not accumulate unbounded semaphore releases.
+- Scope persisted diagnostics to the current destination fingerprint; expose other fingerprints through an orphan count rather than summing their counters into the active destination.
+- Reject tag control characters and string carriage-return/line-feed values before line-protocol encoding. Do not encode newline characters into a different value.
+- Use the exact signed InfluxDB nanosecond bounds for allocation and clamp or reject out-of-range query windows without a timestamp-zero fallback.
+- Serialize current-destination buffer clearing with the complete remote synchronization read/write/ack window. New local appends remain durable and are not treated as remote acknowledgements.
+- Apply retention from a cloned working-project candidate through an App-layer service; do not apply the active runtime store's settings when the user is editing an uncommitted candidate.
+- WPF maintenance commands must be asynchronous, non-overlapping, cancellation-aware and guarded against late completion after workspace deactivation. Keep UI property updates on the WPF synchronization context.
 
 ## Runtime polling rules
 

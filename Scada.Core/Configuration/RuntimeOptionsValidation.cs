@@ -103,6 +103,22 @@ public static class RuntimeOptionsValidation
         return issues;
     }
 
+    public static IReadOnlyList<ValidationIssue> CollectInfluxIssues(InfluxDbOptions options)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+
+        var issues = new List<ValidationIssue>();
+        ValidateHistorianStorage(
+            new HistorianOptions
+            {
+                Enabled = true,
+                StorageProvider = HistoryStorageProvider.InfluxDb2,
+                Influx = options
+            },
+            issues);
+        return issues;
+    }
+
     private static void ValidateHistorianStorage(
         HistorianOptions historian,
         ICollection<ValidationIssue> issues)

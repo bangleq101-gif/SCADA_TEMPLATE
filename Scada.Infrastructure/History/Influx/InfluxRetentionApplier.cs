@@ -3,9 +3,9 @@ using Scada.Core.History;
 
 namespace Scada.Infrastructure.History.Influx;
 
-public sealed class InfluxConnectionTester
+public sealed class InfluxRetentionApplier
 {
-    public async Task<HistoryStoreOperationResult> TestAsync(
+    public async Task<HistoryStoreOperationResult> ApplyAsync(
         InfluxDbOptions options,
         CancellationToken cancellationToken)
     {
@@ -36,7 +36,12 @@ public sealed class InfluxConnectionTester
                 options.ConnectionTimeoutMilliseconds,
                 options.WriteTimeoutMilliseconds,
                 options.QueryTimeoutMilliseconds));
-            await transport.ProbeAsync(cancellationToken).ConfigureAwait(false);
+            await transport.ApplyRetentionAsync(
+                    options.Organization,
+                    options.Bucket,
+                    options.RetentionSeconds,
+                    cancellationToken)
+                .ConfigureAwait(false);
             return new HistoryStoreOperationResult(true);
         }
         catch (OperationCanceledException)
@@ -51,8 +56,8 @@ public sealed class InfluxConnectionTester
         {
             return new HistoryStoreOperationResult(
                 false,
-                "INFLUX_CONNECTION_FAILED",
-                "InfluxDB connection test failed before a usable response was received.");
+                "INFLUX_RETENTION_FAILED",
+                "InfluxDB retention management failed before a usable response was received.");
         }
     }
 }

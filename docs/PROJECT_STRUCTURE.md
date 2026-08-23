@@ -153,7 +153,7 @@ explicit IInfluxTransport
 InfluxDB 2.x
 ```
 
-The outbox stores typed values and deterministic sample keys, allocates remote timestamps with per-destination/runtime/tag counters and tracks destination fingerprints without token material. Pending local rows are not merged into remote query results. Remote queries use exact recorded ticks with a widened rollback window, while retention changes and current/previous destination clearing are explicit maintenance operations. A missing token is a configuration state; it does not stop local durable buffering or PLC polling.
+The outbox stores typed values and deterministic sample keys, allocates remote timestamps with per-destination/runtime/tag counters and tracks destination fingerprints without token material. Pending local rows are not merged into remote query results. Remote queries use exact recorded ticks with a widened rollback window and exact signed Influx nanosecond bounds. The local append commit is the write success boundary; a bounded one-bit signal wakes the remote worker, whose synchronization read/write/ack window shares a gate with current-destination clearing. Diagnostics scope counters to the current fingerprint and expose other rows as orphans. Retention is applied through an App-layer candidate service, while current/previous destination clearing remains explicit maintenance. A missing token leaves local buffering operational; a missing canonical project path is a structured store fault at preflight/initialization and does not stop PLC polling. Disabled Influx composition does not initialize the outbox.
 
 ## Milestone 4 Tag Manager flow
 

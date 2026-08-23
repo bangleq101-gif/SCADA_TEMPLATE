@@ -7,12 +7,31 @@ namespace Scada.Infrastructure.History.Influx;
 
 public static class InfluxHistoryPointMapper
 {
+    public static void ValidateSample(HistorySample sample)
+    {
+        ArgumentNullException.ThrowIfNull(sample);
+        if (ContainsControlCharacter(sample.RuntimeId) || ContainsControlCharacter(sample.TagId))
+        {
+            throw new HistoryStorePermanentException(
+                "INFLUX_TAG_CONTROL_CHAR",
+                "History tag identifiers cannot contain control characters.");
+        }
+
+        if (sample.Value is string text && (text.Contains('\r') || text.Contains('\n')))
+        {
+            throw new HistoryStorePermanentException(
+                "INFLUX_STRING_NEWLINE_UNSUPPORTED",
+                "InfluxDB string history values cannot contain carriage returns or line feeds.");
+        }
+    }
+
     public static string ToLineProtocol(InfluxOutboxRow row, string measurement)
     {
         ArgumentNullException.ThrowIfNull(row);
         ArgumentException.ThrowIfNullOrWhiteSpace(measurement);
 
         var sample = row.Sample;
+        ValidateSample(sample);
         var builder = new StringBuilder();
         builder.Append(EscapeMeasurement(measurement));
         builder.Append(",runtime_id=");
@@ -88,7 +107,8 @@ public static class InfluxHistoryPointMapper
 
     private static string EscapeString(string value) =>
         value.Replace("\\", "\\\\", StringComparison.Ordinal)
-            .Replace("\"", "\\\"", StringComparison.Ordinal)
-            .Replace("\n", "\\n", StringComparison.Ordinal)
-            .Replace("\r", "\\r", StringComparison.Ordinal);
+            .Replace("\"", "\\\"", StringComparison.Ordinal);
+
+    private static bool ContainsControlCharacter(string value) =>
+        value.Any(char.IsControl);
 }

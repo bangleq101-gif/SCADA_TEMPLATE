@@ -1,5 +1,8 @@
+using System.Net.Http;
+using System.Net.Sockets;
 using InfluxDB.Client;
 using InfluxDB.Client.Api.Domain;
+using InfluxDB.Client.Core.Exceptions;
 
 namespace Scada.Infrastructure.History.Influx;
 
@@ -19,7 +22,9 @@ public sealed class InfluxHistoryClient : IInfluxTransport
             Token = settings.Token,
             Org = settings.Organization,
             Bucket = settings.Bucket,
-            Timeout = TimeSpan.FromMilliseconds(settings.TimeoutMilliseconds)
+            Timeout = TimeSpan.FromMilliseconds(Math.Max(
+                settings.ConnectionTimeoutMilliseconds,
+                Math.Max(settings.WriteTimeoutMilliseconds, settings.QueryTimeoutMilliseconds)))
         };
 
         _client = new InfluxDBClient(clientOptions);
@@ -30,11 +35,14 @@ public sealed class InfluxHistoryClient : IInfluxTransport
     public async Task ProbeAsync(CancellationToken cancellationToken)
     {
         ThrowIfDisposed();
+        using var operationCts = CreateOperationCts(
+            _settings.ConnectionTimeoutMilliseconds,
+            cancellationToken);
         try
         {
-            await _client.PingAsync().WaitAsync(cancellationToken).ConfigureAwait(false);
+            await _client.PingAsync().WaitAsync(operationCts.Token).ConfigureAwait(false);
             var buckets = await _client.GetBucketsApi()
-                .FindBucketsByOrgNameAsync(_settings.Organization, cancellationToken)
+                .FindBucketsByOrgNameAsync(_settings.Organization, operationCts.Token)
                 .ConfigureAwait(false);
             if (buckets is null || !buckets.Any(bucket =>
                     string.Equals(bucket.Name, _settings.Bucket, StringComparison.Ordinal)))
@@ -44,6 +52,13 @@ public sealed class InfluxHistoryClient : IInfluxTransport
                     "The configured InfluxDB organization or bucket could not be resolved.",
                     404);
             }
+        }
+        catch (OperationCanceledException) when (
+            operationCts.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
+        {
+            throw new InfluxTransportException(
+                "INFLUX_CONNECTION_TIMEOUT",
+                "InfluxDB connection probe exceeded its configured timeout.");
         }
         catch (OperationCanceledException)
         {
@@ -66,6 +81,9 @@ public sealed class InfluxHistoryClient : IInfluxTransport
         CancellationToken cancellationToken)
     {
         ThrowIfDisposed();
+        using var operationCts = CreateOperationCts(
+            _settings.WriteTimeoutMilliseconds,
+            cancellationToken);
         try
         {
             await _writeApi.WriteRecordsAsync(
@@ -73,7 +91,14 @@ public sealed class InfluxHistoryClient : IInfluxTransport
                 WritePrecision.Ns,
                 bucket,
                 organization,
-                cancellationToken).ConfigureAwait(false);
+                operationCts.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (
+            operationCts.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
+        {
+            throw new InfluxTransportException(
+                "INFLUX_WRITE_TIMEOUT",
+                "InfluxDB write exceeded its configured timeout.");
         }
         catch (OperationCanceledException)
         {
@@ -91,6 +116,9 @@ public sealed class InfluxHistoryClient : IInfluxTransport
         CancellationToken cancellationToken)
     {
         ThrowIfDisposed();
+        using var operationCts = CreateOperationCts(
+            _settings.QueryTimeoutMilliseconds,
+            cancellationToken);
         try
         {
             var query = new Query
@@ -98,7 +126,14 @@ public sealed class InfluxHistoryClient : IInfluxTransport
                 _Query = flux,
                 Type = Query.TypeEnum.Flux
             };
-            return await _queryApi.QueryRawAsync(query, organization, cancellationToken).ConfigureAwait(false);
+            return await _queryApi.QueryRawAsync(query, organization, operationCts.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (
+            operationCts.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
+        {
+            throw new InfluxTransportException(
+                "INFLUX_QUERY_TIMEOUT",
+                "InfluxDB query exceeded its configured timeout.");
         }
         catch (OperationCanceledException)
         {
@@ -116,10 +151,13 @@ public sealed class InfluxHistoryClient : IInfluxTransport
         CancellationToken cancellationToken)
     {
         ThrowIfDisposed();
+        using var operationCts = CreateOperationCts(
+            _settings.ConnectionTimeoutMilliseconds,
+            cancellationToken);
         try
         {
             var buckets = await _client.GetBucketsApi()
-                .FindBucketsByOrgNameAsync(organization, cancellationToken)
+                .FindBucketsByOrgNameAsync(organization, operationCts.Token)
                 .ConfigureAwait(false);
             var match = buckets?.FirstOrDefault(candidate =>
                 string.Equals(candidate.Name, bucket, StringComparison.Ordinal));
@@ -134,6 +172,13 @@ public sealed class InfluxHistoryClient : IInfluxTransport
             var retention = match.RetentionRules?.FirstOrDefault(rule =>
                 rule.Type == BucketRetentionRules.TypeEnum.Expire);
             return new InfluxRetentionInfo(retention?.EverySeconds, match.Id);
+        }
+        catch (OperationCanceledException) when (
+            operationCts.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
+        {
+            throw new InfluxTransportException(
+                "INFLUX_CONNECTION_TIMEOUT",
+                "InfluxDB retention lookup exceeded its configured timeout.");
         }
         catch (OperationCanceledException)
         {
@@ -156,10 +201,13 @@ public sealed class InfluxHistoryClient : IInfluxTransport
         CancellationToken cancellationToken)
     {
         ThrowIfDisposed();
+        using var operationCts = CreateOperationCts(
+            _settings.ConnectionTimeoutMilliseconds,
+            cancellationToken);
         try
         {
             var buckets = await _client.GetBucketsApi()
-                .FindBucketsByOrgNameAsync(organization, cancellationToken)
+                .FindBucketsByOrgNameAsync(organization, operationCts.Token)
                 .ConfigureAwait(false);
             var match = buckets?.FirstOrDefault(candidate =>
                 string.Equals(candidate.Name, bucket, StringComparison.Ordinal));
@@ -174,7 +222,14 @@ public sealed class InfluxHistoryClient : IInfluxTransport
             match.RetentionRules = retentionSeconds == 0
                 ? []
                 : [new BucketRetentionRules(BucketRetentionRules.TypeEnum.Expire, retentionSeconds, null)];
-            await _client.GetBucketsApi().UpdateBucketAsync(match, cancellationToken).ConfigureAwait(false);
+            await _client.GetBucketsApi().UpdateBucketAsync(match, operationCts.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (
+            operationCts.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
+        {
+            throw new InfluxTransportException(
+                "INFLUX_CONNECTION_TIMEOUT",
+                "InfluxDB retention update exceeded its configured timeout.");
         }
         catch (OperationCanceledException)
         {
@@ -209,33 +264,89 @@ public sealed class InfluxHistoryClient : IInfluxTransport
         return ValueTask.CompletedTask;
     }
 
-    private static InfluxTransportException Translate(Exception exception)
+    internal static InfluxTransportException Translate(Exception exception)
     {
-        var statusCode = TryGetStatusCode(exception);
+        ArgumentNullException.ThrowIfNull(exception);
+
+        if (exception is InfluxTransportException transportException)
+        {
+            return transportException;
+        }
+
+        if (ContainsUnavailableTransport(exception))
+        {
+            return new InfluxTransportException(
+                "INFLUX_REMOTE_UNAVAILABLE",
+                "InfluxDB did not return an HTTP response.",
+                innerException: exception);
+        }
+
+        if (exception is TimeoutException)
+        {
+            return new InfluxTransportException(
+                "INFLUX_REMOTE_UNAVAILABLE",
+                "InfluxDB request timed out before a response was received.",
+                innerException: exception);
+        }
+
+        if (exception is not InfluxException influxException)
+        {
+            return new InfluxTransportException(
+                "INFLUX_REMOTE_REQUEST_FAILED",
+                "InfluxDB request failed; see the provider diagnostics for the sanitized error code.",
+                innerException: exception);
+        }
+
+        var statusCode = influxException.Status > 0 ? (int?)influxException.Status : null;
         var code = statusCode switch
         {
             401 or 403 => "INFLUX_PERMISSION_DENIED",
             404 => "INFLUX_NOT_FOUND",
             429 => "INFLUX_RATE_LIMITED",
             >= 500 => "INFLUX_REMOTE_SERVER_ERROR",
+            400 => "INFLUX_BAD_REQUEST",
             _ => "INFLUX_REMOTE_REQUEST_FAILED"
         };
         return new InfluxTransportException(
             code,
             "InfluxDB request failed; see the provider diagnostics for the sanitized error code.",
             statusCode,
+            GetRetryAfter(influxException),
             innerException: exception);
     }
 
-    private static int? TryGetStatusCode(Exception exception)
+    private static bool ContainsUnavailableTransport(Exception exception)
     {
-        var property = exception.GetType().GetProperty("ErrorCode");
-        if (property?.GetValue(exception) is string errorCode && int.TryParse(errorCode, out var parsed))
+        for (var current = exception; current is not null; current = current.InnerException)
         {
-            return parsed;
+            if (current is HttpRequestException or SocketException or TimeoutException)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static TimeSpan? GetRetryAfter(InfluxException exception)
+    {
+        if (exception is HttpException httpException &&
+            httpException.RetryAfter is int retryAfterSeconds &&
+            retryAfterSeconds > 0)
+        {
+            return TimeSpan.FromSeconds(retryAfterSeconds);
         }
 
         return null;
+    }
+
+    private static CancellationTokenSource CreateOperationCts(
+        int timeoutMilliseconds,
+        CancellationToken cancellationToken)
+    {
+        var operationCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        operationCts.CancelAfter(Math.Max(1, timeoutMilliseconds));
+        return operationCts;
     }
 
     private void ThrowIfDisposed()
@@ -249,4 +360,6 @@ public sealed record InfluxDbClientSettings(
     string Organization,
     string Bucket,
     string Token,
-    int TimeoutMilliseconds);
+    int ConnectionTimeoutMilliseconds,
+    int WriteTimeoutMilliseconds,
+    int QueryTimeoutMilliseconds);

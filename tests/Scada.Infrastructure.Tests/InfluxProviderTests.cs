@@ -1,4 +1,6 @@
 using Microsoft.Extensions.Logging.Abstractions;
+using System.Net.Http;
+using InfluxDB.Client.Core.Exceptions;
 using Scada.Core.History;
 using Scada.Core.Tags;
 using Scada.Infrastructure.History.Influx;
@@ -95,9 +97,12 @@ public sealed class InfluxProviderTests
 
             Assert.Equal(1, duplicate.DuplicateCount);
             Assert.Equal("INFLUX_BUFFER_FULL", full.Code);
-            Assert.Equal(1, diagnostics.BufferFullRejections);
+            Assert.Equal(0, diagnostics.BufferFullRejections);
             Assert.Equal(1, diagnostics.PendingSamples);
             Assert.Equal(0, diagnostics.OrphanedDestinationSamples);
+
+            var destinationB = await outbox.ReadDiagnosticsAsync("B", CancellationToken.None);
+            Assert.Equal(1, destinationB.BufferFullRejections);
         }
         finally
         {
@@ -123,9 +128,9 @@ public sealed class InfluxProviderTests
             await outbox.ClearDestinationBufferAsync("A", CancellationToken.None);
             var afterAllClear = await outbox.ReadDiagnosticsAsync("B", CancellationToken.None);
 
-            Assert.Equal(2, before.PendingSamples);
+            Assert.Equal(1, before.PendingSamples);
             Assert.Equal(1, before.OrphanedDestinationSamples);
-            Assert.Equal(1, afterCurrentClear.PendingSamples);
+            Assert.Equal(0, afterCurrentClear.PendingSamples);
             Assert.Equal(1, afterCurrentClear.OrphanedDestinationSamples);
             Assert.Equal(0, afterAllClear.PendingSamples);
         }
@@ -152,6 +157,78 @@ public sealed class InfluxProviderTests
     }
 
     [Fact]
+    public async Task InvalidLineProtocolInputIsRejectedAsTerminalBeforeRemoteSync()
+    {
+        var directory = CreateTempDirectory();
+        try
+        {
+            var projectPath = new ProjectPath(Path.Combine(directory, "project.json"));
+            await using var outbox = new InfluxOutboxStore(projectPath, "Data/influx-buffer.db");
+            await outbox.InitializeAsync(CancellationToken.None);
+
+            var newline = await outbox.AppendAsync(
+                [Sample("T1", TagDataType.String, "line1\nline2")],
+                "A",
+                10,
+                DateTimeOffset.UtcNow,
+                CancellationToken.None);
+            var controlTag = await outbox.AppendAsync(
+                [Sample("T\t2", TagDataType.Double, 1d)],
+                "A",
+                10,
+                DateTimeOffset.UtcNow,
+                CancellationToken.None);
+
+            Assert.Contains(newline.Rejections, rejection => rejection.ErrorCode == "INFLUX_STRING_NEWLINE_UNSUPPORTED");
+            Assert.Contains(controlTag.Rejections, rejection => rejection.ErrorCode == "INFLUX_TAG_CONTROL_CHAR");
+            var diagnostics = await outbox.ReadDiagnosticsAsync("A", CancellationToken.None);
+            Assert.Equal(2, diagnostics.RemoteRejectedSamples);
+            Assert.Empty(await outbox.ReadPendingAsync("A", 10, CancellationToken.None));
+        }
+        finally
+        {
+            DeleteDirectory(directory);
+        }
+    }
+
+    [Fact]
+    public void ProductionExceptionTranslationUsesOfficialInfluxStatusModel()
+    {
+        var cases = new (InfluxException Exception, int Status, string Code)[]
+        {
+            (new UnauthorizedException("unauthorized", new Exception()), 401, "INFLUX_PERMISSION_DENIED"),
+            (new ForbiddenException("forbidden", new Exception()), 403, "INFLUX_PERMISSION_DENIED"),
+            (new NotFoundException("not found", new Exception()), 404, "INFLUX_NOT_FOUND"),
+            (new TooManyRequestsException("rate limited", new Exception()), 429, "INFLUX_RATE_LIMITED"),
+            (new InternalServerErrorException("server error", new Exception()), 500, "INFLUX_REMOTE_SERVER_ERROR"),
+            (new BadRequestException("bad request", new Exception()), 400, "INFLUX_BAD_REQUEST")
+        };
+
+        foreach (var testCase in cases)
+        {
+            var translated = InfluxHistoryClient.Translate(testCase.Exception);
+
+            Assert.Equal(testCase.Code, translated.Code);
+            Assert.Equal(testCase.Status, translated.StatusCode);
+            Assert.False(translated.IsPointSpecific);
+        }
+
+        var unavailable = InfluxHistoryClient.Translate(new HttpRequestException("network unavailable"));
+        Assert.Equal("INFLUX_REMOTE_UNAVAILABLE", unavailable.Code);
+        Assert.Null(unavailable.StatusCode);
+    }
+
+    [Fact]
+    public void ClientSettingsKeepOperationTimeoutsIndependent()
+    {
+        var settings = new InfluxDbClientSettings("http://localhost:8086", "org", "bucket", "token", 101, 202, 303);
+
+        Assert.Equal(101, settings.ConnectionTimeoutMilliseconds);
+        Assert.Equal(202, settings.WriteTimeoutMilliseconds);
+        Assert.Equal(303, settings.QueryTimeoutMilliseconds);
+    }
+
+    [Fact]
     public async Task MissingTokenKeepsLocalBufferOperational()
     {
         var directory = CreateTempDirectory();
@@ -164,7 +241,9 @@ public sealed class InfluxProviderTests
             await store.InitializeAsync(CancellationToken.None);
             await store.WriteBatchAsync([Sample("T1", TagDataType.Double, 1d)], CancellationToken.None);
 
-            await WaitUntilAsync(() => store.Snapshot.State == HistoryStoreState.ConfigurationRequired);
+            await WaitUntilAsync(() =>
+                store.Snapshot.State == HistoryStoreState.ConfigurationRequired &&
+                store.Snapshot.PendingSamples == 1);
 
             Assert.Equal(1, store.Snapshot.PendingSamples);
             Assert.Equal("INFLUX_TOKEN_REQUIRED", store.Snapshot.LastErrorCode);
@@ -295,6 +374,86 @@ public sealed class InfluxProviderTests
         }
     }
 
+    [Fact]
+    public async Task QueryClampsBelowMinimumAndRejectsRangesOutsideInfluxBounds()
+    {
+        var directory = CreateTempDirectory();
+        try
+        {
+            var transport = new FakeInfluxTransport();
+            await using var store = CreateStore(directory, CreateInfluxOptions(), transport);
+            await store.InitializeAsync(CancellationToken.None);
+
+            var belowMinimum = DateTimeOffset.Parse("1600-01-01T00:00:00Z");
+            var normal = DateTimeOffset.Parse("2026-01-01T00:00:00Z");
+            await store.QueryAsync(
+                new HistoryQuery("Runtime01", "T1", belowMinimum, normal, 10),
+                CancellationToken.None);
+            Assert.Contains($"range(start: time(v: {InfluxPointTimestamp.MinNanoseconds}ns)", transport.LastQuery, StringComparison.Ordinal);
+
+            var queryCount = transport.QueryCount;
+            await store.QueryAsync(
+                new HistoryQuery("Runtime01", "T1", belowMinimum, belowMinimum.AddMinutes(1), 10),
+                CancellationToken.None);
+            await store.QueryAsync(
+                new HistoryQuery("Runtime01", "T1", DateTimeOffset.Parse("2300-01-01T00:00:00Z"), DateTimeOffset.Parse("2300-01-01T00:01:00Z"), 10),
+                CancellationToken.None);
+            Assert.Equal(queryCount, transport.QueryCount);
+        }
+        finally
+        {
+            DeleteDirectory(directory);
+        }
+    }
+
+    [Fact]
+    public async Task ClearCurrentBufferWaitsForAnInFlightRemoteSync()
+    {
+        var directory = CreateTempDirectory();
+        try
+        {
+            var writeStarted = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var allowWrite = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var transport = new FakeInfluxTransport
+            {
+                WriteStarted = writeStarted,
+                AllowWrite = allowWrite
+            };
+            await using var store = CreateStore(directory, CreateInfluxOptions(), transport);
+            await store.InitializeAsync(CancellationToken.None);
+            await store.WriteBatchAsync([Sample("T1", TagDataType.Double, 1d)], CancellationToken.None);
+
+            await writeStarted.Task.WaitAsync(TimeSpan.FromSeconds(2));
+            var clearTask = store.ClearCurrentBufferAsync(CancellationToken.None);
+            await Task.Delay(20);
+            Assert.False(clearTask.IsCompleted);
+
+            allowWrite.SetResult(true);
+            var clear = await clearTask;
+            Assert.True(clear.Succeeded);
+            Assert.Equal(0, store.Snapshot.PendingSamples);
+        }
+        finally
+        {
+            DeleteDirectory(directory);
+        }
+    }
+
+    [Fact]
+    public void WorkSignalIsCoalescedToOneWakeup()
+    {
+        using var signal = new SemaphoreSlim(0, 1);
+
+        for (var index = 0; index < 100; index++)
+        {
+            BufferedInfluxHistoryStore.TryReleaseWorkSignal(signal);
+        }
+
+        Assert.Equal(1, signal.CurrentCount);
+        signal.Wait();
+        Assert.Equal(0, signal.CurrentCount);
+    }
+
     private static BufferedInfluxHistoryStore CreateStore(
         string directory,
         InfluxDbOptions options,
@@ -382,9 +541,12 @@ public sealed class InfluxProviderTests
 
         public int ProbeCount { get; private set; }
         public int WriteCount { get; private set; }
+        public int QueryCount { get; private set; }
         public string LastQuery { get; private set; } = string.Empty;
         public string QueryResponse { get; set; } = string.Empty;
         public Func<IReadOnlyList<string>, InfluxTransportException?>? WriteFailure { get; init; }
+        public TaskCompletionSource<bool>? WriteStarted { get; init; }
+        public TaskCompletionSource<bool>? AllowWrite { get; init; }
         public IReadOnlyList<string> WrittenLines => _writtenLines;
 
         public Task ProbeAsync(CancellationToken cancellationToken)
@@ -393,13 +555,19 @@ public sealed class InfluxProviderTests
             return Task.CompletedTask;
         }
 
-        public Task WriteLinesAsync(
+        public async Task WriteLinesAsync(
             IReadOnlyList<string> lineProtocolRecords,
             string bucket,
             string organization,
             CancellationToken cancellationToken)
         {
             WriteCount++;
+            WriteStarted?.TrySetResult(true);
+            if (AllowWrite is not null)
+            {
+                await AllowWrite.Task.WaitAsync(cancellationToken);
+            }
+
             var failure = WriteFailure?.Invoke(lineProtocolRecords);
             if (failure is not null)
             {
@@ -407,11 +575,11 @@ public sealed class InfluxProviderTests
             }
 
             _writtenLines.AddRange(lineProtocolRecords);
-            return Task.CompletedTask;
         }
 
         public Task<string> QueryRawAsync(string flux, string organization, CancellationToken cancellationToken)
         {
+            QueryCount++;
             LastQuery = flux;
             return Task.FromResult(QueryResponse);
         }
