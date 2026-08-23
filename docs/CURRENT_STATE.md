@@ -28,7 +28,11 @@ Completed and merged to `main` via PR #10. It adds App-layer reusable read-only 
 
 Milestone 9:
 
-Implemented on `feature/milestone-9-machine-settings`; PR #11 is open and pending independent source re-review and merge. PLC Write, MQTT Write, command/interlock and authorization frameworks are not implemented.
+Completed and merged to `main` via PR #11. PLC Write, MQTT Write, command/interlock and authorization frameworks are not implemented.
+
+Milestone 10:
+
+Phase A is in progress on `feature/milestone-10-stress-optimization`: stress harness, bounded instrumentation, deterministic tests and clean baseline evidence only. Optimization remains blocked pending evidence review.
 
 ## Implemented in Milestone 1
 
@@ -159,7 +163,7 @@ n PLC
 
 - `dotnet restore Scada.sln --ignore-failed-sources` — PASS.
 - `dotnet build Scada.sln -c Release --no-restore` — PASS with 0 warnings and 0 errors.
-- `dotnet test Scada.sln -c Release --no-build` — PASS; 289 tests, 0 failures (127 App, 68 Runtime, 31 Core, 3 Drivers, 60 Infrastructure).
+- `dotnet test Scada.sln -c Release --no-build` — PASS; 306 tests, 0 failures (127 App, 70 Runtime, 31 Core, 3 Drivers, 60 Infrastructure, 15 Stress).
 - `dotnet list Scada.sln package --include-transitive --vulnerable` — PASS; no vulnerable packages reported. `SQLitePCLRaw.bundle_e_sqlite3`, `core`, `lib.e_sqlite3` and `provider.e_sqlite3` resolve to 2.1.12 through `Microsoft.Data.Sqlite` 10.0.11.
 - `git diff --check` — PASS.
 - InfluxDB package audit — PASS; no vulnerable packages reported.

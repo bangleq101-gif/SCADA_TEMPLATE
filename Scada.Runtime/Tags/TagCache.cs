@@ -5,11 +5,36 @@ namespace Scada.Runtime.Tags;
 
 public sealed class TagCache : ITagCache
 {
+    private readonly bool _metricsEnabled;
     private readonly object _sync = new();
     private readonly Dictionary<string, TagValue> _values = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, List<Action<TagValue>>> _subscriptions = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, long> _sequences = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _tagsWithGoodValue = new(StringComparer.OrdinalIgnoreCase);
+    private long _updates;
+    private long _callbackInvocations;
+    private long _subscriberExceptions;
+
+    public TagCache(bool metricsEnabled = false)
+    {
+        _metricsEnabled = metricsEnabled;
+    }
+
+    public TagCacheRuntimeSnapshot Snapshot
+    {
+        get
+        {
+            lock (_sync)
+            {
+                return new TagCacheRuntimeSnapshot(
+                    Interlocked.Read(ref _updates),
+                    Interlocked.Read(ref _callbackInvocations),
+                    Interlocked.Read(ref _subscriberExceptions),
+                    _values.Count,
+                    _subscriptions.Values.Sum(callbacks => callbacks.Count));
+            }
+        }
+    }
 
     public bool TryGet(string tagId, out TagValue? value)
     {
@@ -72,6 +97,7 @@ public sealed class TagCache : ITagCache
                 timestampToPublish,
                 sequence);
             _values[update.TagId] = value;
+            if (_metricsEnabled) Interlocked.Increment(ref _updates);
             callbacks = _subscriptions.TryGetValue(update.TagId, out var subscribers)
                 ? subscribers.ToArray()
                 : [];
@@ -79,12 +105,14 @@ public sealed class TagCache : ITagCache
 
         foreach (var callback in callbacks)
         {
+            if (_metricsEnabled) Interlocked.Increment(ref _callbackInvocations);
             try
             {
                 callback(value);
             }
             catch (Exception exception)
             {
+                if (_metricsEnabled) Interlocked.Increment(ref _subscriberExceptions);
                 Debug.WriteLine($"TagCache subscriber failed for '{value.TagId}': {exception}");
             }
         }

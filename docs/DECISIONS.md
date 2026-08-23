@@ -1,6 +1,10 @@
 
 # Architecture Decisions
 
+## D56 — M10 uses a non-product measurement harness and evidence gates
+
+Stress qualification is implemented by the non-product `tools/Scada.Stress` harness. Product projects never reference the tool. The harness generates deterministic Simulator workloads, separates scan cadence from value-change intensity, consumes existing snapshots first and uses bounded aggregate measurements without TagId/EquipmentId metric dimensions. Raw results remain ignored artifacts. Same-environment fingerprints are required for automatic provisional regression verdicts; cross-machine results are observational. Phase A captures evidence only, and any optimization requires a later explicit gate.
+
 ## D55 — Machine Settings uses project candidates and read-only live observation
 
 Machine Settings definitions are persisted as a `RuntimeOptions.MachineSettings` project-document container only; Runtime, polling, drivers, Historian and MQTT do not consume it. Parameter values are canonical text using the Core codec, with draft edit text owned by the App. Page Apply validates every draft before mutating the single `ProjectEditSession.WorkingProject` authority and Project Save/Revert retain their existing atomic/restart-required behavior. Optional `LiveTagId` values are logical TagCache identifiers only; active pages own deduplicated subscriptions and no Machine Settings path performs PLC writes. `IsReadOnly` is configuration safety, not authorization.

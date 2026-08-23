@@ -66,8 +66,14 @@ Scada.App/
 └── Views
 
 scripts/
-└── run-scada.ps1
+├── run-scada.ps1
+└── run-stress.ps1
+
+tools/
+└── Scada.Stress
 ```
+
+`tools/Scada.Stress` is a non-product Release stress harness. It may compose all five product projects to exercise the real runtime and WPF paths, but no product project references it. Generated evidence is written only beneath ignored `artifacts/stress`.
 
 The App layer owns the hierarchical route model and workspace lifecycle. `NavigationService.CurrentRouteKey` is the authoritative active route; `ShellViewModel` derives tree selection from it. Navigation destination ViewModels implement the minimal `IWorkspaceLifecycle` contract. Monitoring owns TagCache subscriptions only while its workspace is active and rejects callbacks from older activation generations.
 

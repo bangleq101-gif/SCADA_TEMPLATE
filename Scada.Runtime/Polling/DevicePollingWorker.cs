@@ -18,6 +18,7 @@ public sealed class DevicePollingWorker
     private readonly DeviceRuntimeState _state;
     private readonly ILogger<DevicePollingWorker> _logger;
     private readonly TimeProvider _timeProvider;
+    private readonly IPollingObserver _pollingObserver;
     private Task? _runTask;
     private bool _connected;
     private bool _disconnectInFlight;
@@ -32,7 +33,8 @@ public sealed class DevicePollingWorker
         TagEngine tagEngine,
         DeviceRuntimeState state,
         ILogger<DevicePollingWorker> logger,
-        TimeProvider timeProvider)
+        TimeProvider timeProvider,
+        IPollingObserver? pollingObserver = null)
     {
         _device = device;
         _plan = plan;
@@ -42,6 +44,7 @@ public sealed class DevicePollingWorker
         _state = state;
         _logger = logger;
         _timeProvider = timeProvider;
+        _pollingObserver = pollingObserver ?? NullPollingObserver.Instance;
     }
 
     public Task Completion => _runTask ?? Task.CompletedTask;
@@ -154,7 +157,7 @@ public sealed class DevicePollingWorker
                     nextDue[index] = scheduled + group.Interval;
                     _state.AddMissedCycles(missedCycles);
 
-                    if (!await PollGroupAsync(group, cancellationToken))
+                    if (!await PollGroupAsync(group, scheduled, missedCycles, cancellationToken))
                     {
                         break;
                     }
@@ -210,6 +213,8 @@ public sealed class DevicePollingWorker
 
     private async Task<bool> PollGroupAsync(
         DeviceScanGroupPlan group,
+        DateTimeOffset scheduledAt,
+        long missedCycles,
         CancellationToken cancellationToken)
     {
         var startedAt = _timeProvider.GetUtcNow();
@@ -234,6 +239,13 @@ public sealed class DevicePollingWorker
                 ? completedAt
                 : results.Max(result => result.Timestamp);
             _state.MarkSuccess(sampleTimestamp, completedAt, completedAt - startedAt);
+            RecordPollingObservation(new PollingObservation(
+                group.Name,
+                group.Requests.Count,
+                completedAt - startedAt,
+                startedAt > scheduledAt ? startedAt - scheduledAt : TimeSpan.Zero,
+                missedCycles,
+                Failed: false));
             return true;
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -244,11 +256,37 @@ public sealed class DevicePollingWorker
         {
             var exception = new TimeoutException(
                 $"Reading scan group '{group.Name}' from device '{_device.Id}' timed out.");
+            RecordPollingFailure(group, scheduledAt, startedAt, missedCycles);
             return await HandlePollingFailureAsync(exception, cancellationToken);
         }
         catch (Exception exception)
         {
+            RecordPollingFailure(group, scheduledAt, startedAt, missedCycles);
             return await HandlePollingFailureAsync(exception, cancellationToken);
+        }
+    }
+
+    private void RecordPollingFailure(DeviceScanGroupPlan group, DateTimeOffset scheduledAt, DateTimeOffset startedAt, long missedCycles)
+    {
+        var completedAt = _timeProvider.GetUtcNow();
+        RecordPollingObservation(new PollingObservation(
+            group.Name,
+            group.Requests.Count,
+            completedAt - startedAt,
+            startedAt > scheduledAt ? startedAt - scheduledAt : TimeSpan.Zero,
+            missedCycles,
+            Failed: true));
+    }
+
+    private void RecordPollingObservation(PollingObservation observation)
+    {
+        try
+        {
+            _pollingObserver.Record(observation);
+        }
+        catch (Exception exception)
+        {
+            _logger.LogWarning(exception, "Polling metrics observer failed for scan group {ScanGroup}.", observation.ScanGroup);
         }
     }
 
