@@ -9,5 +9,6 @@
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
     <PackageReference Include="Microsoft.Data.Sqlite" />
     <PackageReference Include="InfluxDB.Client" />
+    <PackageReference Include="MQTTnet" />
   </ItemGroup>
 </Project>

@@ -11,6 +11,7 @@
         <DataTemplate DataType="{x:Type vm:EngineeringViewModel}"><views:EngineeringView /></DataTemplate>
         <DataTemplate DataType="{x:Type vm:TagManagerViewModel}"><views:TagManagerView /></DataTemplate>
         <DataTemplate DataType="{x:Type vm:HistorySettingsViewModel}"><views:HistorySettingsView /></DataTemplate>
+        <DataTemplate DataType="{x:Type vm:MqttSettingsViewModel}"><views:MqttSettingsView /></DataTemplate>
         <HierarchicalDataTemplate x:Key="NavigationItemTemplate"
                                   ItemsSource="{Binding Children}"
                                   ItemContainerStyle="{StaticResource NavigationTreeViewItemStyle}">

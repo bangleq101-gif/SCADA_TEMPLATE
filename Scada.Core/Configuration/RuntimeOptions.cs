@@ -1,5 +1,6 @@
 using Scada.Core.Devices;
 using Scada.Core.History;
+using Scada.Core.Mqtt;
 using Scada.Core.Tags;
 
 namespace Scada.Core.Configuration;
@@ -9,6 +10,7 @@ public sealed class RuntimeOptions
     public string RuntimeId { get; set; } = "Runtime01";
     public PollingOptions Polling { get; set; } = new();
     public HistorianOptions Historian { get; set; } = new();
+    public MqttOptions Mqtt { get; set; } = new();
     public List<ScanGroupDefinition> ScanGroups { get; set; } =
     [
         new() { Name = "Fast", IntervalMilliseconds = 100 },

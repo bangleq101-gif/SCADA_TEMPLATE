@@ -2,6 +2,7 @@ using Scada.Core.Tags;
 using Scada.Core.History;
 using System.Globalization;
 using System.Text.RegularExpressions;
+using Scada.Core.Mqtt;
 
 namespace Scada.Core.Configuration;
 
@@ -14,8 +15,6 @@ public static class RuntimeOptionsValidation
     private const long MinimumInfluxRetentionSeconds = 3_600;
     private static readonly Regex EnvironmentVariableName =
         new("^[A-Za-z_][A-Za-z0-9_]*$", RegexOptions.CultureInvariant | RegexOptions.Compiled);
-    private static readonly HashSet<string> MqttProfiles =
-        new(StringComparer.OrdinalIgnoreCase) { "Default" };
 
     public static IReadOnlyList<ValidationIssue> CollectIssues(RuntimeOptions options)
     {
@@ -30,8 +29,10 @@ public static class RuntimeOptionsValidation
 
         ValidatePolling(options, issues);
         var historian = options.Historian ?? new HistorianOptions();
+        var mqtt = options.Mqtt ?? new MqttOptions();
         ValidateHistorianStorage(historian, issues);
         issues.AddRange(HistoryProfileValidation.CollectIssues(historian));
+        ValidateMqtt(mqtt, issues);
 
         var historyRegistry = new HistoryProfileRegistry(historian.Profiles ?? []);
 
@@ -81,9 +82,15 @@ public static class RuntimeOptionsValidation
         var tagIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var tagNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var validHistoryTagCount = 0;
+        var mqttTopics = new HashSet<string>(StringComparer.Ordinal);
+        var mqttRegistry = new MqttProfileRegistry(mqtt.Profiles ?? []);
         foreach (var tag in options.Tags ?? [])
         {
-            ValidateTag(tag, deviceIds, scanGroups, tagIds, tagNames, historyRegistry, issues);
+            ValidateTag(tag, deviceIds, scanGroups, tagIds, tagNames, historyRegistry, mqttRegistry, mqtt, issues);
+            if (mqtt.Enabled && tag.Enabled && tag.MqttPublishEnabled && mqttRegistry.TryGet(tag.MqttProfile, out _) && MqttTopicBuilder.TryBuild(options.RuntimeId, tag, mqtt, out var topic) && !mqttTopics.Add(topic!))
+                issues.Add(Error("MQTT_TOPIC_DUPLICATE", "Tag", tag.Id, nameof(tag.MqttTopicOverride), $"MQTT topic '{topic}' is used by more than one publishing tag."));
+            else if (mqtt.Enabled && tag.Enabled && tag.MqttPublishEnabled && mqttRegistry.TryGet(tag.MqttProfile, out _) && !MqttTopicBuilder.TryBuild(options.RuntimeId, tag, mqtt, out _))
+                issues.Add(Error("MQTT_TOPIC_INVALID", "Tag", tag.Id, nameof(tag.MqttTopicOverride), "MQTT publish topic is invalid."));
             if (IsValidHistorySubscription(tag, historyRegistry))
             {
                 validHistoryTagCount++;
@@ -101,6 +108,24 @@ public static class RuntimeOptionsValidation
         }
 
         return issues;
+    }
+
+    private static void ValidateMqtt(MqttOptions mqtt, ICollection<ValidationIssue> issues)
+    {
+        var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var profile in mqtt.Profiles ?? [])
+        {
+            if (string.IsNullOrWhiteSpace(profile.Name) || !names.Add(profile.Name))
+                issues.Add(Error("MQTT_PROFILE_NAME_INVALID", "Mqtt", profile.Name, nameof(profile.Name), "MQTT profile names must be nonempty and unique."));
+            if (!Enum.IsDefined(profile.Mode) || !Enum.IsDefined(profile.QualityOfService) || profile.Deadband < 0 || profile.MinimumIntervalMilliseconds < 0 || profile.MaximumIntervalMilliseconds < 0 || (profile.MaximumIntervalMilliseconds > 0 && profile.MinimumIntervalMilliseconds > profile.MaximumIntervalMilliseconds))
+                issues.Add(Error("MQTT_PROFILE_INVALID", "Mqtt", profile.Name, null, "MQTT profile settings are invalid."));
+        }
+        if (!mqtt.Enabled) return;
+        if (string.IsNullOrWhiteSpace(mqtt.Host) || mqtt.Host.Any(char.IsControl) || mqtt.Host.Contains('@')) issues.Add(Error("MQTT_HOST_INVALID", "Mqtt", null, nameof(mqtt.Host), "MQTT host is invalid."));
+        if (mqtt.Port is < 1 or > 65535) issues.Add(Error("MQTT_PORT_INVALID", "Mqtt", null, nameof(mqtt.Port), "MQTT port must be 1 through 65535."));
+        if (!Enum.IsDefined(mqtt.ProtocolVersion)) issues.Add(Error("MQTT_PROTOCOL_INVALID", "Mqtt", null, nameof(mqtt.ProtocolVersion), "MQTT protocol is invalid."));
+        if (!string.IsNullOrWhiteSpace(mqtt.PasswordReference) && !TryParseEnvironmentReference(mqtt.PasswordReference, out _)) issues.Add(Error("MQTT_PASSWORD_REFERENCE_INVALID", "Mqtt", null, nameof(mqtt.PasswordReference), "MQTT PasswordReference must use env:<VARIABLE_NAME>."));
+        if (mqtt.ConnectionTimeoutMilliseconds <= 0 || mqtt.PublishTimeoutMilliseconds <= 0 || mqtt.ReconnectInitialDelayMilliseconds <= 0 || mqtt.ReconnectMaxDelayMilliseconds < mqtt.ReconnectInitialDelayMilliseconds || mqtt.ShutdownTimeoutMilliseconds <= 0) issues.Add(Error("MQTT_OPTIONS_INVALID", "Mqtt", null, null, "MQTT timeout and reconnect settings are invalid."));
     }
 
     public static IReadOnlyList<ValidationIssue> CollectInfluxIssues(InfluxDbOptions options)
@@ -326,6 +351,8 @@ public static class RuntimeOptionsValidation
         ISet<string> tagIds,
         ISet<string> tagNames,
         HistoryProfileRegistry historyRegistry,
+        MqttProfileRegistry mqttRegistry,
+        MqttOptions mqtt,
         ICollection<ValidationIssue> issues)
     {
         if (string.IsNullOrWhiteSpace(tag.Id))
@@ -407,10 +434,10 @@ public static class RuntimeOptionsValidation
             issues.Add(Error("MQTT_PROFILE_REQUIRED", "Tag", tag.Id, nameof(tag.MqttProfile),
                 $"Tag '{tag.Id}' requires an MQTT profile when publishing is enabled."));
         }
-        else if (!string.IsNullOrWhiteSpace(tag.MqttProfile) && !MqttProfiles.Contains(tag.MqttProfile))
+        else if (!string.IsNullOrWhiteSpace(tag.MqttProfile) && !mqttRegistry.TryGet(tag.MqttProfile, out _))
         {
             issues.Add(Warning("MQTT_PROFILE_UNKNOWN", "Tag", tag.Id, nameof(tag.MqttProfile),
-                $"MQTT profile '{tag.MqttProfile}' is not a built-in M4 profile and will be preserved."));
+                $"MQTT profile '{tag.MqttProfile}' is not configured and will be preserved."));
         }
     }
 

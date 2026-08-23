@@ -12,11 +12,14 @@ using Scada.Infrastructure.Configuration;
 using Scada.Infrastructure.History;
 using Scada.Infrastructure.History.Influx;
 using Scada.Infrastructure.Persistence;
+using Scada.Infrastructure.Mqtt;
 using Scada.Runtime.Drivers;
 using Scada.Runtime.Engine;
 using Scada.Runtime.Historian;
 using Scada.Runtime.Polling;
 using Scada.Runtime.Tags;
+using Scada.Runtime.Mqtt;
+using Scada.Core.Mqtt;
 
 namespace Scada.App;
 
@@ -86,6 +89,10 @@ public partial class App : Application
             builder.Services.AddSingleton<HistorianRuntimeService>();
             builder.Services.AddSingleton<IHostedService>(services =>
                 services.GetRequiredService<HistorianRuntimeService>());
+            builder.Services.AddSingleton<IMqttTransport, MqttNetTransport>();
+            builder.Services.AddSingleton<MqttRuntimeService>();
+            builder.Services.AddSingleton<IHostedService>(services =>
+                services.GetRequiredService<MqttRuntimeService>());
             builder.Services.AddSingleton<PollingRuntimeService>();
             builder.Services.AddSingleton<IHostedService>(services =>
                 services.GetRequiredService<PollingRuntimeService>());
@@ -99,11 +106,13 @@ public partial class App : Application
             builder.Services.AddSingleton<IHistoryBufferConfirmation, WpfHistoryBufferConfirmation>();
             builder.Services.AddSingleton<IHistoryConnectionTester, InfluxHistoryConnectionTester>();
             builder.Services.AddSingleton<IHistoryRetentionManager, InfluxHistoryRetentionManager>();
+            builder.Services.AddSingleton<IMqttConnectionTester, MqttConnectionTester>();
             builder.Services.AddSingleton<OperationViewModel>();
             builder.Services.AddSingleton<MachineSettingsViewModel>();
             builder.Services.AddSingleton<MonitoringViewModel>();
             builder.Services.AddSingleton<TagManagerViewModel>();
             builder.Services.AddSingleton<HistorySettingsViewModel>();
+            builder.Services.AddSingleton<MqttSettingsViewModel>();
             builder.Services.AddSingleton<EngineeringViewModel>();
             builder.Services.AddSingleton<NavigationService>();
             builder.Services.AddSingleton<ShellViewModel>();

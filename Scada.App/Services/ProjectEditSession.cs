@@ -4,6 +4,7 @@ using System.Runtime.CompilerServices;
 using Scada.Core.Configuration;
 using Scada.Core.Devices;
 using Scada.Core.History;
+using Scada.Core.Mqtt;
 using Scada.Core.Tags;
 using Scada.Infrastructure.Persistence;
 
@@ -207,6 +208,7 @@ internal static class ProjectSnapshotCloner
                     MaximumIntervalMilliseconds = profile.MaximumIntervalMilliseconds
                 }).ToList()
             },
+            Mqtt = CloneMqttOptions(source.Mqtt),
             ScanGroups = source.ScanGroups.Select(group => new ScanGroupDefinition
             {
                 Name = group.Name,
@@ -264,6 +266,25 @@ internal static class ProjectSnapshotCloner
         ReconnectMaxDelayMilliseconds = source.ReconnectMaxDelayMilliseconds,
         RetentionSeconds = source.RetentionSeconds
     };
+
+    private static MqttOptions CloneMqttOptions(MqttOptions source) => new()
+    {
+        Enabled = source.Enabled, Host = source.Host, Port = source.Port, ProtocolVersion = source.ProtocolVersion,
+        ClientId = source.ClientId, Username = source.Username, PasswordReference = source.PasswordReference,
+        UseTls = source.UseTls, BaseTopic = source.BaseTopic, TopicTemplate = source.TopicTemplate,
+        KeepAliveSeconds = source.KeepAliveSeconds, ConnectionTimeoutMilliseconds = source.ConnectionTimeoutMilliseconds,
+        PublishTimeoutMilliseconds = source.PublishTimeoutMilliseconds,
+        ReconnectInitialDelayMilliseconds = source.ReconnectInitialDelayMilliseconds,
+        ReconnectMaxDelayMilliseconds = source.ReconnectMaxDelayMilliseconds,
+        ShutdownTimeoutMilliseconds = source.ShutdownTimeoutMilliseconds,
+        Profiles = source.Profiles.Select(profile => new MqttProfileDefinition
+        {
+            Name = profile.Name, Mode = profile.Mode, Deadband = profile.Deadband,
+            MinimumIntervalMilliseconds = profile.MinimumIntervalMilliseconds,
+            MaximumIntervalMilliseconds = profile.MaximumIntervalMilliseconds,
+            QualityOfService = profile.QualityOfService, Retain = profile.Retain
+        }).ToList()
+    };
 }
 
 internal static class ProjectSnapshotComparer
@@ -281,6 +302,7 @@ internal static class ProjectSnapshotComparer
             left.Historian.StorageProvider != right.Historian.StorageProvider ||
             !string.Equals(left.Historian.DatabasePath, right.Historian.DatabasePath, StringComparison.Ordinal) ||
             !InfluxOptionsEqual(left.Historian.Influx, right.Historian.Influx) ||
+            !MqttOptionsEqual(left.Mqtt, right.Mqtt) ||
             left.Historian.QueueCapacity != right.Historian.QueueCapacity ||
             left.Historian.BatchSize != right.Historian.BatchSize ||
             left.Historian.FlushIntervalMilliseconds != right.Historian.FlushIntervalMilliseconds ||
@@ -385,6 +407,16 @@ internal static class ProjectSnapshotComparer
                left.ReconnectMaxDelayMilliseconds == right.ReconnectMaxDelayMilliseconds &&
                left.RetentionSeconds == right.RetentionSeconds;
     }
+
+    private static bool MqttOptionsEqual(MqttOptions left, MqttOptions right) =>
+        left.Enabled == right.Enabled && left.Host == right.Host && left.Port == right.Port &&
+        left.ProtocolVersion == right.ProtocolVersion && left.ClientId == right.ClientId && left.Username == right.Username &&
+        left.PasswordReference == right.PasswordReference && left.UseTls == right.UseTls && left.BaseTopic == right.BaseTopic &&
+        left.TopicTemplate == right.TopicTemplate && left.KeepAliveSeconds == right.KeepAliveSeconds &&
+        left.ConnectionTimeoutMilliseconds == right.ConnectionTimeoutMilliseconds && left.PublishTimeoutMilliseconds == right.PublishTimeoutMilliseconds &&
+        left.ReconnectInitialDelayMilliseconds == right.ReconnectInitialDelayMilliseconds && left.ReconnectMaxDelayMilliseconds == right.ReconnectMaxDelayMilliseconds &&
+        left.ShutdownTimeoutMilliseconds == right.ShutdownTimeoutMilliseconds && left.Profiles.Count == right.Profiles.Count &&
+        left.Profiles.Zip(right.Profiles).All(pair => pair.First.Name == pair.Second.Name && pair.First.Mode == pair.Second.Mode && pair.First.Deadband == pair.Second.Deadband && pair.First.MinimumIntervalMilliseconds == pair.Second.MinimumIntervalMilliseconds && pair.First.MaximumIntervalMilliseconds == pair.Second.MaximumIntervalMilliseconds && pair.First.QualityOfService == pair.Second.QualityOfService && pair.First.Retain == pair.Second.Retain);
 
     private static bool DictionaryEquals(
         IReadOnlyDictionary<string, string> left,

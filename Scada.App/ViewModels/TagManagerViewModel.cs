@@ -141,12 +141,8 @@ public sealed class TagManagerViewModel : INotifyPropertyChanged, IWorkspaceLife
         BulkEditValue<string>.Explicit("Custom")
     ];
 
-    public IReadOnlyList<BulkEditValue<string>> BulkMqttProfileOptions { get; } =
-    [
-        BulkEditValue<string>.Unchanged,
-        BulkEditValue<string>.Mixed,
-        BulkEditValue<string>.Explicit("Default")
-    ];
+    public IReadOnlyList<BulkEditValue<string>> BulkMqttProfileOptions =>
+        [BulkEditValue<string>.Unchanged, BulkEditValue<string>.Mixed, .. _session.WorkingProject.Mqtt.Profiles.Select(profile => BulkEditValue<string>.Explicit(profile.Name))];
 
     public RelayCommand AddCommand { get; }
     public RelayCommand DuplicateCommand { get; }

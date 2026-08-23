@@ -137,6 +137,14 @@ TagCache remains the central runtime source. A disconnected device publishes `Ta
 
 ## Milestone 6 InfluxDB provider flow
 
+## Milestone 7 MQTT publisher flow
+
+```text
+TagCache → MqttRuntimeService → IMqttTransport → MQTTnet → Broker
+```
+
+The Runtime service owns bounded latest-state coalescing, profile evaluation and reconnect behavior. MQTTnet is an Infrastructure-only package; broker failures never issue PLC reads or block polling, Historian or WPF.
+
 ```text
 TagCache
     ↓

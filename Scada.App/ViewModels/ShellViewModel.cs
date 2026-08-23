@@ -28,6 +28,10 @@ public sealed class ShellViewModel : INotifyPropertyChanged
         {
             engineeringChildren.Add(new NavigationItem("History Settings", NavigationService.EngineeringHistoryRoute));
         }
+        if (_navigation.HasRoute(NavigationService.EngineeringMqttRoute))
+        {
+            engineeringChildren.Add(new NavigationItem("MQTT Settings", NavigationService.EngineeringMqttRoute));
+        }
 
         NavigationItems =
         [
