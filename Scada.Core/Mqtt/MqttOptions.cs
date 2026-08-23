@@ -51,7 +51,8 @@ public sealed class MqttProfileRegistry
     private readonly IReadOnlyDictionary<string, MqttProfileDefinition> _profiles;
     public MqttProfileRegistry(IEnumerable<MqttProfileDefinition> profiles) => _profiles = profiles
         .Where(profile => !string.IsNullOrWhiteSpace(profile.Name))
-        .ToDictionary(profile => profile.Name, StringComparer.OrdinalIgnoreCase);
+        .GroupBy(profile => profile.Name, StringComparer.OrdinalIgnoreCase)
+        .ToDictionary(group => group.Key, group => group.First(), StringComparer.OrdinalIgnoreCase);
     public bool TryGet(string? name, out MqttProfileDefinition? profile) => _profiles.TryGetValue(name ?? string.Empty, out profile);
     public IReadOnlyCollection<MqttProfileDefinition> All => _profiles.Values.ToArray();
 }

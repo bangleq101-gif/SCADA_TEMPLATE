@@ -36,4 +36,13 @@ public sealed class MqttConfigurationTests
         options.Tags.Add(new Scada.Core.Tags.TagDefinition { Id = "B", Name = "B", DeviceId = "D", Address = "B", MqttPublishEnabled = true, MqttTopicOverride = "same" });
         Assert.Contains(RuntimeOptionsValidation.CollectIssues(options), issue => issue.Code == "MQTT_TOPIC_DUPLICATE" && issue.IsBlocking);
     }
+
+    [Fact]
+    public void DuplicateMqttProfilesReturnIssueWithoutThrowing()
+    {
+        var options = new RuntimeOptions();
+        options.Mqtt.Profiles.Add(new Scada.Core.Mqtt.MqttProfileDefinition { Name = "default" });
+        var issues = RuntimeOptionsValidation.CollectIssues(options);
+        Assert.Contains(issues, issue => issue.Code == "MQTT_PROFILE_NAME_INVALID" && issue.IsBlocking);
+    }
 }

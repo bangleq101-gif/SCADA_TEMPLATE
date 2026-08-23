@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Threading.Channels;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Scada.Core.Configuration;
@@ -18,7 +19,8 @@ public sealed class MqttRuntimeService : IHostedService, IAsyncDisposable
     private readonly MqttProfileEvaluator _evaluator;
     private readonly ConcurrentDictionary<string, Pending> _pending = new(StringComparer.OrdinalIgnoreCase);
     private readonly List<IDisposable> _subscriptions = [];
-    private readonly SemaphoreSlim _signal = new(0, 1);
+    private readonly Channel<byte> _signal = Channel.CreateBounded<byte>(new BoundedChannelOptions(1) { FullMode = BoundedChannelFullMode.DropWrite, SingleReader = true, SingleWriter = false });
+    private readonly ConcurrentDictionary<string, DateTimeOffset> _nextPeriodic = new(StringComparer.OrdinalIgnoreCase);
     private CancellationTokenSource? _lifetime;
     private Task? _worker;
     private MqttRuntimeState _state = MqttRuntimeState.Disabled;
@@ -40,7 +42,7 @@ public sealed class MqttRuntimeService : IHostedService, IAsyncDisposable
         {
             var subscription = _tagCache.Subscribe(tag.Id, value => Queue(tag, value));
             _subscriptions.Add(subscription);
-            if (_tagCache.TryGet(tag.Id, out var value) && value is not null) Queue(tag, value);
+            if (_tagCache.TryGet(tag.Id, out var value) && value is not null) Queue(tag, value, force: true);
         }
         _lifetime = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         _state = MqttRuntimeState.Starting;
@@ -52,20 +54,20 @@ public sealed class MqttRuntimeService : IHostedService, IAsyncDisposable
     {
         _state = MqttRuntimeState.Stopping;
         foreach (var subscription in _subscriptions) subscription.Dispose();
-        _subscriptions.Clear(); _lifetime?.Cancel(); _signal.ReleaseIfZero();
+        _subscriptions.Clear(); _lifetime?.Cancel();
         if (_worker is not null) { using var budget = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken); budget.CancelAfter(_options.Mqtt.ShutdownTimeoutMilliseconds); try { await _worker.WaitAsync(budget.Token).ConfigureAwait(false); } catch (OperationCanceledException) { } }
         try { await _transport.DisconnectAsync(cancellationToken).ConfigureAwait(false); } catch (Exception ex) { _logger.LogWarning(ex, "MQTT disconnect failed."); }
         _state = MqttRuntimeState.Disabled; _worker = null; _lifetime?.Dispose(); _lifetime = null;
     }
     public ValueTask DisposeAsync() => new(StopAsync(CancellationToken.None));
 
-    private void Queue(TagDefinition tag, TagValue value)
+    private void Queue(TagDefinition tag, TagValue value, bool force = false)
     {
-        if (!new MqttProfileRegistry(_options.Mqtt.Profiles).TryGet(tag.MqttProfile, out var profile) || profile is null || !_evaluator.ShouldPublish(tag, profile, value)) return;
+        if (!new MqttProfileRegistry(_options.Mqtt.Profiles).TryGet(tag.MqttProfile, out var profile) || profile is null || (!force && !_evaluator.ShouldPublish(tag, profile, value))) return;
         if (!MqttTopicBuilder.TryBuild(_options.RuntimeId, tag, _options.Mqtt, out var topic)) { Interlocked.Increment(ref _rejected); return; }
         var pending = new Pending(tag, value, topic!);
         if (_pending.TryGetValue(tag.Id, out _)) Interlocked.Increment(ref _coalesced);
-        _pending[tag.Id] = pending; _signal.ReleaseIfZero();
+        _pending[tag.Id] = pending; _signal.Writer.TryWrite(0);
     }
 
     private async Task RunAsync(string? password, CancellationToken cancellationToken)
@@ -82,12 +84,16 @@ public sealed class MqttRuntimeService : IHostedService, IAsyncDisposable
                     var result = await _transport.ConnectAsync(new MqttConnectRequest(_options.Mqtt.Host, _options.Mqtt.Port, _options.Mqtt.ProtocolVersion, ResolveClientId(), _options.Mqtt.Username, password, _options.Mqtt.UseTls, _options.Mqtt.KeepAliveSeconds, TimeSpan.FromMilliseconds(_options.Mqtt.ConnectionTimeoutMilliseconds)), connectCts.Token).ConfigureAwait(false);
                     if (!result.IsAccepted) throw new InvalidOperationException(result.ErrorMessage ?? result.ErrorCode ?? "Broker rejected connection.");
                     _lastConnected = _timeProvider.GetUtcNow(); SetState(MqttRuntimeState.Online, null, null); delay = _options.Mqtt.ReconnectInitialDelayMilliseconds;
-                    foreach (var tag in _options.Tags.Where(tag => tag.Enabled && tag.MqttPublishEnabled)) if (_tagCache.TryGet(tag.Id, out var cached) && cached is not null) Queue(tag, cached);
+                    foreach (var tag in _options.Tags.Where(tag => tag.Enabled && tag.MqttPublishEnabled)) if (_tagCache.TryGet(tag.Id, out var cached) && cached is not null) Queue(tag, cached, force: true);
                 }
                 catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
                 { Interlocked.Increment(ref _failures); SetState(MqttRuntimeState.Offline, "MQTT_CONNECT", ex.Message); await Task.Delay(TimeSpan.FromMilliseconds(delay), _timeProvider, cancellationToken).ConfigureAwait(false); delay = Math.Min(delay * 2, _options.Mqtt.ReconnectMaxDelayMilliseconds); continue; }
             }
-            await _signal.WaitAsync(cancellationToken).ConfigureAwait(false);
+            var wake = _signal.Reader.WaitToReadAsync(cancellationToken).AsTask();
+            var tick = Task.Delay(TimeSpan.FromMilliseconds(100), _timeProvider, cancellationToken);
+            await Task.WhenAny(wake, tick).ConfigureAwait(false);
+            while (_signal.Reader.TryRead(out _)) { }
+            EnqueuePeriodicDueValues();
             foreach (var pair in _pending.ToArray())
             {
                 try
@@ -97,16 +103,27 @@ public sealed class MqttRuntimeService : IHostedService, IAsyncDisposable
                     using var publishCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken); publishCts.CancelAfter(_options.Mqtt.PublishTimeoutMilliseconds);
                     await _transport.PublishAsync(new MqttPublishRequest(pair.Value.Topic, payload, profile.QualityOfService, profile.Retain), publishCts.Token).ConfigureAwait(false);
                     if (_pending.TryGetValue(pair.Key, out var current) && current.Value.Sequence == pair.Value.Value.Sequence) _pending.TryRemove(pair.Key, out _);
-                    Interlocked.Increment(ref _published); _lastPublished = _timeProvider.GetUtcNow();
+                    Interlocked.Increment(ref _published); _lastPublished = _timeProvider.GetUtcNow(); ScheduleNextPeriodic(pair.Value.Tag, profile);
                 }
-                catch (Exception ex) when (!cancellationToken.IsCancellationRequested) { Interlocked.Increment(ref _failures); SetState(MqttRuntimeState.Offline, "MQTT_PUBLISH", ex.Message); try { await _transport.DisconnectAsync(cancellationToken).ConfigureAwait(false); } catch { } break; }
+                catch (Exception ex) when (!cancellationToken.IsCancellationRequested) { Interlocked.Increment(ref _failures); SetState(MqttRuntimeState.Offline, "MQTT_PUBLISH", ex.Message); try { await _transport.DisconnectAsync(cancellationToken).ConfigureAwait(false); } catch { } await Task.Delay(TimeSpan.FromMilliseconds(delay), _timeProvider, cancellationToken).ConfigureAwait(false); delay = Math.Min(delay * 2, _options.Mqtt.ReconnectMaxDelayMilliseconds); break; }
             }
         }
     }
+    private void EnqueuePeriodicDueValues()
+    {
+        var registry = new MqttProfileRegistry(_options.Mqtt.Profiles);
+        var now = _timeProvider.GetUtcNow();
+        foreach (var tag in _options.Tags.Where(tag => tag.Enabled && tag.MqttPublishEnabled))
+        {
+            if (!registry.TryGet(tag.MqttProfile, out var profile) || profile is null || profile.Mode == MqttPublishMode.OnChange || profile.MaximumIntervalMilliseconds <= 0) continue;
+            if (_nextPeriodic.TryGetValue(tag.Id, out var due) && due > now) continue;
+            if (_tagCache.TryGet(tag.Id, out var value) && value is not null) Queue(tag, value, force: true);
+        }
+    }
+    private void ScheduleNextPeriodic(TagDefinition tag, MqttProfileDefinition profile)
+    { if (profile.Mode != MqttPublishMode.OnChange && profile.MaximumIntervalMilliseconds > 0) _nextPeriodic[tag.Id] = _timeProvider.GetUtcNow().AddMilliseconds(profile.MaximumIntervalMilliseconds); }
     private string ResolveClientId() => string.IsNullOrWhiteSpace(_options.Mqtt.ClientId) ? $"scada-{_options.RuntimeId}" : _options.Mqtt.ClientId;
     private bool TryGetPassword(out string? password) { password = null; var reference = _options.Mqtt.PasswordReference; if (string.IsNullOrWhiteSpace(reference)) return true; if (!reference.StartsWith("env:", StringComparison.OrdinalIgnoreCase)) return false; password = Environment.GetEnvironmentVariable(reference[4..]); return !string.IsNullOrWhiteSpace(password); }
     private void SetState(MqttRuntimeState state, string? code, string? message) { _state = state; _errorCode = code; _errorMessage = message; }
     private sealed record Pending(TagDefinition Tag, TagValue Value, string Topic);
 }
-
-internal static class SemaphoreSlimExtensions { public static void ReleaseIfZero(this SemaphoreSlim semaphore) { if (semaphore.CurrentCount == 0) semaphore.Release(); } }
