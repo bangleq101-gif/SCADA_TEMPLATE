@@ -796,15 +796,13 @@ public sealed class BufferedInfluxHistoryStore : IHistoryStore, IHistoryStoreDia
 
     private string BuildQuery(HistoryQuery query, long startNanoseconds, long? stopNanoseconds)
     {
-        var start = startNanoseconds.ToString(CultureInfo.InvariantCulture);
+        var start = FluxTime(startNanoseconds);
         var stop = stopNanoseconds is long value
-            ? value == ExclusiveMaximumNanoseconds
-                ? $", stop: time(v: {value.ToString(CultureInfo.InvariantCulture)})"
-                : $", stop: time(v: {value.ToString(CultureInfo.InvariantCulture)}ns)"
+            ? $", stop: {FluxTime(value)}"
             : string.Empty;
         return $"""
             from(bucket: {FluxString(_options.Bucket)})
-              |> range(start: time(v: {start}ns){stop})
+              |> range(start: {start}{stop})
               |> filter(fn: (r) => r._measurement == {FluxString(_options.Measurement)})
               |> filter(fn: (r) => r.runtime_id == {FluxString(query.RuntimeId)})
               |> filter(fn: (r) => r.tag_id == {FluxString(query.TagId)})
@@ -814,6 +812,9 @@ public sealed class BufferedInfluxHistoryStore : IHistoryStore, IHistoryStoreDia
               |> limit(n: {query.Limit.ToString(CultureInfo.InvariantCulture)})
             """;
     }
+
+    private static string FluxTime(long nanoseconds) =>
+        $"time(v: {nanoseconds.ToString(CultureInfo.InvariantCulture)})";
 
     private static IReadOnlyList<HistorySample> DecodeQuery(string raw, HistoryQuery query)
     {

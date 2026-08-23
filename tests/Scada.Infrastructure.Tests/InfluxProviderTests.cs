@@ -461,13 +461,20 @@ public sealed class InfluxProviderTests
             var expectedMinimum = InfluxPointTimestamp.TryGetBaseNanoseconds(futureRecorded, out var baseNs)
                 ? baseNs + 1
                 : 0;
+            var expectedStart = InfluxPointTimestamp.TryGetBaseNanoseconds(recorded.AddSeconds(-1), out var startNs)
+                ? startNs
+                : 0;
 
             var results = await store.QueryAsync(
                 new HistoryQuery("Runtime01", "T1", recorded.AddSeconds(-1), recorded.AddSeconds(1), 10),
                 CancellationToken.None);
 
             Assert.Single(results);
-            Assert.Contains($"stop: time(v: {expectedMinimum}ns)", transport.LastQuery, StringComparison.Ordinal);
+            Assert.Contains(
+                $"range(start: time(v: {expectedStart}), stop: time(v: {expectedMinimum}))",
+                transport.LastQuery,
+                StringComparison.Ordinal);
+            Assert.DoesNotMatch(@"time\(v:\s*-?\d+ns\)", transport.LastQuery);
         }
         finally
         {
@@ -560,7 +567,8 @@ public sealed class InfluxProviderTests
             await store.QueryAsync(
                 new HistoryQuery("Runtime01", "T1", belowMinimum, normal, 10),
                 CancellationToken.None);
-            Assert.Contains($"range(start: time(v: {InfluxPointTimestamp.MinNanoseconds}ns)", transport.LastQuery, StringComparison.Ordinal);
+            Assert.Contains($"range(start: time(v: {InfluxPointTimestamp.MinNanoseconds}),", transport.LastQuery, StringComparison.Ordinal);
+            Assert.DoesNotMatch(@"time\(v:\s*-?\d+ns\)", transport.LastQuery);
 
             var queryCount = transport.QueryCount;
             await store.QueryAsync(
