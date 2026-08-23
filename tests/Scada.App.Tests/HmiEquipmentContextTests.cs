@@ -47,6 +47,40 @@ public sealed class HmiEquipmentContextTests
         one.Deactivate(); Assert.Equal(0, cache.ActiveSubscriptionCount);
     }
 
+    [Theory]
+    [InlineData(HmiEquipmentKind.Motor, HmiTagRole.Run, true)]
+    [InlineData(HmiEquipmentKind.Pump, HmiTagRole.Run, true)]
+    [InlineData(HmiEquipmentKind.Valve, HmiTagRole.Position, false)]
+    [InlineData(HmiEquipmentKind.Tank, HmiTagRole.Level, 50d)]
+    [InlineData(HmiEquipmentKind.Pipe, HmiTagRole.Flow, true)]
+    [InlineData(HmiEquipmentKind.Conveyor, HmiTagRole.Run, false)]
+    [InlineData(HmiEquipmentKind.Indicator, HmiTagRole.Value, true)]
+    public void EveryEquipmentKindHasDeterministicRequiredRoleContract(HmiEquipmentKind kind, HmiTagRole role, object value)
+    {
+        var tags = new Dictionary<HmiTagRole, string> { [role] = "x" };
+        var values = new Dictionary<HmiTagRole, TagValue> { [role] = Value("x", value) };
+        Assert.NotEqual(HmiVisualState.Unknown, HmiStateEvaluator.Evaluate(kind, tags, values));
+    }
+
+    [Fact]
+    public void IndicatorSupportsBothDiscreteAndAnalogValues()
+    {
+        var tags = new Dictionary<HmiTagRole, string> { [HmiTagRole.Value] = "i" };
+        Assert.Equal(HmiVisualState.Stopped, HmiStateEvaluator.Evaluate(HmiEquipmentKind.Indicator, tags, new Dictionary<HmiTagRole, TagValue> { [HmiTagRole.Value] = Value("i", false) }));
+        Assert.Equal(HmiVisualState.Running, HmiStateEvaluator.Evaluate(HmiEquipmentKind.Indicator, tags, new Dictionary<HmiTagRole, TagValue> { [HmiTagRole.Value] = Value("i", 12.5d) }));
+    }
+
+    [Fact]
+    public void FiveHundredContextsReleaseAllOwnedSubscriptions()
+    {
+        var cache = new TestTagCache();
+        var contexts = Enumerable.Range(0, 500).Select(index => new HmiEquipmentContext(cache, HmiEquipmentKind.Motor, $"M{index}", $"M{index}", new Dictionary<HmiTagRole, string> { [HmiTagRole.Run] = $"R{index}", [HmiTagRole.Warning] = $"R{index}", [HmiTagRole.Fault] = $"F{index}", [HmiTagRole.Ready] = $"D{index}" })).ToArray();
+        foreach (var context in contexts) context.Activate();
+        Assert.Equal(1_500, cache.ActiveSubscriptionCount);
+        foreach (var context in contexts) context.Deactivate();
+        Assert.Equal(0, cache.ActiveSubscriptionCount);
+    }
+
     private static HmiEquipmentContext Context(TestTagCache cache, string id) => new(cache, HmiEquipmentKind.Motor, id, id, new Dictionary<HmiTagRole, string> { [HmiTagRole.Run] = id });
     private static TagValue Value(string id, object value, TagQuality quality = TagQuality.Good) => new(id, value, quality, DateTimeOffset.UnixEpoch, 1);
     private sealed class QueuedDispatcher : IHmiDispatcher { private readonly Queue<Action> _actions = []; public void Post(Action action) => _actions.Enqueue(action); public void Flush() { while (_actions.TryDequeue(out var action)) action(); } }
