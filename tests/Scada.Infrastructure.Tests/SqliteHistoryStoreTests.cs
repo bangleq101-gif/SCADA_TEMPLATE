@@ -7,6 +7,7 @@ using Xunit;
 
 namespace Scada.Infrastructure.Tests;
 
+[Collection(SqliteTestCollection.Name)]
 public sealed class SqliteHistoryStoreTests
 {
     [Fact]

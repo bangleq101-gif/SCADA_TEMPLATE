@@ -9,6 +9,13 @@ using Xunit;
 
 namespace Scada.Infrastructure.Tests;
 
+[CollectionDefinition(SqliteTestCollection.Name, DisableParallelization = true)]
+public sealed class SqliteTestCollection
+{
+    public const string Name = "SQLite tests";
+}
+
+[Collection(SqliteTestCollection.Name)]
 public sealed class InfluxProviderTests
 {
     [Fact]
@@ -246,6 +253,79 @@ public sealed class InfluxProviderTests
                 store.Snapshot.PendingSamples == 1);
 
             Assert.Equal(1, store.Snapshot.PendingSamples);
+            Assert.Equal("INFLUX_TOKEN_REQUIRED", store.Snapshot.LastErrorCode);
+        }
+        finally
+        {
+            DeleteDirectory(directory);
+        }
+    }
+
+    [Fact]
+    public async Task OutboxSupportsConcurrentDurableAppendsAndDiagnosticsReads()
+    {
+        var directory = CreateTempDirectory();
+        try
+        {
+            var projectPath = new ProjectPath(Path.Combine(directory, "project.json"));
+            await using var outbox = new InfluxOutboxStore(projectPath, "Data/influx-buffer.db");
+            await outbox.InitializeAsync(CancellationToken.None);
+            const string fingerprint = "A";
+
+            var appends = Enumerable.Range(1, 20)
+                .Select(sequence => outbox.AppendAsync(
+                    [Sample($"T{sequence}", TagDataType.Int32, sequence, sequence: sequence)],
+                    fingerprint,
+                    100,
+                    DateTimeOffset.UtcNow,
+                    CancellationToken.None))
+                .ToArray();
+            var reads = Enumerable.Range(0, 20)
+                .Select(_ => outbox.ReadDiagnosticsAsync(fingerprint, CancellationToken.None))
+                .ToArray();
+
+            var results = await Task.WhenAll(appends);
+            await Task.WhenAll(reads);
+            var diagnostics = await outbox.ReadDiagnosticsAsync(fingerprint, CancellationToken.None);
+
+            Assert.All(results, result => Assert.Equal(1, result.AcceptedCount));
+            Assert.Equal(20, diagnostics.PendingSamples);
+        }
+        finally
+        {
+            DeleteDirectory(directory);
+        }
+    }
+
+    [Fact]
+    public async Task MissingTokenSupportsConcurrentDurableWritesAndDiagnosticsReads()
+    {
+        var directory = CreateTempDirectory();
+        try
+        {
+            var options = CreateInfluxOptions();
+            options.TokenReference = "env:SCADA_TEST_MISSING_INFLUX_TOKEN";
+            Environment.SetEnvironmentVariable("SCADA_TEST_MISSING_INFLUX_TOKEN", null);
+            await using var store = CreateStore(directory, options);
+            await store.InitializeAsync(CancellationToken.None);
+
+            var writes = Enumerable.Range(1, 40)
+                .Select(sequence => store.WriteBatchAsync(
+                    [Sample($"T{sequence}", TagDataType.Double, (double)sequence, sequence: sequence)],
+                    CancellationToken.None));
+            var diagnostics = Enumerable.Range(0, 40)
+                .Select(_ => Task.Run(() =>
+                {
+                    var pendingSamples = store.Snapshot.PendingSamples;
+                    Assert.InRange(pendingSamples, 0, 40);
+                }));
+
+            await Task.WhenAll(writes.Concat(diagnostics));
+            await WaitUntilAsync(() =>
+                store.Snapshot.State == HistoryStoreState.ConfigurationRequired &&
+                store.Snapshot.PendingSamples == 40);
+
+            Assert.Equal(40, store.Snapshot.PendingSamples);
             Assert.Equal("INFLUX_TOKEN_REQUIRED", store.Snapshot.LastErrorCode);
         }
         finally
