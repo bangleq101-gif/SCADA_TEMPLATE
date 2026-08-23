@@ -1,8 +1,10 @@
+using System.IO;
 using Scada.App.Services;
 using Scada.App.ViewModels;
 using Scada.Core.Configuration;
 using Scada.Core.MachineSettings;
 using Scada.Core.Tags;
+using Scada.Infrastructure.Persistence;
 using Xunit;
 
 namespace Scada.App.Tests;
@@ -192,7 +194,7 @@ public sealed class MachineSettingsTests
     }
 
     [Fact]
-    public void VisibilityRebuildAndProjectSavePreserveUnappliedDrafts()
+    public void VisibilityRebuildPreservesUnappliedDrafts()
     {
         var options = Options();
         options.MachineSettings.Pages.Add(new MachineSettingsPageDefinition { Id = "hidden", Title = "Hidden", IsVisible = false });
@@ -200,6 +202,66 @@ public sealed class MachineSettingsTests
         viewModel.SelectedPage!.Editors[0].EditValueText = "77";
         viewModel.ShowHiddenConfiguration = true;
         Assert.Equal("77", viewModel.SelectedPage!.Editors[0].EditValueText);
+    }
+
+    [Fact]
+    public void SuccessfulProjectSavePreservesUnappliedDrafts()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), $"scada-m9-save-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(directory);
+        try
+        {
+            var path = new ProjectPath(Path.Combine(directory, "project.json"));
+            var session = new ProjectEditSession(Options(), path, new ProjectConfigurationStore(path));
+            var viewModel = new MachineSettingsViewModel(session, new TestTagCache(), new ImmediateDispatcher());
+            viewModel.SelectedPage!.Editors[0].EditValueText = "77";
+
+            viewModel.SaveProjectCommand.Execute(null);
+
+            Assert.True(File.Exists(path.FullPath));
+            Assert.Equal("77", viewModel.SelectedPage!.Editors[0].EditValueText);
+            Assert.Equal("10", session.SavedProject.MachineSettings.Pages[0].Parameters[0].Value);
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void RevertSavedDiscardsUnappliedDraftsAndRebuildsFromSavedProject()
+    {
+        var viewModel = new MachineSettingsViewModel(
+            new ProjectEditSession(Options(), null, null),
+            new TestTagCache(),
+            new ImmediateDispatcher());
+        viewModel.SelectedPage!.Editors[0].EditValueText = "77";
+
+        viewModel.RevertProjectCommand.Execute(null);
+
+        Assert.Equal("10", viewModel.SelectedPage!.Editors[0].EditValueText);
+        Assert.Equal("10", viewModel.SelectedPage.Editors[0].Definition.Value);
+    }
+
+    [Fact]
+    public void PagePresentationRowsFlattenGroupsAndEditorsForOneVirtualizationOwner()
+    {
+        var options = Options();
+        options.MachineSettings.Pages[0].Parameters[0].Group = "Drive";
+        options.MachineSettings.Pages[0].Parameters[1].Group = "Safety";
+        var viewModel = new MachineSettingsViewModel(
+            new ProjectEditSession(options, null, null),
+            new TestTagCache(),
+            new ImmediateDispatcher());
+
+        var rows = viewModel.SelectedPage!.PresentationRows;
+
+        Assert.Collection(
+            rows,
+            row => Assert.Equal("Drive", Assert.IsType<ParameterGroupViewModel>(row).Name),
+            row => Assert.Equal("one", Assert.IsType<ParameterEditorViewModel>(row).Id),
+            row => Assert.Equal("Safety", Assert.IsType<ParameterGroupViewModel>(row).Name),
+            row => Assert.Equal("two", Assert.IsType<ParameterEditorViewModel>(row).Id));
     }
 
     private static RuntimeOptions Options() => new() { MachineSettings = new MachineSettingsOptions { Pages = [new MachineSettingsPageDefinition { Id = "machine", Title = "Machine", Parameters = [new MachineParameterDefinition { Id = "one", Name = "One", ValueType = MachineParameterValueType.Integer, Value = "10" }, new MachineParameterDefinition { Id = "two", Name = "Two", ValueType = MachineParameterValueType.Integer, Value = "20" }] }] } };

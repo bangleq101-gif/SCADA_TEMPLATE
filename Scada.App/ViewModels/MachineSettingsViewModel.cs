@@ -21,12 +21,13 @@ public sealed class MachineSettingsViewModel : IWorkspaceLifecycle, IDisposable,
     private bool _active;
     private bool _disposed;
     private bool _showHiddenConfiguration;
+    private bool _discardDraftsOnWorkingProjectChange;
 
     public MachineSettingsViewModel(ProjectEditSession session, ITagCache cache, IMachineSettingsDispatcher? dispatcher = null)
     {
         _session = session; _cache = cache; _dispatcher = dispatcher ?? new WpfMachineSettingsDispatcher();
-        Pages = []; ApplyPageCommand = new RelayCommand(_ => SelectedPage?.Apply()); RevertPageCommand = new RelayCommand(_ => SelectedPage?.RevertDrafts()); SaveProjectCommand = new RelayCommand(_ => _session.TrySave()); RevertProjectCommand = new RelayCommand(_ => _session.Revert());
-        _session.PropertyChanged += OnSessionChanged; RebuildPages();
+        Pages = []; ApplyPageCommand = new RelayCommand(_ => SelectedPage?.Apply()); RevertPageCommand = new RelayCommand(_ => SelectedPage?.RevertDrafts()); SaveProjectCommand = new RelayCommand(_ => _session.TrySave()); RevertProjectCommand = new RelayCommand(_ => RevertSavedProject());
+        _session.PropertyChanged += OnSessionChanged; RebuildPages(preserveDrafts: false);
     }
     public MachineSettingsViewModel() : this(new ProjectEditSession(new RuntimeOptions(), null, null), new TagCache()) { }
     public event PropertyChangedEventHandler? PropertyChanged;
@@ -41,20 +42,30 @@ public sealed class MachineSettingsViewModel : IWorkspaceLifecycle, IDisposable,
     public IReadOnlyList<ValidationIssue> ValidationIssues => _session.ValidationIssues;
     public bool HasBlockingIssues => _session.HasBlockingIssues;
     public string? LastErrorMessage => _session.LastErrorMessage;
-    public bool ShowHiddenConfiguration { get => _showHiddenConfiguration; set { if (_showHiddenConfiguration == value) return; _showHiddenConfiguration = value; RebuildPages(); OnPropertyChanged(); } }
+    public bool ShowHiddenConfiguration { get => _showHiddenConfiguration; set { if (_showHiddenConfiguration == value) return; _showHiddenConfiguration = value; RebuildPages(preserveDrafts: true); OnPropertyChanged(); } }
     public MachineSettingsPageViewModel? SelectedPage { get => _selectedPage; set { if (ReferenceEquals(_selectedPage, value)) return; _selectedPage?.Deactivate(); _selectedPage = value; if (_active) _selectedPage?.Activate(); OnPropertyChanged(); } }
     public void Activate() { if (_disposed || _active) return; _active = true; SelectedPage?.Activate(); }
     public void Deactivate() { if (!_active) return; _active = false; SelectedPage?.Deactivate(); }
     public void Dispose() { if (_disposed) return; _disposed = true; Deactivate(); _session.PropertyChanged -= OnSessionChanged; foreach (var page in Pages) page.Dispose(); }
-    private void RebuildPages()
+    private void RevertSavedProject()
     {
-        var selectedId = SelectedPage?.Id; var drafts = Pages.SelectMany(page => page.Editors.Select(editor => (Key: page.Id + "/" + editor.Id, editor.EditValueText))).ToDictionary(item => item.Key, item => item.EditValueText, StringComparer.OrdinalIgnoreCase); foreach (var page in Pages) page.Dispose(); Pages.Clear(); PageGroups.Clear();
+        _discardDraftsOnWorkingProjectChange = true;
+        try { _session.Revert(); }
+        finally { _discardDraftsOnWorkingProjectChange = false; }
+    }
+    private void RebuildPages(bool preserveDrafts)
+    {
+        var selectedId = SelectedPage?.Id;
+        var drafts = preserveDrafts
+            ? Pages.SelectMany(page => page.Editors.Select(editor => (Key: page.Id + "/" + editor.Id, editor.EditValueText))).ToDictionary(item => item.Key, item => item.EditValueText, StringComparer.OrdinalIgnoreCase)
+            : new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var page in Pages) page.Dispose(); Pages.Clear(); PageGroups.Clear();
         foreach (var page in _session.WorkingProject.MachineSettings.Pages.Where(page => page.IsVisible || ShowHiddenConfiguration).OrderBy(page => page.Group, StringComparer.Ordinal).ThenBy(page => page.Order).ThenBy(page => page.Id, StringComparer.Ordinal)) Pages.Add(new MachineSettingsPageViewModel(page, _session, _cache, _dispatcher, ShowHiddenConfiguration));
         foreach (var group in Pages.GroupBy(page => page.Group ?? string.Empty, StringComparer.Ordinal).OrderBy(group => group.Key, StringComparer.Ordinal)) PageGroups.Add(new MachineSettingsPageGroupViewModel(group.Key, group));
         foreach (var page in Pages) foreach (var editor in page.Editors) if (drafts.TryGetValue(page.Id + "/" + editor.Id, out var draft)) editor.EditValueText = draft;
         SelectedPage = Pages.FirstOrDefault(page => string.Equals(page.Id, selectedId, StringComparison.OrdinalIgnoreCase)) ?? Pages.FirstOrDefault();
     }
-    private void OnSessionChanged(object? sender, PropertyChangedEventArgs args) { if (args.PropertyName is nameof(ProjectEditSession.WorkingProject)) RebuildPages(); OnPropertyChanged(nameof(IsDirty)); OnPropertyChanged(nameof(RestartRequired)); OnPropertyChanged(nameof(ValidationIssues)); OnPropertyChanged(nameof(HasBlockingIssues)); OnPropertyChanged(nameof(LastErrorMessage)); }
+    private void OnSessionChanged(object? sender, PropertyChangedEventArgs args) { if (args.PropertyName is nameof(ProjectEditSession.WorkingProject)) RebuildPages(preserveDrafts: !_discardDraftsOnWorkingProjectChange); OnPropertyChanged(nameof(IsDirty)); OnPropertyChanged(nameof(RestartRequired)); OnPropertyChanged(nameof(ValidationIssues)); OnPropertyChanged(nameof(HasBlockingIssues)); OnPropertyChanged(nameof(LastErrorMessage)); }
     private void OnPropertyChanged([CallerMemberName] string? name = null) => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
 }
 
@@ -72,11 +83,17 @@ public sealed class MachineSettingsPageViewModel : INotifyPropertyChanged, IDisp
     private readonly MachineSettingsPageDefinition _definition; private readonly ProjectEditSession _session; private readonly ITagCache _cache; private readonly IMachineSettingsDispatcher _dispatcher;
     private readonly object _sync = new(); private readonly List<IDisposable> _subscriptions = []; private bool _active; private bool _disposed; private long _generation; private readonly Dictionary<string,long> _sequences = new(StringComparer.OrdinalIgnoreCase);
     public MachineSettingsPageViewModel(MachineSettingsPageDefinition definition, ProjectEditSession session, ITagCache cache, IMachineSettingsDispatcher dispatcher, bool showHidden = false)
-    { _definition = definition; _session = session; _cache = cache; _dispatcher = dispatcher; Editors = new ObservableCollection<ParameterEditorViewModel>((definition.Parameters ?? []).OrderBy(p => p.Order).ThenBy(p => p.Id, StringComparer.Ordinal).Select(p => new ParameterEditorViewModel(p, showHidden))); Groups = new ObservableCollection<ParameterGroupViewModel>(Editors.Where(e => e.IsVisible).GroupBy(e => e.Definition.Group ?? string.Empty, StringComparer.Ordinal).OrderBy(g => g.Key, StringComparer.Ordinal).Select(g => new ParameterGroupViewModel(g.Key, g))); }
+    {
+        _definition = definition; _session = session; _cache = cache; _dispatcher = dispatcher;
+        Editors = new ObservableCollection<ParameterEditorViewModel>((definition.Parameters ?? []).OrderBy(p => p.Order).ThenBy(p => p.Id, StringComparer.Ordinal).Select(p => new ParameterEditorViewModel(p, showHidden)));
+        Groups = new ObservableCollection<ParameterGroupViewModel>(Editors.Where(e => e.IsVisible).GroupBy(e => e.Definition.Group ?? string.Empty, StringComparer.Ordinal).OrderBy(g => g.Key, StringComparer.Ordinal).Select(g => new ParameterGroupViewModel(g.Key, g)));
+        PresentationRows = new ReadOnlyCollection<object>(Groups.SelectMany(group => new object[] { group }.Concat(group.Editors)).ToList());
+    }
     public event PropertyChangedEventHandler? PropertyChanged;
     public string Id => _definition.Id; public string Title => _definition.Title; public string Description => _definition.Description; public string Group => _definition.Group;
     public ObservableCollection<ParameterEditorViewModel> Editors { get; }
     public ObservableCollection<ParameterGroupViewModel> Groups { get; }
+    public ReadOnlyCollection<object> PresentationRows { get; }
     public string ApplyStatus { get; private set; } = string.Empty;
     public void Activate()
     {
