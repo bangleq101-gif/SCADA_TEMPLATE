@@ -8,7 +8,11 @@ Milestone 5 — Historian Foundation
 
 Status:
 
-Implemented, stabilized and source-reviewed on `feature/milestone-5-historian-foundation`; pending PR.
+Completed and merged to `main` via PR #5.
+
+Merge commit:
+
+`c16c3235cdd81aecc90d85a80393cb873f4d19dc`
 
 Base commit:
 
