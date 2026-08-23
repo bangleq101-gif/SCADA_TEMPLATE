@@ -2,5 +2,5 @@ namespace Scada.Infrastructure.Persistence;
 
 public static class ProjectDocumentSchema
 {
-    public const int CurrentVersion = 2;
+    public const int CurrentVersion = 3;
 }

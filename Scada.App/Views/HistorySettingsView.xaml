@@ -3,7 +3,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:controls="clr-namespace:Scada.App.Controls">
     <controls:WorkspaceLayout Title="History Settings"
-                              Description="Configure historian profiles and project-local storage. Changes require restart."
+                              Description="Configure history profiles and the selected durable storage provider. Changes require restart."
                               Style="{StaticResource WorkspaceLayoutStyle}">
         <Grid>
             <Grid.RowDefinitions>
@@ -16,35 +16,76 @@
                 <Grid>
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="180" />
+                        <ColumnDefinition Width="Auto" />
                         <ColumnDefinition Width="220" />
                         <ColumnDefinition Width="Auto" />
                         <ColumnDefinition Width="*" />
                     </Grid.ColumnDefinitions>
                     <CheckBox Grid.Column="0" Content="Historian enabled" IsChecked="{Binding Enabled, Mode=TwoWay}" VerticalAlignment="Center" Margin="4" />
-                    <TextBlock Grid.Column="2" Text="Database path" Style="{StaticResource FieldLabelTextStyle}" />
-                    <TextBox Grid.Column="3" Text="{Binding DatabasePath, UpdateSourceTrigger=PropertyChanged}" Margin="4" />
+                    <TextBlock Grid.Column="2" Text="Storage provider" Style="{StaticResource FieldLabelTextStyle}" VerticalAlignment="Center" Margin="4" />
+                    <ComboBox Grid.Column="3" ItemsSource="{Binding StorageProviders}" SelectedItem="{Binding StorageProvider, Mode=TwoWay}" Margin="4" />
+                    <TextBlock Grid.Column="4" Text="SQLite path" Style="{StaticResource FieldLabelTextStyle}" VerticalAlignment="Center" Margin="12,4,4,4" />
+                    <TextBox Grid.Column="5" Text="{Binding DatabasePath, UpdateSourceTrigger=PropertyChanged}" Margin="4" />
                 </Grid>
             </Border>
-            <Expander Grid.Row="1" Header="Advanced historian settings" IsExpanded="False" Margin="0,0,0,12">
+            <Expander Grid.Row="1" Header="InfluxDB 2.x settings and maintenance" IsExpanded="False" IsEnabled="{Binding IsInfluxSelected}" Margin="0,0,0,12">
                 <Border Style="{StaticResource CardBorderStyle}" Padding="8">
-                    <UniformGrid Columns="4">
-                        <StackPanel Margin="4">
-                            <TextBlock Text="Queue capacity" Style="{StaticResource FieldLabelTextStyle}" />
-                            <TextBox Text="{Binding QueueCapacity, UpdateSourceTrigger=PropertyChanged}" />
-                        </StackPanel>
-                        <StackPanel Margin="4">
-                            <TextBlock Text="Batch size" Style="{StaticResource FieldLabelTextStyle}" />
-                            <TextBox Text="{Binding BatchSize, UpdateSourceTrigger=PropertyChanged}" />
-                        </StackPanel>
-                        <StackPanel Margin="4">
-                            <TextBlock Text="Flush interval (ms)" Style="{StaticResource FieldLabelTextStyle}" />
-                            <TextBox Text="{Binding FlushIntervalMilliseconds, UpdateSourceTrigger=PropertyChanged}" />
-                        </StackPanel>
-                        <StackPanel Margin="4">
-                            <TextBlock Text="Shutdown drain (ms)" Style="{StaticResource FieldLabelTextStyle}" />
-                            <TextBox Text="{Binding ShutdownDrainTimeoutMilliseconds, UpdateSourceTrigger=PropertyChanged}" />
-                        </StackPanel>
-                    </UniformGrid>
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition />
+                            <RowDefinition />
+                            <RowDefinition />
+                            <RowDefinition />
+                            <RowDefinition />
+                        </Grid.RowDefinitions>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Row="0" Grid.Column="0" Text="URL" Style="{StaticResource FieldLabelTextStyle}" Margin="4" />
+                        <TextBox Grid.Row="0" Grid.Column="1" Text="{Binding InfluxUrl, UpdateSourceTrigger=PropertyChanged}" Margin="4" />
+                        <TextBlock Grid.Row="0" Grid.Column="2" Text="Organization" Style="{StaticResource FieldLabelTextStyle}" Margin="4" />
+                        <TextBox Grid.Row="0" Grid.Column="3" Text="{Binding InfluxOrganization, UpdateSourceTrigger=PropertyChanged}" Margin="4" />
+                        <TextBlock Grid.Row="0" Grid.Column="4" Text="Bucket" Style="{StaticResource FieldLabelTextStyle}" Margin="4" />
+                        <TextBox Grid.Row="0" Grid.Column="5" Text="{Binding InfluxBucket, UpdateSourceTrigger=PropertyChanged}" Margin="4" />
+                        <TextBlock Grid.Row="1" Grid.Column="0" Text="Measurement" Style="{StaticResource FieldLabelTextStyle}" Margin="4" />
+                        <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding InfluxMeasurement, UpdateSourceTrigger=PropertyChanged}" Margin="4" />
+                        <TextBlock Grid.Row="1" Grid.Column="2" Text="Token reference" Style="{StaticResource FieldLabelTextStyle}" Margin="4" />
+                        <TextBox Grid.Row="1" Grid.Column="3" Text="{Binding InfluxTokenReference, UpdateSourceTrigger=PropertyChanged}" Margin="4" />
+                        <TextBlock Grid.Row="1" Grid.Column="4" Text="Token status" Style="{StaticResource FieldLabelTextStyle}" Margin="4" />
+                        <TextBlock Grid.Row="1" Grid.Column="5" Text="{Binding TokenStatusText}" Style="{StaticResource FieldLabelTextStyle}" Margin="4" />
+                        <TextBlock Grid.Row="2" Grid.Column="0" Text="Retention (s)" Style="{StaticResource FieldLabelTextStyle}" Margin="4" />
+                        <TextBox Grid.Row="2" Grid.Column="1" Text="{Binding RetentionSeconds, UpdateSourceTrigger=PropertyChanged}" Margin="4" />
+                        <TextBlock Grid.Row="2" Grid.Column="2" Text="Buffer path" Style="{StaticResource FieldLabelTextStyle}" Margin="4" />
+                        <TextBox Grid.Row="2" Grid.Column="3" Text="{Binding InfluxBufferPath, UpdateSourceTrigger=PropertyChanged}" Margin="4" />
+                        <TextBlock Grid.Row="2" Grid.Column="4" Text="State" Style="{StaticResource FieldLabelTextStyle}" Margin="4" />
+                        <TextBlock Grid.Row="2" Grid.Column="5" Text="{Binding StoreStateText}" Style="{StaticResource FieldLabelTextStyle}" Margin="4" />
+                        <Expander Grid.Row="3" Grid.Column="0" Grid.ColumnSpan="6" Header="Advanced buffering and timeout settings" Margin="4">
+                            <UniformGrid Columns="4">
+                                <StackPanel Margin="4"><TextBlock Text="Max buffered" Style="{StaticResource FieldLabelTextStyle}" /><TextBox Text="{Binding MaxBufferedSamples, UpdateSourceTrigger=PropertyChanged}" /></StackPanel>
+                                <StackPanel Margin="4"><TextBlock Text="Sync batch" Style="{StaticResource FieldLabelTextStyle}" /><TextBox Text="{Binding SyncBatchSize, UpdateSourceTrigger=PropertyChanged}" /></StackPanel>
+                                <StackPanel Margin="4"><TextBlock Text="Sync interval (ms)" Style="{StaticResource FieldLabelTextStyle}" /><TextBox Text="{Binding SyncIntervalMilliseconds, UpdateSourceTrigger=PropertyChanged}" /></StackPanel>
+                                <StackPanel Margin="4"><TextBlock Text="Health interval (ms)" Style="{StaticResource FieldLabelTextStyle}" /><TextBox Text="{Binding HealthProbeIntervalMilliseconds, UpdateSourceTrigger=PropertyChanged}" /></StackPanel>
+                                <StackPanel Margin="4"><TextBlock Text="Connection timeout" Style="{StaticResource FieldLabelTextStyle}" /><TextBox Text="{Binding ConnectionTimeoutMilliseconds, UpdateSourceTrigger=PropertyChanged}" /></StackPanel>
+                                <StackPanel Margin="4"><TextBlock Text="Write timeout" Style="{StaticResource FieldLabelTextStyle}" /><TextBox Text="{Binding WriteTimeoutMilliseconds, UpdateSourceTrigger=PropertyChanged}" /></StackPanel>
+                                <StackPanel Margin="4"><TextBlock Text="Query timeout" Style="{StaticResource FieldLabelTextStyle}" /><TextBox Text="{Binding QueryTimeoutMilliseconds, UpdateSourceTrigger=PropertyChanged}" /></StackPanel>
+                                <StackPanel Margin="4"><TextBlock Text="Reconnect initial" Style="{StaticResource FieldLabelTextStyle}" /><TextBox Text="{Binding ReconnectInitialDelayMilliseconds, UpdateSourceTrigger=PropertyChanged}" /></StackPanel>
+                                <StackPanel Margin="4"><TextBlock Text="Reconnect maximum" Style="{StaticResource FieldLabelTextStyle}" /><TextBox Text="{Binding ReconnectMaxDelayMilliseconds, UpdateSourceTrigger=PropertyChanged}" /></StackPanel>
+                            </UniformGrid>
+                        </Expander>
+                        <WrapPanel Grid.Row="4" Grid.Column="0" Grid.ColumnSpan="6" Margin="4">
+                            <Button Content="Test connection" Command="{Binding TestConnectionCommand}" Style="{StaticResource SecondaryButtonStyle}" Margin="0,0,6,0" />
+                            <Button Content="Apply retention" Command="{Binding ApplyRetentionCommand}" Style="{StaticResource SecondaryButtonStyle}" Margin="0,0,6,0" />
+                            <Button Content="Clear current buffer" Command="{Binding ClearCurrentBufferCommand}" Style="{StaticResource SecondaryButtonStyle}" Margin="0,0,6,0" />
+                            <TextBox Width="260" Text="{Binding PreviousDestinationFingerprint, UpdateSourceTrigger=PropertyChanged}" ToolTip="Previous destination fingerprint" Margin="0,0,6,0" />
+                            <Button Content="Clear previous buffer" Command="{Binding ClearPreviousBufferCommand}" Style="{StaticResource SecondaryButtonStyle}" />
+                        </WrapPanel>
+                    </Grid>
                 </Border>
             </Expander>
             <DataGrid Grid.Row="2" ItemsSource="{Binding Profiles}" SelectedItem="{Binding SelectedProfile, Mode=TwoWay}" Style="{StaticResource TagManagerDataGridStyle}" Margin="0,0,0,12">
@@ -65,23 +106,23 @@
                 <TextBlock Text="  " />
                 <TextBlock Text="{Binding ValidationSummaryText}" Style="{StaticResource FieldLabelTextStyle}" Margin="8,4,4,4" />
                 <TextBlock Text="{Binding SaveStatusText}" Style="{StaticResource FieldLabelTextStyle}" Margin="8,4,4,4" />
-                <TextBlock Text="{Binding SelectedProfile.RenameValidationMessage}" Style="{StaticResource FieldLabelTextStyle}" Margin="8,4,4,4" />
                 <TextBlock Text="{Binding RuntimeStateText}" Style="{StaticResource FieldLabelTextStyle}" Margin="18,4,4,4" />
-                <TextBlock Text="{Binding StatusText}" Style="{StaticResource FieldLabelTextStyle}" />
-                <TextBlock Text="  Queue: " Style="{StaticResource FieldLabelTextStyle}" />
-                <TextBlock Text="{Binding QueueDepth}" Style="{StaticResource FieldLabelTextStyle}" />
-                <TextBlock Text="  Written: " Style="{StaticResource FieldLabelTextStyle}" />
-                <TextBlock Text="{Binding WrittenSamples}" Style="{StaticResource FieldLabelTextStyle}" />
+                <TextBlock Text="  Store: " Style="{StaticResource FieldLabelTextStyle}" />
+                <TextBlock Text="{Binding StoreStateText}" Style="{StaticResource FieldLabelTextStyle}" />
+                <TextBlock Text="  Pending: " Style="{StaticResource FieldLabelTextStyle}" />
+                <TextBlock Text="{Binding PendingSamples}" Style="{StaticResource FieldLabelTextStyle}" />
+                <TextBlock Text="  Orphaned: " Style="{StaticResource FieldLabelTextStyle}" />
+                <TextBlock Text="{Binding OrphanedDestinationSamples}" Style="{StaticResource FieldLabelTextStyle}" />
                 <TextBlock Text="  Rejected: " Style="{StaticResource FieldLabelTextStyle}" />
-                <TextBlock Text="{Binding RejectedSamples}" Style="{StaticResource FieldLabelTextStyle}" />
-                <TextBlock Text="  Dropped: " Style="{StaticResource FieldLabelTextStyle}" />
-                <TextBlock Text="{Binding DroppedSamples}" Style="{StaticResource FieldLabelTextStyle}" />
-                <TextBlock Text="  Abandoned: " Style="{StaticResource FieldLabelTextStyle}" />
-                <TextBlock Text="{Binding AbandonedSamples}" Style="{StaticResource FieldLabelTextStyle}" />
-                <TextBlock Text="  Failures: " Style="{StaticResource FieldLabelTextStyle}" />
-                <TextBlock Text="{Binding WriteFailures}" Style="{StaticResource FieldLabelTextStyle}" />
-                <TextBlock Text="  Last write: " Style="{StaticResource FieldLabelTextStyle}" />
-                <TextBlock Text="{Binding LastWriteText}" Style="{StaticResource FieldLabelTextStyle}" />
+                <TextBlock Text="{Binding RemoteRejectedSamples}" Style="{StaticResource FieldLabelTextStyle}" />
+                <TextBlock Text="  Expired: " Style="{StaticResource FieldLabelTextStyle}" />
+                <TextBlock Text="{Binding ExpiredSamples}" Style="{StaticResource FieldLabelTextStyle}" />
+                <TextBlock Text="  Buffer full: " Style="{StaticResource FieldLabelTextStyle}" />
+                <TextBlock Text="{Binding BufferFullRejections}" Style="{StaticResource FieldLabelTextStyle}" />
+                <TextBlock Text="  Sync failures: " Style="{StaticResource FieldLabelTextStyle}" />
+                <TextBlock Text="{Binding SyncFailures}" Style="{StaticResource FieldLabelTextStyle}" />
+                <TextBlock Text="  Last remote success: " Style="{StaticResource FieldLabelTextStyle}" />
+                <TextBlock Text="{Binding LastRemoteSuccessText}" Style="{StaticResource FieldLabelTextStyle}" />
                 <TextBlock Text="  Restart required: " Style="{StaticResource FieldLabelTextStyle}" />
                 <TextBlock Text="{Binding RestartRequired}" Style="{StaticResource FieldLabelTextStyle}" />
                 <TextBlock Text="  Error: " Style="{StaticResource FieldLabelTextStyle}" />

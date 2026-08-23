@@ -9,6 +9,126 @@ namespace Scada.Core.Tests;
 public sealed class HistoryConfigurationTests
 {
     [Fact]
+    public void DefaultHistorianStorageProviderIsSqlite()
+    {
+        var options = new RuntimeOptions();
+
+        Assert.Equal(HistoryStorageProvider.SQLite, options.Historian.StorageProvider);
+        Assert.Equal("Data/history.db", options.Historian.DatabasePath);
+        Assert.Equal("Data/influx-buffer.db", options.Historian.Influx.BufferPath);
+    }
+
+    [Fact]
+    public void InfluxConfigurationRequiresStaticFieldsButNotServerAvailability()
+    {
+        var options = CreateOptions();
+        options.Historian.StorageProvider = HistoryStorageProvider.InfluxDb2;
+        options.Historian.Influx.Organization = "org";
+        options.Historian.Influx.Bucket = "bucket";
+        options.Historian.Influx.TokenReference = "env:SCADA_INFLUX_TOKEN";
+
+        var issues = RuntimeOptionsValidation.CollectIssues(options);
+
+        Assert.DoesNotContain(issues, issue => issue.Code.StartsWith("INFLUX_", StringComparison.Ordinal));
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(3599)]
+    public void InfluxFiniteRetentionBelowOneHourIsBlocking(long retentionSeconds)
+    {
+        var options = CreateOptions();
+        options.Historian.StorageProvider = HistoryStorageProvider.InfluxDb2;
+        options.Historian.Influx.Organization = "org";
+        options.Historian.Influx.Bucket = "bucket";
+        options.Historian.Influx.RetentionSeconds = retentionSeconds;
+
+        var issues = RuntimeOptionsValidation.CollectIssues(options);
+
+        Assert.Contains(issues, issue => issue.Code == "INFLUX_RETENTION_INVALID" && issue.IsBlocking);
+    }
+
+    [Fact]
+    public void InfluxInfiniteAndOneHourRetentionAreValid()
+    {
+        foreach (var retentionSeconds in new long[] { 0, 3600 })
+        {
+            var options = CreateOptions();
+            options.Historian.StorageProvider = HistoryStorageProvider.InfluxDb2;
+            options.Historian.Influx.Organization = "org";
+            options.Historian.Influx.Bucket = "bucket";
+            options.Historian.Influx.RetentionSeconds = retentionSeconds;
+
+            Assert.DoesNotContain(
+                RuntimeOptionsValidation.CollectIssues(options),
+                issue => issue.Code == "INFLUX_RETENTION_INVALID");
+        }
+    }
+
+    [Fact]
+    public void InfluxBufferPathRejectsAbsoluteAndTraversalPaths()
+    {
+        var options = CreateOptions();
+        options.Historian.StorageProvider = HistoryStorageProvider.InfluxDb2;
+        options.Historian.Influx.Organization = "org";
+        options.Historian.Influx.Bucket = "bucket";
+        options.Historian.Influx.BufferPath = "..\\outside.db";
+
+        var issues = RuntimeOptionsValidation.CollectIssues(options);
+
+        Assert.Contains(issues, issue => issue.Code == "INFLUX_BUFFER_PATH_INVALID");
+    }
+
+    [Fact]
+    public void InfluxValidationRejectsCredentialsAndPlaintextTokenReferences()
+    {
+        var options = CreateOptions();
+        options.Historian.StorageProvider = HistoryStorageProvider.InfluxDb2;
+        options.Historian.Influx.Url = "https://user:password@example.invalid:8086";
+        options.Historian.Influx.Organization = "org";
+        options.Historian.Influx.Bucket = "bucket";
+        options.Historian.Influx.TokenReference = "plain-token";
+
+        var issues = RuntimeOptionsValidation.CollectIssues(options);
+
+        Assert.Contains(issues, issue => issue.Code == "INFLUX_URL_INVALID");
+        Assert.Contains(issues, issue => issue.Code == "INFLUX_TOKEN_REFERENCE_INVALID");
+    }
+
+    [Fact]
+    public void DisabledInfluxHistorianDoesNotRequireRemoteConfiguration()
+    {
+        var options = CreateOptions();
+        options.Historian.Enabled = false;
+        options.Historian.StorageProvider = HistoryStorageProvider.InfluxDb2;
+        options.Historian.Influx.Organization = "org";
+        options.Historian.Influx.Bucket = "bucket";
+        options.Historian.Influx.TokenReference = "env:SCADA_INFLUX_TOKEN";
+
+        Assert.DoesNotContain(
+            RuntimeOptionsValidation.CollectIssues(options),
+            issue => issue.Code.StartsWith("INFLUX_", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void InfluxValidationRejectsInvalidCapacityBatchAndReconnectRange()
+    {
+        var options = CreateOptions();
+        options.Historian.StorageProvider = HistoryStorageProvider.InfluxDb2;
+        options.Historian.Influx.Organization = "org";
+        options.Historian.Influx.Bucket = "bucket";
+        options.Historian.Influx.MaxBufferedSamples = 2;
+        options.Historian.Influx.SyncBatchSize = 3;
+        options.Historian.Influx.ReconnectInitialDelayMilliseconds = 500;
+        options.Historian.Influx.ReconnectMaxDelayMilliseconds = 100;
+
+        var issues = RuntimeOptionsValidation.CollectIssues(options);
+
+        Assert.Contains(issues, issue => issue.Code == "INFLUX_SYNC_BATCH_INVALID");
+        Assert.Contains(issues, issue => issue.Code == "INFLUX_RECONNECT_RANGE_INVALID");
+    }
+
+    [Fact]
     public void DefaultProfilesHaveTheApprovedCatalog()
     {
         var options = new RuntimeOptions();

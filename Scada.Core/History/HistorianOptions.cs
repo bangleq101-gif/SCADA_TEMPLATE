@@ -4,7 +4,11 @@ public sealed class HistorianOptions
 {
     public bool Enabled { get; set; }
 
+    public HistoryStorageProvider StorageProvider { get; set; } = HistoryStorageProvider.SQLite;
+
     public string DatabasePath { get; set; } = "Data/history.db";
+
+    public InfluxDbOptions Influx { get; set; } = new();
 
     public int QueueCapacity { get; set; } = 16_384;
 

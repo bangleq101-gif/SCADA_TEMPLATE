@@ -10,6 +10,7 @@ using Scada.Core.History;
 using Scada.Drivers.Simulator;
 using Scada.Infrastructure.Configuration;
 using Scada.Infrastructure.History;
+using Scada.Infrastructure.History.Influx;
 using Scada.Infrastructure.Persistence;
 using Scada.Runtime.Drivers;
 using Scada.Runtime.Engine;
@@ -61,9 +62,27 @@ public partial class App : Application
             builder.Services.AddSingleton<TagEngine>();
             builder.Services.AddSingleton<ScadaRuntime>();
             builder.Services.AddSingleton<DeviceManager>();
-            builder.Services.AddSingleton<IHistoryStore>(_ => new SqliteHistoryStore(
-                projectPath,
-                startupOptions.Historian.DatabasePath));
+            if (startupOptions.Historian.StorageProvider == HistoryStorageProvider.InfluxDb2)
+            {
+                builder.Services.AddSingleton<BufferedInfluxHistoryStore>(services =>
+                    new BufferedInfluxHistoryStore(
+                        projectPath,
+                        startupOptions.Historian,
+                        services.GetRequiredService<Microsoft.Extensions.Logging.ILogger<BufferedInfluxHistoryStore>>(),
+                        services.GetRequiredService<TimeProvider>()));
+                builder.Services.AddSingleton<IHistoryStore>(services =>
+                    services.GetRequiredService<BufferedInfluxHistoryStore>());
+                builder.Services.AddSingleton<IHistoryStoreDiagnostics>(services =>
+                    services.GetRequiredService<BufferedInfluxHistoryStore>());
+                builder.Services.AddSingleton<IHistoryStoreMaintenance>(services =>
+                    services.GetRequiredService<BufferedInfluxHistoryStore>());
+            }
+            else
+            {
+                builder.Services.AddSingleton<IHistoryStore>(_ => new SqliteHistoryStore(
+                    projectPath,
+                    startupOptions.Historian.DatabasePath));
+            }
             builder.Services.AddSingleton<HistorianRuntimeService>();
             builder.Services.AddSingleton<IHostedService>(services =>
                 services.GetRequiredService<HistorianRuntimeService>());
@@ -77,6 +96,9 @@ public partial class App : Application
             builder.Services.AddSingleton<IClipboardAdapter, WpfClipboardAdapter>();
             builder.Services.AddSingleton<ITagImportDecisionService, WpfTagImportDecisionService>();
             builder.Services.AddSingleton<IDeleteConfirmation, WpfDeleteConfirmation>();
+            builder.Services.AddSingleton<IHistoryBufferConfirmation, WpfHistoryBufferConfirmation>();
+            builder.Services.AddSingleton<IHistoryConnectionTester, InfluxHistoryConnectionTester>();
+            builder.Services.AddSingleton<IHistoryRetentionManager, InfluxHistoryRetentionManager>();
             builder.Services.AddSingleton<OperationViewModel>();
             builder.Services.AddSingleton<MachineSettingsViewModel>();
             builder.Services.AddSingleton<MonitoringViewModel>();

@@ -191,7 +191,9 @@ internal static class ProjectSnapshotCloner
             Historian = new HistorianOptions
             {
                 Enabled = source.Historian.Enabled,
+                StorageProvider = source.Historian.StorageProvider,
                 DatabasePath = source.Historian.DatabasePath,
+                Influx = CloneInfluxOptions(source.Historian.Influx),
                 QueueCapacity = source.Historian.QueueCapacity,
                 BatchSize = source.Historian.BatchSize,
                 FlushIntervalMilliseconds = source.Historian.FlushIntervalMilliseconds,
@@ -242,6 +244,26 @@ internal static class ProjectSnapshotCloner
             }).ToList()
         };
     }
+
+    private static InfluxDbOptions CloneInfluxOptions(InfluxDbOptions source) => new()
+    {
+        Url = source.Url,
+        Organization = source.Organization,
+        Bucket = source.Bucket,
+        Measurement = source.Measurement,
+        TokenReference = source.TokenReference,
+        BufferPath = source.BufferPath,
+        MaxBufferedSamples = source.MaxBufferedSamples,
+        SyncBatchSize = source.SyncBatchSize,
+        SyncIntervalMilliseconds = source.SyncIntervalMilliseconds,
+        HealthProbeIntervalMilliseconds = source.HealthProbeIntervalMilliseconds,
+        ConnectionTimeoutMilliseconds = source.ConnectionTimeoutMilliseconds,
+        WriteTimeoutMilliseconds = source.WriteTimeoutMilliseconds,
+        QueryTimeoutMilliseconds = source.QueryTimeoutMilliseconds,
+        ReconnectInitialDelayMilliseconds = source.ReconnectInitialDelayMilliseconds,
+        ReconnectMaxDelayMilliseconds = source.ReconnectMaxDelayMilliseconds,
+        RetentionSeconds = source.RetentionSeconds
+    };
 }
 
 internal static class ProjectSnapshotComparer
@@ -256,7 +278,9 @@ internal static class ProjectSnapshotComparer
             left.Polling.MaxReconnectDelayMilliseconds != right.Polling.MaxReconnectDelayMilliseconds ||
             left.Polling.ShutdownTimeoutMilliseconds != right.Polling.ShutdownTimeoutMilliseconds ||
             left.Historian.Enabled != right.Historian.Enabled ||
+            left.Historian.StorageProvider != right.Historian.StorageProvider ||
             !string.Equals(left.Historian.DatabasePath, right.Historian.DatabasePath, StringComparison.Ordinal) ||
+            !InfluxOptionsEqual(left.Historian.Influx, right.Historian.Influx) ||
             left.Historian.QueueCapacity != right.Historian.QueueCapacity ||
             left.Historian.BatchSize != right.Historian.BatchSize ||
             left.Historian.FlushIntervalMilliseconds != right.Historian.FlushIntervalMilliseconds ||
@@ -335,6 +359,31 @@ internal static class ProjectSnapshotComparer
         }
 
         return true;
+    }
+
+    private static bool InfluxOptionsEqual(InfluxDbOptions? left, InfluxDbOptions? right)
+    {
+        if (left is null || right is null)
+        {
+            return left is null && right is null;
+        }
+
+        return string.Equals(left.Url, right.Url, StringComparison.Ordinal) &&
+               string.Equals(left.Organization, right.Organization, StringComparison.Ordinal) &&
+               string.Equals(left.Bucket, right.Bucket, StringComparison.Ordinal) &&
+               string.Equals(left.Measurement, right.Measurement, StringComparison.Ordinal) &&
+               string.Equals(left.TokenReference, right.TokenReference, StringComparison.Ordinal) &&
+               string.Equals(left.BufferPath, right.BufferPath, StringComparison.Ordinal) &&
+               left.MaxBufferedSamples == right.MaxBufferedSamples &&
+               left.SyncBatchSize == right.SyncBatchSize &&
+               left.SyncIntervalMilliseconds == right.SyncIntervalMilliseconds &&
+               left.HealthProbeIntervalMilliseconds == right.HealthProbeIntervalMilliseconds &&
+               left.ConnectionTimeoutMilliseconds == right.ConnectionTimeoutMilliseconds &&
+               left.WriteTimeoutMilliseconds == right.WriteTimeoutMilliseconds &&
+               left.QueryTimeoutMilliseconds == right.QueryTimeoutMilliseconds &&
+               left.ReconnectInitialDelayMilliseconds == right.ReconnectInitialDelayMilliseconds &&
+               left.ReconnectMaxDelayMilliseconds == right.ReconnectMaxDelayMilliseconds &&
+               left.RetentionSeconds == right.RetentionSeconds;
     }
 
     private static bool DictionaryEquals(

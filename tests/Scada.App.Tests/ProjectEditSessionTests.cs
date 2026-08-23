@@ -28,6 +28,27 @@ public sealed class ProjectEditSessionTests
     }
 
     [Fact]
+    public void InfluxSettingsAreDeepClonedAndComparedAcrossSnapshots()
+    {
+        var options = CreateOptions();
+        options.Historian.StorageProvider = Scada.Core.History.HistoryStorageProvider.InfluxDb2;
+        options.Historian.Influx.Organization = "org";
+        options.Historian.Influx.Bucket = "bucket";
+        options.Historian.Influx.MaxBufferedSamples = 1234;
+        var session = CreateSession(options);
+
+        session.WorkingProject.Historian.Influx.Bucket = "changed";
+        session.WorkingProject.Historian.Influx.MaxBufferedSamples = 4321;
+        session.MarkChanged();
+
+        Assert.Equal("bucket", session.StartupProject.Historian.Influx.Bucket);
+        Assert.Equal("bucket", session.SavedProject.Historian.Influx.Bucket);
+        Assert.Equal(1234, session.StartupProject.Historian.Influx.MaxBufferedSamples);
+        Assert.True(session.IsDirty);
+        Assert.True(session.RestartRequired);
+    }
+
+    [Fact]
     public void SaveCreatesIndependentSavedSnapshotWithoutMutatingStartupRuntimeOptions()
     {
         var directory = CreateTempDirectory();
