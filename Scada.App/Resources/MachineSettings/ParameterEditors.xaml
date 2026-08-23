@@ -63,7 +63,7 @@
     <DataTemplate x:Key="ParameterGroupTemplate">
         <StackPanel Margin="0,0,0,12" AutomationProperties.Name="{Binding Name}">
             <TextBlock Text="{Binding Name}" FontSize="16" FontWeight="SemiBold" Foreground="#162536" Margin="0,0,0,6" />
-            <ItemsControl ItemsSource="{Binding Editors}" ItemTemplate="{StaticResource ParameterEditorTemplate}" />
+            <ListBox ItemsSource="{Binding Editors}" ItemTemplate="{StaticResource ParameterEditorTemplate}" BorderThickness="0" Background="Transparent" ScrollViewer.CanContentScroll="True" VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling" />
         </StackPanel>
     </DataTemplate>
 </ResourceDictionary>

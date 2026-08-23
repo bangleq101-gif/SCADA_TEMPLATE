@@ -160,6 +160,37 @@ public sealed class MachineSettingsTests
         Assert.Equal(0, cache.ActiveSubscriptionCount);
     }
 
+    [Fact]
+    public void BooleanRevertRaisesBooleanValueAndRestoresPersistedDraft()
+    {
+        var definition = new MachineParameterDefinition { Id = "enabled", Name = "Enabled", ValueType = MachineParameterValueType.Boolean, Value = "false" };
+        var editor = new ParameterEditorViewModel(definition);
+        var notified = false;
+        editor.PropertyChanged += (_, args) => notified |= args.PropertyName == nameof(ParameterEditorViewModel.BooleanValue);
+        editor.BooleanValue = true;
+
+        editor.ResetDraft();
+
+        Assert.False(editor.BooleanValue);
+        Assert.True(notified);
+    }
+
+    [Fact]
+    public void PageGroupsAreDeterministicAndHiddenInvalidPagesCanBeExposed()
+    {
+        var options = Options();
+        options.MachineSettings.Pages[0].Group = "Drive";
+        options.MachineSettings.Pages.Add(new MachineSettingsPageDefinition { Id = "hidden", Title = "Hidden", Group = "Safety", IsVisible = false, Parameters = [new MachineParameterDefinition { Id = "bad", Name = "Bad", ValueType = MachineParameterValueType.Integer, Value = "invalid" }] });
+        var viewModel = new MachineSettingsViewModel(new ProjectEditSession(options, null, null), new TestTagCache(), new ImmediateDispatcher());
+
+        Assert.Single(viewModel.PageGroups);
+        Assert.Contains(viewModel.ValidationIssues, issue => issue.IsBlocking && issue.ObjectId == "hidden/bad");
+        viewModel.ShowHiddenConfiguration = true;
+
+        Assert.Equal(["Drive", "Safety"], viewModel.PageGroups.Select(group => group.Name));
+        Assert.Contains(viewModel.Pages, page => page.Id == "hidden");
+    }
+
     private static RuntimeOptions Options() => new() { MachineSettings = new MachineSettingsOptions { Pages = [new MachineSettingsPageDefinition { Id = "machine", Title = "Machine", Parameters = [new MachineParameterDefinition { Id = "one", Name = "One", ValueType = MachineParameterValueType.Integer, Value = "10" }, new MachineParameterDefinition { Id = "two", Name = "Two", ValueType = MachineParameterValueType.Integer, Value = "20" }] }] } };
     private static RuntimeOptions LiveOptions() => new() { Tags = [new TagDefinition { Id = "live", Name = "Live", DeviceId = "SIM", Address = "X", Enabled = true }], MachineSettings = new MachineSettingsOptions { Pages = [new MachineSettingsPageDefinition { Id = "a", Title = "A", Parameters = [new MachineParameterDefinition { Id = "a1", Name = "A1", ValueType = MachineParameterValueType.Integer, Value = "1", LiveTagId = "live" }] }] } };
     private sealed class ImmediateDispatcher : IMachineSettingsDispatcher { public void Post(Action action) => action(); }
