@@ -6,6 +6,9 @@
             <ResourceDictionary.MergedDictionaries>
                 <ResourceDictionary Source="Resources/Colors.xaml" />
                 <ResourceDictionary Source="Resources/Controls.xaml" />
+                <ResourceDictionary Source="Resources/Hmi/HmiColors.xaml" />
+                <ResourceDictionary Source="Resources/Hmi/HmiControls.xaml" />
+                <ResourceDictionary Source="Resources/Hmi/HmiFaceplates.xaml" />
             </ResourceDictionary.MergedDictionaries>
         </ResourceDictionary>
     </Application.Resources>

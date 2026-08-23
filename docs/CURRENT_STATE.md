@@ -18,9 +18,13 @@ Merge commit:
 
 Milestone 7:
 
-Implemented on `feature/milestone-7-mqtt`; PR #9 remains open and pending independent re-review after final MQTT publisher stabilization.
+Completed and merged to `main` via PR #9.
 
 Current M7 scope is publisher-only: MQTT consumes the central TagCache, applies bounded latest-state coalescing and publishes through an Infrastructure-only MQTTnet transport. MQTT Write, command subscriptions and PLC-write paths are not implemented.
+
+Milestone 8:
+
+Implemented on `feature/milestone-8-hmi-controls`; pending verification and independent review/PR. It adds App-layer reusable read-only HMI controls and faceplate foundations without changing TagCache, polling, PLC reads or write paths.
 
 ## Implemented in Milestone 1
 
