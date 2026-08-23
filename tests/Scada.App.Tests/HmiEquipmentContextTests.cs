@@ -81,6 +81,86 @@ public sealed class HmiEquipmentContextTests
         Assert.Equal(0, cache.ActiveSubscriptionCount);
     }
 
+    [Theory]
+    [InlineData(-10d, 0d)]
+    [InlineData(25d, 0.25d)]
+    [InlineData(150d, 1d)]
+    public void TankLevelProducesAClampedFillFraction(double level, double expectedFraction)
+    {
+        var cache = new TestTagCache();
+        var context = new HmiEquipmentContext(cache, HmiEquipmentKind.Tank, "T1", "Tank 1", new Dictionary<HmiTagRole, string> { [HmiTagRole.Level] = "level" });
+
+        context.Activate();
+        cache.Publish(Value("level", level));
+
+        Assert.Equal(expectedFraction, context.TankFillFraction, 3);
+    }
+
+    [Fact]
+    public void TankFillFractionTracksRuntimeLevelUpdates()
+    {
+        var cache = new TestTagCache();
+        var context = new HmiEquipmentContext(cache, HmiEquipmentKind.Tank, "T1", "Tank 1", new Dictionary<HmiTagRole, string> { [HmiTagRole.Level] = "level" });
+
+        context.Activate();
+        cache.Publish(Value("level", 20d));
+        Assert.Equal(0.2d, context.TankFillFraction, 3);
+
+        cache.Publish(new TagValue("level", 80d, TagQuality.Good, DateTimeOffset.UnixEpoch, 2));
+        Assert.Equal(0.8d, context.TankFillFraction, 3);
+    }
+
+    [Theory]
+    [InlineData(HmiEquipmentKind.Motor, FaceplateTemplateSelector.MotorTemplateKey)]
+    [InlineData(HmiEquipmentKind.Pump, FaceplateTemplateSelector.PumpTemplateKey)]
+    [InlineData(HmiEquipmentKind.Valve, FaceplateTemplateSelector.ValveTemplateKey)]
+    [InlineData(HmiEquipmentKind.Tank, FaceplateTemplateSelector.AnalogTemplateKey)]
+    [InlineData(HmiEquipmentKind.Indicator, FaceplateTemplateSelector.AnalogTemplateKey)]
+    [InlineData(HmiEquipmentKind.Pipe, FaceplateTemplateSelector.AnalogTemplateKey)]
+    [InlineData(HmiEquipmentKind.Conveyor, FaceplateTemplateSelector.AnalogTemplateKey)]
+    public void FaceplateTemplateSelectorUsesTheEquipmentKindContract(HmiEquipmentKind kind, string expectedKey)
+    {
+        Assert.Equal(expectedKey, FaceplateTemplateSelector.GetTemplateKey(kind));
+    }
+
+    [Fact]
+    public async Task ConcurrentLifecycleCallsLeaveNoOwnedSubscriptions()
+    {
+        var cache = new TestTagCache();
+        var context = Context(cache, "M1");
+
+        await Task.WhenAll(Enumerable.Range(0, 100).Select(index => Task.Run(() =>
+        {
+            if (index % 3 == 0) context.Activate();
+            else if (index % 3 == 1) context.Deactivate();
+            else context.Dispose();
+        })));
+
+        context.Deactivate();
+        context.Dispose();
+        Assert.Equal(0, cache.ActiveSubscriptionCount);
+    }
+
+    [Fact]
+    public async Task DeactivateDuringSubscriptionAcquisitionDisposesTheUnownedSubscription()
+    {
+        var cache = new TestTagCache();
+        using var subscribed = new ManualResetEventSlim();
+        using var releaseSubscribe = new ManualResetEventSlim();
+        cache.SubscribeHook = () => { subscribed.Set(); releaseSubscribe.Wait(); };
+        var context = Context(cache, "M1");
+
+        var activation = Task.Run(context.Activate);
+        Assert.True(subscribed.Wait(TimeSpan.FromSeconds(5)));
+        context.Deactivate();
+        context.Dispose();
+        releaseSubscribe.Set();
+        await activation;
+
+        Assert.Equal(0, cache.ActiveSubscriptionCount);
+        Assert.Equal(1, cache.DisposedSubscriptionCount);
+    }
+
     private static HmiEquipmentContext Context(TestTagCache cache, string id) => new(cache, HmiEquipmentKind.Motor, id, id, new Dictionary<HmiTagRole, string> { [HmiTagRole.Run] = id });
     private static TagValue Value(string id, object value, TagQuality quality = TagQuality.Good) => new(id, value, quality, DateTimeOffset.UnixEpoch, 1);
     private sealed class QueuedDispatcher : IHmiDispatcher { private readonly Queue<Action> _actions = []; public void Post(Action action) => _actions.Enqueue(action); public void Flush() { while (_actions.TryDequeue(out var action)) action(); } }

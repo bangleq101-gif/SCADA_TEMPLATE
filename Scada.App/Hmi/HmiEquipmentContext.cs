@@ -51,6 +51,9 @@ public sealed class HmiEquipmentContext : INotifyPropertyChanged, IDisposable
     public object? DisplayValue => GetValue(Kind == HmiEquipmentKind.Tank ? HmiTagRole.Level : HmiTagRole.Value)?.Value;
     public TagQuality? DisplayQuality => GetValue(Kind == HmiEquipmentKind.Tank ? HmiTagRole.Level : HmiTagRole.Value)?.Quality;
     public DateTimeOffset? DisplayTimestamp => GetValue(Kind == HmiEquipmentKind.Tank ? HmiTagRole.Level : HmiTagRole.Value)?.Timestamp;
+    public double TankFillFraction => Kind == HmiEquipmentKind.Tank && TryGetNumeric(GetValue(HmiTagRole.Level)?.Value, out var level)
+        ? Math.Clamp(level / 100d, 0d, 1d)
+        : 0d;
 
     public void Activate()
     {
@@ -89,7 +92,18 @@ public sealed class HmiEquipmentContext : INotifyPropertyChanged, IDisposable
     private void Reevaluate()
     {
         State = HmiStateEvaluator.Evaluate(Kind, _tags, _values);
-        OnPropertyChanged(nameof(DisplayValue)); OnPropertyChanged(nameof(DisplayQuality)); OnPropertyChanged(nameof(DisplayTimestamp));
+        OnPropertyChanged(nameof(DisplayValue)); OnPropertyChanged(nameof(DisplayQuality)); OnPropertyChanged(nameof(DisplayTimestamp)); OnPropertyChanged(nameof(TankFillFraction));
+    }
+    private static bool TryGetNumeric(object? value, out double result)
+    {
+        if (value is byte or short or int or long or float or double or decimal)
+        {
+            result = Convert.ToDouble(value, System.Globalization.CultureInfo.InvariantCulture);
+            return double.IsFinite(result);
+        }
+
+        result = 0d;
+        return false;
     }
     private void OnPropertyChanged([CallerMemberName] string? name = null) => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
 }
