@@ -13,18 +13,46 @@ public static class ProjectDocumentMigrator
             return document;
         }
 
-        if (document.SchemaVersion != 1)
+        while (document.SchemaVersion < ProjectDocumentSchema.CurrentVersion)
         {
-            throw new ProjectDocumentException($"Project schema version {document.SchemaVersion} cannot be migrated.");
+            switch (document.SchemaVersion)
+            {
+                case 1:
+                    MigrateV1ToV2(document);
+                    break;
+                case 2:
+                    MigrateV2ToV3(document);
+                    break;
+                default:
+                    throw new ProjectDocumentException(
+                        $"Project schema version {document.SchemaVersion} cannot be migrated.");
+            }
         }
 
+        return document;
+    }
+
+    private static void MigrateV1ToV2(ProjectDocument document)
+    {
+        EnsureScada(document);
+        document.Scada!.Historian ??= new HistorianOptions();
+        document.SchemaVersion = 2;
+    }
+
+    private static void MigrateV2ToV3(ProjectDocument document)
+    {
+        EnsureScada(document);
+        document.Scada!.Historian ??= new HistorianOptions();
+        document.Scada.Historian.StorageProvider = HistoryStorageProvider.SQLite;
+        document.Scada.Historian.Influx ??= new InfluxDbOptions();
+        document.SchemaVersion = 3;
+    }
+
+    private static void EnsureScada(ProjectDocument document)
+    {
         if (document.Scada is null)
         {
             throw new ProjectDocumentException("The project document must contain a Scada configuration.");
         }
-
-        document.Scada.Historian ??= new HistorianOptions();
-        document.SchemaVersion = ProjectDocumentSchema.CurrentVersion;
-        return document;
     }
 }

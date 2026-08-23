@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Scada.Core.Configuration;
 using Scada.Core.Devices;
+using Scada.Core.History;
 using Scada.Core.Tags;
 using Scada.Infrastructure.Configuration;
 using Scada.Infrastructure.Persistence;
@@ -100,7 +101,7 @@ public sealed class ProjectPersistenceTests
     [Theory]
     [InlineData(0)]
     [InlineData(-1)]
-    [InlineData(3)]
+    [InlineData(4)]
     public void UnsupportedProjectSchemaVersionsAreRejected(int schemaVersion)
     {
         AssertSchemaRejected($"{{\"SchemaVersion\":{schemaVersion},\"Scada\":{{}}}}", "schema");
@@ -113,7 +114,7 @@ public sealed class ProjectPersistenceTests
     }
 
     [Fact]
-    public void FirstSaveCreatesVersionTwoDocument()
+    public void FirstSaveCreatesCurrentVersionDocument()
     {
         var directory = CreateTempDirectory();
         try
@@ -124,6 +125,63 @@ public sealed class ProjectPersistenceTests
             var text = File.ReadAllText(Path.Combine(directory, "project.json"));
             Assert.Contains("SchemaVersion", text, StringComparison.Ordinal);
             Assert.Equal(ProjectDocumentSchema.CurrentVersion, store.Load()!.SchemaVersion);
+        }
+        finally
+        {
+            DeleteDirectory(directory);
+        }
+    }
+
+    [Fact]
+    public void LoadingV2MigratesToV3WithoutRewritingTheSourceFile()
+    {
+        var directory = CreateTempDirectory();
+        try
+        {
+            var path = Path.Combine(directory, "project.json");
+            const string original = "{\"SchemaVersion\":2,\"Scada\":{\"RuntimeId\":\"Runtime02\",\"Historian\":{\"Enabled\":true,\"DatabasePath\":\"Data/custom.db\"},\"Devices\":[],\"Tags\":[]}}";
+            File.WriteAllText(path, original);
+            var store = new ProjectConfigurationStore(new ProjectPath(path));
+
+            var loaded = store.Load();
+
+            Assert.NotNull(loaded);
+            Assert.Equal(3, loaded!.SchemaVersion);
+            Assert.Equal("Runtime02", loaded.Scada!.RuntimeId);
+            Assert.True(loaded.Scada.Historian.Enabled);
+            Assert.Equal("Data/custom.db", loaded.Scada.Historian.DatabasePath);
+            Assert.Equal(HistoryStorageProvider.SQLite, loaded.Scada.Historian.StorageProvider);
+            Assert.Equal("Data/influx-buffer.db", loaded.Scada.Historian.Influx.BufferPath);
+            Assert.Equal(original, File.ReadAllText(path));
+        }
+        finally
+        {
+            DeleteDirectory(directory);
+        }
+    }
+
+    [Fact]
+    public void LoadingV1PerformsV1ToV2ThenV2ToV3AndSaveWritesV3()
+    {
+        var directory = CreateTempDirectory();
+        try
+        {
+            var path = Path.Combine(directory, "project.json");
+            const string original = "{\"SchemaVersion\":1,\"Scada\":{\"RuntimeId\":\"Runtime01\",\"Historian\":{\"Enabled\":true,\"DatabasePath\":\"Data/v1.db\"},\"Devices\":[],\"Tags\":[]}}";
+            File.WriteAllText(path, original);
+            var store = new ProjectConfigurationStore(new ProjectPath(path));
+
+            var loaded = store.Load()!;
+
+            Assert.Equal(3, loaded.SchemaVersion);
+            Assert.True(loaded.Scada!.Historian.Enabled);
+            Assert.Equal("Data/v1.db", loaded.Scada.Historian.DatabasePath);
+            Assert.Equal(HistoryStorageProvider.SQLite, loaded.Scada.Historian.StorageProvider);
+            Assert.Equal(original, File.ReadAllText(path));
+
+            store.Save(loaded);
+
+            Assert.Contains("\"SchemaVersion\": 3", File.ReadAllText(path), StringComparison.Ordinal);
         }
         finally
         {

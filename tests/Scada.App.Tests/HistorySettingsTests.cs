@@ -97,6 +97,32 @@ public sealed class HistorySettingsTests
     }
 
     [Fact]
+    public void InfluxSettingsExposeProviderAndNeverExposeTokenContents()
+    {
+        var options = new RuntimeOptions();
+        options.Historian.StorageProvider = HistoryStorageProvider.InfluxDb2;
+        options.Historian.Influx.TokenReference = "env:SCADA_M6_TEST_TOKEN";
+        Environment.SetEnvironmentVariable("SCADA_M6_TEST_TOKEN", "do-not-display-this-token");
+        try
+        {
+            var viewModel = new HistorySettingsViewModel(
+                new ProjectEditSession(options, null, null),
+                CreateHistorian(options));
+
+            viewModel.RefreshStatus();
+
+            Assert.Equal(HistoryStorageProvider.InfluxDb2, viewModel.StorageProvider);
+            Assert.Equal("Token configured", viewModel.TokenStatusText);
+            Assert.DoesNotContain("do-not-display-this-token", viewModel.TokenStatusText, StringComparison.Ordinal);
+            Assert.DoesNotContain("do-not-display-this-token", viewModel.InfluxTokenReference, StringComparison.Ordinal);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("SCADA_M6_TEST_TOKEN", null);
+        }
+    }
+
+    [Fact]
     public async Task HistoryRouteUsesTheSameHistorianServiceInstanceAsTheSettingsViewModel()
     {
         var options = new RuntimeOptions();

@@ -22,7 +22,7 @@
 ## Tag Manager rules
 
 - Use an explicit absolute project path. Do not search parent folders, infer a source-tree project or fall back to the application output directory.
-- Treat the versioned `project.json` document as the whole project-document authority. Preserve tag order and save atomically; migrate v1 to the current v2 model in memory without silently replacing malformed or invalid existing documents with defaults.
+- Treat the versioned `project.json` document as the whole project-document authority. Preserve tag order and save atomically; migrate v1 → v2 → v3 in memory without silently replacing malformed or invalid existing documents with defaults.
 - Keep startup, saved and working project snapshots isolated through deep cloning. Mark runtime-affecting edits restart-required; do not add hot reload or runtime reconfiguration in this milestone.
 - Keep Tag Manager editing in `Scada.App`; it must not read PLCs or add a second runtime data path.
 - Use one disposable selected-row TagCache subscription for runtime quality observation. Do not create a subscription per row or fan out to the whole table.
@@ -52,6 +52,16 @@
 - SQLite history uses schema `user_version=1`, typed value columns, no `AUTOINCREMENT`, one connection/transaction per batch and deterministic `RecordedAtUtcTicks, Id` query order. Every write connection must apply finite `busy_timeout` and `synchronous=NORMAL`; disabled Historian must not create a database.
 - `IHistoryStore.PreflightAsync(CancellationToken)` is the compatibility boundary. A store must honor cancellation; Runtime still bounds startup waiting and does not perform SQLite retry loops in `StartAsync`.
 - History Settings edits `ProjectEditSession.WorkingProject`, protects built-in profile names/deletion, rejects reserved/duplicate custom renames without mutation, surfaces shared validation and save failures, persists through the normal Save boundary and displays only the running Historian snapshot. No hot reload is allowed.
+
+## InfluxDB provider rules
+
+- SQLite remains the default history provider. InfluxDB 2.x options live in Core, while `InfluxDB.Client`, transport, outbox SQL and provider-specific diagnostics remain in Infrastructure. Do not add an Influx dependency to Runtime or change the TagCache flow.
+- Store only environment-variable token references such as `env:SCADA_INFLUX_TOKEN`. Never persist, log or display plaintext tokens, and report missing secrets as configuration state.
+- Persist pending samples in the typed SQLite outbox using deterministic SHA-256 sample keys. Capacity is global across destination fingerprints, and duplicate/idempotent rows must not consume capacity twice. Acknowledge only after an explicit successful remote write; do not enable a hidden SDK write queue.
+- Destination fingerprints exclude tokens. Remote timestamp counters are persisted per destination/runtime/tag, and counters/diagnostics survive acknowledgement and buffer clearing. Do not automatically clear or migrate a previous destination buffer.
+- Use `HistorySample.RecordedAtUtc` for remote nanosecond `_time`; query exact recorded ticks and widen only the remote scan window for timestamp rollback. History queries are remote-only and do not include pending local outbox rows.
+- Preserve rows for generic 400, 429, 5xx, timeout, offline and configuration failures. Only a transport-confirmed point-specific 400 may be bounded-split and terminally reject an isolated poison row; later rows must continue.
+- Retention changes are explicit maintenance operations. Startup and Test Connection are non-mutating; the History Settings Test Connection checks a candidate configuration without writing data. Remote failure must not stop local buffering or PLC polling.
 
 ## Runtime polling rules
 

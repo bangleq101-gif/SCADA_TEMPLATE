@@ -1,10 +1,19 @@
 using Scada.Core.Tags;
 using Scada.Core.History;
+using System.Globalization;
+using System.Text.RegularExpressions;
 
 namespace Scada.Core.Configuration;
 
 public static class RuntimeOptionsValidation
 {
+    private const int MaximumInfluxBufferedSamples = 10_000_000;
+    private const int MaximumInfluxBatchSize = 10_000;
+    private const int MaximumInfluxIntervalMilliseconds = 86_400_000;
+    private const int MaximumInfluxTimeoutMilliseconds = 300_000;
+    private const long MinimumInfluxRetentionSeconds = 3_600;
+    private static readonly Regex EnvironmentVariableName =
+        new("^[A-Za-z_][A-Za-z0-9_]*$", RegexOptions.CultureInvariant | RegexOptions.Compiled);
     private static readonly HashSet<string> MqttProfiles =
         new(StringComparer.OrdinalIgnoreCase) { "Default" };
 
@@ -21,6 +30,7 @@ public static class RuntimeOptionsValidation
 
         ValidatePolling(options, issues);
         var historian = options.Historian ?? new HistorianOptions();
+        ValidateHistorianStorage(historian, issues);
         issues.AddRange(HistoryProfileValidation.CollectIssues(historian));
 
         var historyRegistry = new HistoryProfileRegistry(historian.Profiles ?? []);
@@ -91,6 +101,181 @@ public static class RuntimeOptionsValidation
         }
 
         return issues;
+    }
+
+    private static void ValidateHistorianStorage(
+        HistorianOptions historian,
+        ICollection<ValidationIssue> issues)
+    {
+        if (!Enum.IsDefined(historian.StorageProvider))
+        {
+            issues.Add(Error(
+                "HISTORIAN_STORAGE_PROVIDER_INVALID",
+                "Historian",
+                null,
+                nameof(historian.StorageProvider),
+                "Historian storage provider is invalid."));
+            return;
+        }
+
+        var influx = historian.Influx ?? new InfluxDbOptions();
+        if (historian.StorageProvider != HistoryStorageProvider.InfluxDb2)
+        {
+            return;
+        }
+
+        if (!Uri.TryCreate(influx.Url, UriKind.Absolute, out var uri) ||
+            uri.Scheme is not ("http" or "https") ||
+            !string.IsNullOrEmpty(uri.UserInfo))
+        {
+            issues.Add(Error(
+                "INFLUX_URL_INVALID",
+                "Historian",
+                null,
+                nameof(influx.Url),
+                "InfluxDB URL must be an absolute HTTP or HTTPS URL without embedded credentials."));
+        }
+
+        ValidateRequiredInfluxName(influx.Organization, "INFLUX_ORGANIZATION_REQUIRED", nameof(influx.Organization), "Organization", issues);
+        ValidateRequiredInfluxName(influx.Bucket, "INFLUX_BUCKET_REQUIRED", nameof(influx.Bucket), "Bucket", issues);
+        ValidateRequiredInfluxName(influx.Measurement, "INFLUX_MEASUREMENT_REQUIRED", nameof(influx.Measurement), "Measurement", issues);
+
+        if (!TryParseEnvironmentReference(influx.TokenReference, out _))
+        {
+            issues.Add(Error(
+                "INFLUX_TOKEN_REFERENCE_INVALID",
+                "Historian",
+                null,
+                nameof(influx.TokenReference),
+                "InfluxDB TokenReference must use the env:<VARIABLE_NAME> format."));
+        }
+
+        if (IsInvalidProjectRelativePath(influx.BufferPath))
+        {
+            issues.Add(Error(
+                "INFLUX_BUFFER_PATH_INVALID",
+                "Historian",
+                null,
+                nameof(influx.BufferPath),
+                "InfluxDB buffer path must be a project-relative path without traversal."));
+        }
+
+        if (influx.MaxBufferedSamples <= 0 || influx.MaxBufferedSamples > MaximumInfluxBufferedSamples)
+        {
+            issues.Add(Error(
+                "INFLUX_BUFFER_CAPACITY_INVALID",
+                "Historian",
+                null,
+                nameof(influx.MaxBufferedSamples),
+                $"InfluxDB buffer capacity must be between 1 and {MaximumInfluxBufferedSamples.ToString(CultureInfo.InvariantCulture)} samples."));
+        }
+
+        if (influx.SyncBatchSize <= 0 ||
+            influx.SyncBatchSize > MaximumInfluxBatchSize ||
+            (influx.MaxBufferedSamples > 0 && influx.SyncBatchSize > influx.MaxBufferedSamples))
+        {
+            issues.Add(Error(
+                "INFLUX_SYNC_BATCH_INVALID",
+                "Historian",
+                null,
+                nameof(influx.SyncBatchSize),
+                $"InfluxDB sync batch size must be between 1 and {MaximumInfluxBatchSize.ToString(CultureInfo.InvariantCulture)} and not exceed buffer capacity."));
+        }
+
+        ValidatePositiveBounded(influx.SyncIntervalMilliseconds, MaximumInfluxIntervalMilliseconds,
+            nameof(influx.SyncIntervalMilliseconds), "INFLUX_SYNC_INTERVAL_INVALID", issues);
+        ValidatePositiveBounded(influx.HealthProbeIntervalMilliseconds, MaximumInfluxIntervalMilliseconds,
+            nameof(influx.HealthProbeIntervalMilliseconds), "INFLUX_HEALTH_INTERVAL_INVALID", issues);
+        ValidatePositiveBounded(influx.ConnectionTimeoutMilliseconds, MaximumInfluxTimeoutMilliseconds,
+            nameof(influx.ConnectionTimeoutMilliseconds), "INFLUX_CONNECTION_TIMEOUT_INVALID", issues);
+        ValidatePositiveBounded(influx.WriteTimeoutMilliseconds, MaximumInfluxTimeoutMilliseconds,
+            nameof(influx.WriteTimeoutMilliseconds), "INFLUX_WRITE_TIMEOUT_INVALID", issues);
+        ValidatePositiveBounded(influx.QueryTimeoutMilliseconds, MaximumInfluxTimeoutMilliseconds,
+            nameof(influx.QueryTimeoutMilliseconds), "INFLUX_QUERY_TIMEOUT_INVALID", issues);
+        ValidatePositiveBounded(influx.ReconnectInitialDelayMilliseconds, MaximumInfluxIntervalMilliseconds,
+            nameof(influx.ReconnectInitialDelayMilliseconds), "INFLUX_RECONNECT_INITIAL_INVALID", issues);
+        ValidatePositiveBounded(influx.ReconnectMaxDelayMilliseconds, MaximumInfluxIntervalMilliseconds,
+            nameof(influx.ReconnectMaxDelayMilliseconds), "INFLUX_RECONNECT_MAX_INVALID", issues);
+
+        if (influx.ReconnectInitialDelayMilliseconds > influx.ReconnectMaxDelayMilliseconds)
+        {
+            issues.Add(Error(
+                "INFLUX_RECONNECT_RANGE_INVALID",
+                "Historian",
+                null,
+                nameof(influx.ReconnectInitialDelayMilliseconds),
+                "InfluxDB reconnect initial delay cannot exceed the maximum delay."));
+        }
+
+        if (influx.RetentionSeconds is > 0 and < MinimumInfluxRetentionSeconds)
+        {
+            issues.Add(Error(
+                "INFLUX_RETENTION_INVALID",
+                "Historian",
+                null,
+                nameof(influx.RetentionSeconds),
+                $"Finite InfluxDB retention must be zero or at least {MinimumInfluxRetentionSeconds.ToString(CultureInfo.InvariantCulture)} seconds."));
+        }
+        else if (influx.RetentionSeconds < 0)
+        {
+            issues.Add(Error(
+                "INFLUX_RETENTION_INVALID",
+                "Historian",
+                null,
+                nameof(influx.RetentionSeconds),
+                "InfluxDB retention cannot be negative."));
+        }
+    }
+
+    private static void ValidateRequiredInfluxName(
+        string? value,
+        string code,
+        string propertyName,
+        string displayName,
+        ICollection<ValidationIssue> issues)
+    {
+        if (string.IsNullOrWhiteSpace(value) || value.Any(char.IsControl))
+        {
+            issues.Add(Error(code, "Historian", null, propertyName,
+                $"InfluxDB {displayName} is required and cannot contain control characters."));
+        }
+    }
+
+    private static void ValidatePositiveBounded(
+        int value,
+        int maximum,
+        string propertyName,
+        string code,
+        ICollection<ValidationIssue> issues)
+    {
+        if (value <= 0 || value > maximum)
+        {
+            issues.Add(Error(code, "Historian", null, propertyName,
+                $"InfluxDB {propertyName} must be between 1 and {maximum.ToString(CultureInfo.InvariantCulture)}."));
+        }
+    }
+
+    private static bool TryParseEnvironmentReference(string? value, out string variableName)
+    {
+        variableName = string.Empty;
+        if (string.IsNullOrWhiteSpace(value) || !value.StartsWith("env:", StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        variableName = value[4..];
+        return EnvironmentVariableName.IsMatch(variableName);
+    }
+
+    private static bool IsInvalidProjectRelativePath(string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path) || Path.IsPathRooted(path))
+        {
+            return true;
+        }
+
+        return path.Replace('\\', '/').Split('/', StringSplitOptions.RemoveEmptyEntries)
+            .Any(segment => segment is "." or "..");
     }
 
     private static bool IsValidHistorySubscription(

@@ -4,19 +4,12 @@ Architecture V1 is approved.
 
 Current implementation milestone:
 
-Milestone 5 — Historian Foundation
+Milestone 6 — InfluxDB Provider
 
 Status:
 
-Completed and merged to `main` via PR #5.
-
-Merge commit:
-
-`c16c3235cdd81aecc90d85a80393cb873f4d19dc`
-
-Base commit:
-
-`434d6357c00a3150f00922aa26a3f5d5925fde79`
+Implemented on `feature/milestone-6-influxdb-provider`;
+pending source review and PR.
 
 ## Implemented in Milestone 1
 
@@ -111,22 +104,35 @@ n PLC
 - Hosted-service ordering and singleton identity: Historian starts before polling while polling remains independent of historian storage failures.
 - Engineering `engineering.history` History Settings workspace with profile editing, protected built-ins, rename validation, shared queue-capacity warnings, save/validation feedback, advanced global settings, runtime snapshot/status and restart-required save semantics.
 
+## Implemented in Milestone 6
+
+- Provider-neutral `HistoryStorageProvider` selection with SQLite remaining the default and validated `InfluxDbOptions` for InfluxDB 2.x.
+- Sequential project schema migration v1 → v2 → v3, with migration in memory and explicit Save as the upgrade boundary.
+- Deep-cloned and compared Influx configuration in `ProjectEditSession`.
+- Official `InfluxDB.Client` 5.1.0 integration isolated to `Scada.Infrastructure`; `Scada.Runtime` and `TagCache` remain unchanged.
+- Environment-only token references, portable project-relative `Data/influx-buffer.db` resolution and no token logging or display.
+- Durable SQLite-backed Influx outbox with typed sample columns, deterministic SHA-256 sample keys, destination fingerprints, remote timestamp counters and global bounded capacity.
+- One explicit asynchronous transport/client path with durable retry, reconnect/backoff, offline/configuration handling, bounded point-specific 400 isolation and preservation of generic 400/429/5xx backlog rows.
+- Diagnostics and maintenance boundaries for probe, retention, current/previous destination buffer clearing and persisted counters.
+- Remote-only history queries with exact recorded-tick filtering and widened rollback windows; no local pending samples are merged into query results.
+- History Settings provider selection, candidate-only Test Connection, retention and separately confirmed buffer maintenance actions.
+
 ## Verified
 
 - `dotnet restore Scada.sln --ignore-failed-sources` — PASS.
 - `dotnet build Scada.sln -c Release --no-restore` — PASS with 0 warnings and 0 errors.
-- `dotnet test Scada.sln -c Release --no-build` — PASS; 159 tests, 0 failures (54 App, 59 Runtime, 8 Core, 3 Drivers, 35 Infrastructure).
+- `dotnet test Scada.sln -c Release --no-build` — PASS; 181 tests, 0 failures (56 App, 59 Runtime, 16 Core, 3 Drivers, 47 Infrastructure).
 - `dotnet list Scada.sln package --include-transitive --vulnerable` — PASS; no vulnerable packages reported. `SQLitePCLRaw.bundle_e_sqlite3`, `core`, `lib.e_sqlite3` and `provider.e_sqlite3` resolve to 2.1.12 through `Microsoft.Data.Sqlite` 10.0.11.
 - `git diff --check` — PASS.
+- InfluxDB package audit — PASS; no vulnerable packages reported.
 - WPF startup smoke test — PASS; `Scada.App` stayed running through the startup check and resolved `MainWindow` with resources/templates loaded without a startup DI/XAML exception.
-- Copy-folder portability verification — PASS on a fresh copy outside the repository; restore/build and explicit project-file startup do not depend on the original folder, and the project document remains unchanged.
-- GitNexus post-change review — PASS; 0 import cycles, `Scada.Runtime` still depends only on `Scada.Core`, SQLite types remain in Infrastructure, no TagCache source change, and no direct PLC reads from the History Settings workspace.
+- Copy-folder portability verification — PASS on a fresh copy outside the repository; restore/build/startup do not depend on the original folder, and no original repository path was found in copied source/configuration files.
+- GitNexus post-change review — PASS; 0 import cycles, `Scada.Runtime` still depends only on `Scada.Core`, Influx client/outbox/transport remain in Infrastructure, no TagCache source change, and no direct PLC reads from the History Settings workspace.
 - UI automation remains out of scope.
 
 ## Not implemented — later milestones
 
 - Real Siemens, Mitsubishi, Modbus or OPC UA drivers.
-- InfluxDB provider.
 - MQTT publisher or write support.
 - Complete Alarm and Trend systems.
 - Reusable HMI controls and Faceplates.
@@ -140,11 +146,13 @@ n PLC
 
 - A per-device factory that creates a driver with a mismatched `DriverType` can leave that instance without lease ownership before `Acquire` throws. Correct `IDisposable`/`IAsyncDisposable` cleanup on this exceptional misconfiguration path is deferred until resolver acquisition/lifetime design is expanded.
 - A genuinely non-cooperative driver operation may remain in flight after the manager shutdown budget expires. M2 bounds manager return time and retains ownership rather than attempting to kill the task; deeper orphan-operation supervision is later work.
-- Project persistence supports schema v1 migration to v2; multi-process conflict handling and undo/redo are deferred.
+- Project persistence supports sequential schema v1 → v2 → v3 migration; multi-process conflict handling and undo/redo are deferred.
 - Project startup requires an explicit canonical `--project-file` path (the supplied launcher provides it); automatic project discovery and hot reload are intentionally not implemented.
 - Tag Manager validation is deterministic and synchronous; full UI automation, advanced tag scaling/offset semantics and runtime reconfiguration without restart remain later work.
 - Import conflict resolution currently offers explicit apply-all for conflict-free imports or append-non-conflicting/cancel for conflicted imports; identity regeneration after a conflict is deferred.
-- Historian retry buffering is process-local and bounded by the in-memory queue; durable buffering, InfluxDB synchronization, retention and historian replay remain later milestones.
+- InfluxDB provider verification has not yet included a live remote InfluxDB server; transport error mapping, retention behavior and long-running replay remain subject to integration testing.
+- The durable Influx outbox is single-process and SQLite-backed; multi-process writers, hot reload and full 50-PLC/10,000-tag stress testing remain deferred.
+- History Settings Test Connection performs a non-writing probe only; it does not claim write permission until a live integration test is added.
 - Historian configuration changes are persisted and marked restart-required; runtime hot reload is intentionally not implemented.
 
-Implementation must follow the ordered milestones in `docs/ROADMAP.md` and the constraints in `docs/SCADA_ARCHITECTURE_V1.md`. Do not jump ahead to MQTT, InfluxDB or other later milestones without explicit approval.
+Implementation must follow the ordered milestones in `docs/ROADMAP.md` and the constraints in `docs/SCADA_ARCHITECTURE_V1.md`. Do not jump ahead to MQTT or other later milestones without explicit approval.

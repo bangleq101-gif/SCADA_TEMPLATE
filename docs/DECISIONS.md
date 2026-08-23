@@ -198,3 +198,27 @@ Historian evaluator state is stored in concurrent per-tag entries with a small p
 ## D-045 — SQLite writer connection settings and package graph
 
 SQLite initialization, batch writes and reads use centralized per-connection configuration. Every writer applies `synchronous=NORMAL` and a finite 250 ms `busy_timeout`; WAL/schema setup remains initialization-only. `Microsoft.Data.Sqlite` is pinned centrally at 10.0.11, resolving the SQLitePCLRaw family to 2.1.12 and removing the previously observed NU1903 warning without suppressing package auditing.
+
+## D-046 — InfluxDB 2.x provider boundary
+
+Milestone 6 supports InfluxDB 2.x through the official `InfluxDB.Client` 5.1.0 package. The package, transport adapter and outbox remain in `Scada.Infrastructure`; `Scada.Runtime` stays provider-neutral. SQLite remains the default provider and provider changes require the normal persisted-project restart boundary. Hot reload is not introduced.
+
+## D-047 — Sequential project schema migration to v3
+
+The project document schema advances to version 3 through explicit sequential v1 → v2 → v3 migrations. Loading migrates only the in-memory model; an explicit Save writes the current version. Unknown, non-positive or malformed schema versions remain errors.
+
+## D-048 — Durable Influx outbox and sample identity
+
+Influx pending samples are durably stored in a project-relative SQLite outbox with typed value columns. A deterministic SHA-256 sample key provides idempotency, capacity is bounded globally across destination fingerprints, and diagnostics/counters survive acknowledgement and buffer clearing. No plaintext token is stored in the outbox.
+
+## D-049 — Destination and timestamp identity
+
+Destination fingerprints include the normalized Influx URL, organization, bucket, measurement and point-schema version, but never the token. Remote nanosecond timestamps derive from `HistorySample.RecordedAtUtc` and are allocated monotonically per destination/runtime/tag. Queries filter exact recorded ticks and widen the remote time window to tolerate timestamp rollback without changing the returned exact range.
+
+## D-050 — Explicit transport, buffering and failure isolation
+
+The provider uses one explicit asynchronous transport/client path and does not enable a hidden SDK write queue. Rows are acknowledged only after an explicit successful write. Offline, configuration, timeout, 429, 5xx and generic 400 failures preserve local rows; only an explicitly point-specific 400 may be bounded-split and terminally reject an isolated poison row while later rows continue.
+
+## D-051 — Secret, retention and maintenance boundaries
+
+Influx tokens are referenced only through environment-variable references and are never logged or displayed. Retention changes are explicit maintenance actions, startup does not mutate remote retention, and current/previous destination buffer clearing is separate and confirmation-protected. History Settings Test Connection performs a candidate-only non-writing probe.

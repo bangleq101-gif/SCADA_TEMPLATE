@@ -12,6 +12,10 @@ public sealed class HistorySettingsViewModel : INotifyPropertyChanged, IWorkspac
 {
     private readonly ProjectEditSession _session;
     private readonly HistorianRuntimeService _historian;
+    private readonly IHistoryStoreDiagnostics? _storeDiagnostics;
+    private readonly IHistoryStoreMaintenance? _storeMaintenance;
+    private readonly IHistoryBufferConfirmation? _bufferConfirmation;
+    private readonly IHistoryConnectionTester? _connectionTester;
     private bool _isActive;
     private string _statusText = "Not started";
     private string _lastErrorText = string.Empty;
@@ -19,10 +23,20 @@ public sealed class HistorySettingsViewModel : INotifyPropertyChanged, IWorkspac
     private string _saveStatusText = string.Empty;
     private HistoryProfileEditor? _selectedProfile;
 
-    public HistorySettingsViewModel(ProjectEditSession session, HistorianRuntimeService historian)
+    public HistorySettingsViewModel(
+        ProjectEditSession session,
+        HistorianRuntimeService historian,
+        IHistoryStoreDiagnostics? storeDiagnostics = null,
+        IHistoryStoreMaintenance? storeMaintenance = null,
+        IHistoryBufferConfirmation? bufferConfirmation = null,
+        IHistoryConnectionTester? connectionTester = null)
     {
         _session = session ?? throw new ArgumentNullException(nameof(session));
         _historian = historian ?? throw new ArgumentNullException(nameof(historian));
+        _storeDiagnostics = storeDiagnostics;
+        _storeMaintenance = storeMaintenance;
+        _bufferConfirmation = bufferConfirmation;
+        _connectionTester = connectionTester;
         Profiles = [];
         SaveCommand = new RelayCommand(_ => Save());
         RevertCommand = new RelayCommand(_ => Revert());
@@ -35,6 +49,10 @@ public sealed class HistorySettingsViewModel : INotifyPropertyChanged, IWorkspac
             }
         });
         RefreshStatusCommand = new RelayCommand(_ => RefreshStatus());
+        TestConnectionCommand = new RelayCommand(_ => _ = TestConnectionAsync());
+        ApplyRetentionCommand = new RelayCommand(_ => _ = ApplyRetentionAsync());
+        ClearCurrentBufferCommand = new RelayCommand(_ => _ = ClearCurrentBufferAsync());
+        ClearPreviousBufferCommand = new RelayCommand(_ => _ = ClearPreviousBufferAsync());
         _session.PropertyChanged += OnSessionPropertyChanged;
         RebuildProfiles();
         RefreshStatus();
@@ -55,6 +73,12 @@ public sealed class HistorySettingsViewModel : INotifyPropertyChanged, IWorkspac
     public RelayCommand AddProfileCommand { get; }
     public RelayCommand DeleteProfileCommand { get; }
     public RelayCommand RefreshStatusCommand { get; }
+    public RelayCommand TestConnectionCommand { get; }
+    public RelayCommand ApplyRetentionCommand { get; }
+    public RelayCommand ClearCurrentBufferCommand { get; }
+    public RelayCommand ClearPreviousBufferCommand { get; }
+
+    public Array StorageProviders { get; } = Enum.GetValues<HistoryStorageProvider>();
 
     public bool IsActive
     {
@@ -77,6 +101,129 @@ public sealed class HistorySettingsViewModel : INotifyPropertyChanged, IWorkspac
             OnPropertyChanged();
         }
     }
+
+    public HistoryStorageProvider StorageProvider
+    {
+        get => _session.WorkingProject.Historian.StorageProvider;
+        set => SetHistorianValue(
+            value,
+            current => current.StorageProvider,
+            (current, proposed) => current.StorageProvider = proposed,
+            nameof(StorageProvider));
+    }
+
+    public bool IsInfluxSelected => StorageProvider == HistoryStorageProvider.InfluxDb2;
+
+    public string InfluxUrl
+    {
+        get => _session.WorkingProject.Historian.Influx.Url;
+        set => SetInfluxValue(value, influx => influx.Url, (influx, proposed) => influx.Url = proposed, nameof(InfluxUrl));
+    }
+
+    public string InfluxOrganization
+    {
+        get => _session.WorkingProject.Historian.Influx.Organization;
+        set => SetInfluxValue(value, influx => influx.Organization, (influx, proposed) => influx.Organization = proposed, nameof(InfluxOrganization));
+    }
+
+    public string InfluxBucket
+    {
+        get => _session.WorkingProject.Historian.Influx.Bucket;
+        set => SetInfluxValue(value, influx => influx.Bucket, (influx, proposed) => influx.Bucket = proposed, nameof(InfluxBucket));
+    }
+
+    public string InfluxMeasurement
+    {
+        get => _session.WorkingProject.Historian.Influx.Measurement;
+        set => SetInfluxValue(value, influx => influx.Measurement, (influx, proposed) => influx.Measurement = proposed, nameof(InfluxMeasurement));
+    }
+
+    public string InfluxTokenReference
+    {
+        get => _session.WorkingProject.Historian.Influx.TokenReference;
+        set
+        {
+            SetInfluxValue(value, influx => influx.TokenReference, (influx, proposed) => influx.TokenReference = proposed, nameof(InfluxTokenReference));
+            OnPropertyChanged(nameof(TokenStatusText));
+        }
+    }
+
+    public string InfluxBufferPath
+    {
+        get => _session.WorkingProject.Historian.Influx.BufferPath;
+        set => SetInfluxValue(value, influx => influx.BufferPath, (influx, proposed) => influx.BufferPath = proposed, nameof(InfluxBufferPath));
+    }
+
+    public int MaxBufferedSamples
+    {
+        get => _session.WorkingProject.Historian.Influx.MaxBufferedSamples;
+        set => SetInfluxValue(value, influx => influx.MaxBufferedSamples, (influx, proposed) => influx.MaxBufferedSamples = proposed, nameof(MaxBufferedSamples));
+    }
+
+    public int SyncBatchSize
+    {
+        get => _session.WorkingProject.Historian.Influx.SyncBatchSize;
+        set => SetInfluxValue(value, influx => influx.SyncBatchSize, (influx, proposed) => influx.SyncBatchSize = proposed, nameof(SyncBatchSize));
+    }
+
+    public int SyncIntervalMilliseconds
+    {
+        get => _session.WorkingProject.Historian.Influx.SyncIntervalMilliseconds;
+        set => SetInfluxValue(value, influx => influx.SyncIntervalMilliseconds, (influx, proposed) => influx.SyncIntervalMilliseconds = proposed, nameof(SyncIntervalMilliseconds));
+    }
+
+    public int HealthProbeIntervalMilliseconds
+    {
+        get => _session.WorkingProject.Historian.Influx.HealthProbeIntervalMilliseconds;
+        set => SetInfluxValue(value, influx => influx.HealthProbeIntervalMilliseconds, (influx, proposed) => influx.HealthProbeIntervalMilliseconds = proposed, nameof(HealthProbeIntervalMilliseconds));
+    }
+
+    public int ConnectionTimeoutMilliseconds
+    {
+        get => _session.WorkingProject.Historian.Influx.ConnectionTimeoutMilliseconds;
+        set => SetInfluxValue(value, influx => influx.ConnectionTimeoutMilliseconds, (influx, proposed) => influx.ConnectionTimeoutMilliseconds = proposed, nameof(ConnectionTimeoutMilliseconds));
+    }
+
+    public int WriteTimeoutMilliseconds
+    {
+        get => _session.WorkingProject.Historian.Influx.WriteTimeoutMilliseconds;
+        set => SetInfluxValue(value, influx => influx.WriteTimeoutMilliseconds, (influx, proposed) => influx.WriteTimeoutMilliseconds = proposed, nameof(WriteTimeoutMilliseconds));
+    }
+
+    public int QueryTimeoutMilliseconds
+    {
+        get => _session.WorkingProject.Historian.Influx.QueryTimeoutMilliseconds;
+        set => SetInfluxValue(value, influx => influx.QueryTimeoutMilliseconds, (influx, proposed) => influx.QueryTimeoutMilliseconds = proposed, nameof(QueryTimeoutMilliseconds));
+    }
+
+    public int ReconnectInitialDelayMilliseconds
+    {
+        get => _session.WorkingProject.Historian.Influx.ReconnectInitialDelayMilliseconds;
+        set => SetInfluxValue(value, influx => influx.ReconnectInitialDelayMilliseconds, (influx, proposed) => influx.ReconnectInitialDelayMilliseconds = proposed, nameof(ReconnectInitialDelayMilliseconds));
+    }
+
+    public int ReconnectMaxDelayMilliseconds
+    {
+        get => _session.WorkingProject.Historian.Influx.ReconnectMaxDelayMilliseconds;
+        set => SetInfluxValue(value, influx => influx.ReconnectMaxDelayMilliseconds, (influx, proposed) => influx.ReconnectMaxDelayMilliseconds = proposed, nameof(ReconnectMaxDelayMilliseconds));
+    }
+
+    public long RetentionSeconds
+    {
+        get => _session.WorkingProject.Historian.Influx.RetentionSeconds;
+        set => SetInfluxValue(value, influx => influx.RetentionSeconds, (influx, proposed) => influx.RetentionSeconds = proposed, nameof(RetentionSeconds));
+    }
+
+    public string PreviousDestinationFingerprint { get; set; } = string.Empty;
+    public string TokenStatusText { get; private set; } = "Not checked";
+    public string StoreStateText { get; private set; } = "Disabled";
+    public long PendingSamples { get; private set; }
+    public long OrphanedDestinationSamples { get; private set; }
+    public long RemoteRejectedSamples { get; private set; }
+    public long ExpiredSamples { get; private set; }
+    public long BufferFullRejections { get; private set; }
+    public long SyncFailures { get; private set; }
+    public string LastRemoteSuccessText { get; private set; } = "Never";
 
     public string DatabasePath
     {
@@ -209,6 +356,23 @@ public sealed class HistorySettingsViewModel : INotifyPropertyChanged, IWorkspac
         DroppedSamples = snapshot.DroppedSamples;
         AbandonedSamples = snapshot.AbandonedSamples;
         WriteFailures = snapshot.WriteFailures;
+        TokenStatusText = GetTokenStatusText();
+        if (_storeDiagnostics is not null)
+        {
+            var storeSnapshot = _storeDiagnostics.Snapshot;
+            StoreStateText = storeSnapshot.State.ToString();
+            PendingSamples = storeSnapshot.PendingSamples;
+            OrphanedDestinationSamples = storeSnapshot.OrphanedDestinationSamples;
+            RemoteRejectedSamples = storeSnapshot.RemoteRejectedSamples;
+            ExpiredSamples = storeSnapshot.ExpiredSamples;
+            BufferFullRejections = storeSnapshot.BufferFullRejections;
+            SyncFailures = storeSnapshot.SyncFailures;
+            LastRemoteSuccessText = storeSnapshot.LastRemoteSuccessUtc?.ToLocalTime().ToString("G") ?? "Never";
+        }
+        else
+        {
+            StoreStateText = "SQLite";
+        }
         OnPropertyChanged(nameof(RuntimeStateText));
         OnPropertyChanged(nameof(QueueDepth));
         OnPropertyChanged(nameof(EnqueuedSamples));
@@ -217,6 +381,15 @@ public sealed class HistorySettingsViewModel : INotifyPropertyChanged, IWorkspac
         OnPropertyChanged(nameof(DroppedSamples));
         OnPropertyChanged(nameof(AbandonedSamples));
         OnPropertyChanged(nameof(WriteFailures));
+        OnPropertyChanged(nameof(TokenStatusText));
+        OnPropertyChanged(nameof(StoreStateText));
+        OnPropertyChanged(nameof(PendingSamples));
+        OnPropertyChanged(nameof(OrphanedDestinationSamples));
+        OnPropertyChanged(nameof(RemoteRejectedSamples));
+        OnPropertyChanged(nameof(ExpiredSamples));
+        OnPropertyChanged(nameof(BufferFullRejections));
+        OnPropertyChanged(nameof(SyncFailures));
+        OnPropertyChanged(nameof(LastRemoteSuccessText));
     }
 
     public void AddProfile(string? requestedName = null)
@@ -334,13 +507,180 @@ public sealed class HistorySettingsViewModel : INotifyPropertyChanged, IWorkspac
         OnPropertyChanged(nameof(IsDirty));
         OnPropertyChanged(nameof(RestartRequired));
         OnPropertyChanged(nameof(Enabled));
+        OnPropertyChanged(nameof(StorageProvider));
+        OnPropertyChanged(nameof(IsInfluxSelected));
         OnPropertyChanged(nameof(DatabasePath));
+        OnPropertyChanged(nameof(InfluxUrl));
+        OnPropertyChanged(nameof(InfluxOrganization));
+        OnPropertyChanged(nameof(InfluxBucket));
+        OnPropertyChanged(nameof(InfluxMeasurement));
+        OnPropertyChanged(nameof(InfluxTokenReference));
+        OnPropertyChanged(nameof(InfluxBufferPath));
+        OnPropertyChanged(nameof(MaxBufferedSamples));
+        OnPropertyChanged(nameof(SyncBatchSize));
+        OnPropertyChanged(nameof(SyncIntervalMilliseconds));
+        OnPropertyChanged(nameof(HealthProbeIntervalMilliseconds));
+        OnPropertyChanged(nameof(ConnectionTimeoutMilliseconds));
+        OnPropertyChanged(nameof(WriteTimeoutMilliseconds));
+        OnPropertyChanged(nameof(QueryTimeoutMilliseconds));
+        OnPropertyChanged(nameof(ReconnectInitialDelayMilliseconds));
+        OnPropertyChanged(nameof(ReconnectMaxDelayMilliseconds));
+        OnPropertyChanged(nameof(RetentionSeconds));
+        OnPropertyChanged(nameof(TokenStatusText));
         OnPropertyChanged(nameof(QueueCapacity));
         OnPropertyChanged(nameof(BatchSize));
         OnPropertyChanged(nameof(FlushIntervalMilliseconds));
         OnPropertyChanged(nameof(ShutdownDrainTimeoutMilliseconds));
         OnPropertyChanged(nameof(HasBlockingIssues));
         OnPropertyChanged(nameof(ValidationSummaryText));
+    }
+
+    private void SetHistorianValue<T>(
+        T value,
+        Func<HistorianOptions, T> get,
+        Action<HistorianOptions, T> set,
+        string propertyName)
+    {
+        var historian = _session.WorkingProject.Historian;
+        if (EqualityComparer<T>.Default.Equals(get(historian), value))
+        {
+            return;
+        }
+
+        set(historian, value);
+        _session.MarkChanged();
+        OnPropertyChanged(propertyName);
+        if (propertyName == nameof(StorageProvider))
+        {
+            OnPropertyChanged(nameof(IsInfluxSelected));
+        }
+        OnPropertyChanged(nameof(IsDirty));
+        OnPropertyChanged(nameof(RestartRequired));
+        OnPropertyChanged(nameof(HasBlockingIssues));
+        OnPropertyChanged(nameof(ValidationSummaryText));
+    }
+
+    private void SetInfluxValue<T>(
+        T value,
+        Func<InfluxDbOptions, T> get,
+        Action<InfluxDbOptions, T> set,
+        string propertyName)
+    {
+        var influx = _session.WorkingProject.Historian.Influx;
+        if (EqualityComparer<T>.Default.Equals(get(influx), value))
+        {
+            return;
+        }
+
+        set(influx, value);
+        _session.MarkChanged();
+        OnPropertyChanged(propertyName);
+        OnPropertyChanged(nameof(IsDirty));
+        OnPropertyChanged(nameof(RestartRequired));
+        OnPropertyChanged(nameof(HasBlockingIssues));
+        OnPropertyChanged(nameof(ValidationSummaryText));
+    }
+
+    private async Task TestConnectionAsync()
+    {
+        if (!IsInfluxSelected)
+        {
+            SaveStatusText = "Select InfluxDB 2.x before testing the connection.";
+            OnPropertyChanged(nameof(SaveStatusText));
+            return;
+        }
+
+        var result = _connectionTester is not null
+            ? await _connectionTester.TestAsync(
+                    ProjectSnapshotCloner.Clone(_session.WorkingProject).Historian.Influx,
+                    CancellationToken.None)
+                .ConfigureAwait(false)
+            : _storeDiagnostics is not null
+                ? await _storeDiagnostics.ProbeAsync(CancellationToken.None).ConfigureAwait(false)
+                : new HistoryStoreOperationResult(false, "INFLUX_TEST_UNAVAILABLE", "No connection tester is registered.");
+        SaveStatusText = result.Succeeded
+            ? "Connection and bucket access verified. Write permission will be exercised by normal historian operation."
+            : $"Connection test failed: {result.ErrorCode}.";
+        RefreshStatus();
+        OnPropertyChanged(nameof(SaveStatusText));
+    }
+
+    private async Task ApplyRetentionAsync()
+    {
+        if (_storeMaintenance is null)
+        {
+            SaveStatusText = "Retention management is available when InfluxDB is the active provider.";
+        }
+        else
+        {
+            var result = await _storeMaintenance.ApplyRetentionAsync(CancellationToken.None).ConfigureAwait(false);
+            SaveStatusText = result.Succeeded
+                ? "Retention applied."
+                : $"Retention apply failed: {result.ErrorCode}.";
+        }
+
+        RefreshStatus();
+        OnPropertyChanged(nameof(SaveStatusText));
+    }
+
+    private async Task ClearCurrentBufferAsync()
+    {
+        if (_storeMaintenance is null || _bufferConfirmation is null)
+        {
+            return;
+        }
+
+        if (!_bufferConfirmation.Confirm("Clear current destination buffer", PendingSamples - OrphanedDestinationSamples))
+        {
+            return;
+        }
+
+        var result = await _storeMaintenance.ClearCurrentBufferAsync(CancellationToken.None).ConfigureAwait(false);
+        SaveStatusText = result.Succeeded ? "Current destination buffer cleared." : $"Clear failed: {result.ErrorCode}.";
+        RefreshStatus();
+        OnPropertyChanged(nameof(SaveStatusText));
+    }
+
+    private async Task ClearPreviousBufferAsync()
+    {
+        if (_storeMaintenance is null || _bufferConfirmation is null || string.IsNullOrWhiteSpace(PreviousDestinationFingerprint))
+        {
+            SaveStatusText = "Enter a previous destination fingerprint first.";
+            OnPropertyChanged(nameof(SaveStatusText));
+            return;
+        }
+
+        if (!_bufferConfirmation.Confirm("Clear previous destination buffer", OrphanedDestinationSamples))
+        {
+            return;
+        }
+
+        var result = await _storeMaintenance.ClearPreviousDestinationBufferAsync(
+                PreviousDestinationFingerprint,
+                CancellationToken.None)
+            .ConfigureAwait(false);
+        SaveStatusText = result.Succeeded ? "Previous destination buffer cleared." : $"Clear failed: {result.ErrorCode}.";
+        RefreshStatus();
+        OnPropertyChanged(nameof(SaveStatusText));
+    }
+
+    private string GetTokenStatusText()
+    {
+        var reference = InfluxTokenReference;
+        if (string.IsNullOrWhiteSpace(reference) || !reference.StartsWith("env:", StringComparison.Ordinal))
+        {
+            return "Invalid token reference";
+        }
+
+        var variable = reference[4..];
+        if (string.IsNullOrWhiteSpace(variable))
+        {
+            return "Missing token";
+        }
+
+        return string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(variable))
+            ? "Missing token"
+            : "Token configured";
     }
 
     private bool SetField<T>(ref T field, T value, [CallerMemberName] string? propertyName = null)

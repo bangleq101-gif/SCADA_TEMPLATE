@@ -21,7 +21,7 @@ Scada.Infrastructure  → Scada.Core
 Scada.App             → Scada.Core, Scada.Runtime, Scada.Drivers, Scada.Infrastructure
 ```
 
-Milestone 5 keeps the product-project dependency graph unchanged. Historian orchestration is in `Scada.Runtime` and depends on Core contracts only; SQLite storage is composed by `Scada.App` through the `IHistoryStore` contract and implemented in `Scada.Infrastructure`.
+Milestone 6 keeps the product-project dependency graph unchanged. Historian orchestration remains in `Scada.Runtime` and depends on Core contracts only; SQLite and InfluxDB storage are composed by `Scada.App` through the `IHistoryStore` contract and implemented in `Scada.Infrastructure`. The official Influx client, transport, durable outbox and provider-specific diagnostics are not visible to Runtime.
 
 `Scada.Runtime` is driver-neutral. It consumes `IPlcDriver` from `Scada.Core` and owns only the runtime-local resolver, lease, manager and polling workers. Concrete drivers are composed by `Scada.App` from `Scada.Drivers`.
 
@@ -135,6 +135,26 @@ Historian startup uses bounded cancellation-aware `IHistoryStore.PreflightAsync`
 
 TagCache remains the central runtime source. A disconnected device publishes `TagQuality.Disconnected`; a last-known value keeps its original PLC timestamp, while a tag without a valid value gets the failure transition timestamp.
 
+## Milestone 6 InfluxDB provider flow
+
+```text
+TagCache
+    ↓
+HistoryProfileEvaluator → HistorianQueue → HistorianRuntimeService
+    ↓
+IHistoryStore
+    ↓
+BufferedInfluxHistoryStore
+    ↓
+SQLite Data/influx-buffer.db
+    ↓
+explicit IInfluxTransport
+    ↓
+InfluxDB 2.x
+```
+
+The outbox stores typed values and deterministic sample keys, allocates remote timestamps with per-destination/runtime/tag counters and tracks destination fingerprints without token material. Pending local rows are not merged into remote query results. Remote queries use exact recorded ticks with a widened rollback window, while retention changes and current/previous destination clearing are explicit maintenance operations. A missing token is a configuration state; it does not stop local durable buffering or PLC polling.
+
 ## Milestone 4 Tag Manager flow
 
 ```text
@@ -155,4 +175,4 @@ The Tag Manager owns project editing in `Scada.App`; import data is prepared and
 
 ## Portable configuration
 
-`Scada.App/appsettings.json` is copied to application output. The application sets its content root to `AppContext.BaseDirectory`, while project persistence uses an explicit absolute `--project-file` path. Historian SQLite is resolved relative to that canonical project document directory and is never created when Historian is disabled. `scripts/run-scada.ps1` resolves its project path from `$PSScriptRoot`, so running a copied template folder does not depend on the original repository or current working directory.
+`Scada.App/appsettings.json` is copied to application output. The application sets its content root to `AppContext.BaseDirectory`, while project persistence uses an explicit absolute `--project-file` path. Historian SQLite is resolved relative to that canonical project document directory and is never created when Historian is disabled. `scripts/run-scada.ps1` resolves its project path from `$PSScriptRoot`, so running a copied template folder does not depend on the original repository or current working directory. The Influx outbox is likewise resolved beneath the canonical project directory as `Data/influx-buffer.db`. Influx credentials are environment-variable references such as `env:SCADA_INFLUX_TOKEN`; the token value is not stored in project JSON, logged or shown in the UI.
