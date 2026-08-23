@@ -5,6 +5,7 @@ using Scada.Core.Configuration;
 using Scada.Core.Devices;
 using Scada.Core.History;
 using Scada.Core.Mqtt;
+using Scada.Core.MachineSettings;
 using Scada.Core.Tags;
 using Scada.Infrastructure.Persistence;
 
@@ -209,6 +210,21 @@ internal static class ProjectSnapshotCloner
                 }).ToList()
             },
             Mqtt = CloneMqttOptions(source.Mqtt),
+            MachineSettings = new MachineSettingsOptions
+            {
+                Pages = source.MachineSettings.Pages.Select(page => new MachineSettingsPageDefinition
+                {
+                    Id = page.Id, Title = page.Title, Description = page.Description, Group = page.Group,
+                    Order = page.Order, IsVisible = page.IsVisible,
+                    Parameters = page.Parameters.Select(parameter => new MachineParameterDefinition
+                    {
+                        Id = parameter.Id, Name = parameter.Name, Description = parameter.Description, Group = parameter.Group,
+                        ValueType = parameter.ValueType, Value = parameter.Value, Min = parameter.Min, Max = parameter.Max,
+                        Unit = parameter.Unit, IsReadOnly = parameter.IsReadOnly, IsVisible = parameter.IsVisible,
+                        Order = parameter.Order, LiveTagId = parameter.LiveTagId
+                    }).ToList()
+                }).ToList()
+            },
             ScanGroups = source.ScanGroups.Select(group => new ScanGroupDefinition
             {
                 Name = group.Name,
@@ -308,6 +324,7 @@ internal static class ProjectSnapshotComparer
             left.Historian.FlushIntervalMilliseconds != right.Historian.FlushIntervalMilliseconds ||
             left.Historian.ShutdownDrainTimeoutMilliseconds != right.Historian.ShutdownDrainTimeoutMilliseconds ||
             left.Historian.Profiles.Count != right.Historian.Profiles.Count ||
+            !MachineSettingsEqual(left.MachineSettings, right.MachineSettings) ||
             left.ScanGroups.Count != right.ScanGroups.Count ||
             left.Devices.Count != right.Devices.Count ||
             left.Tags.Count != right.Tags.Count)
@@ -417,6 +434,16 @@ internal static class ProjectSnapshotComparer
         left.ReconnectInitialDelayMilliseconds == right.ReconnectInitialDelayMilliseconds && left.ReconnectMaxDelayMilliseconds == right.ReconnectMaxDelayMilliseconds &&
         left.ShutdownTimeoutMilliseconds == right.ShutdownTimeoutMilliseconds && left.Profiles.Count == right.Profiles.Count &&
         left.Profiles.Zip(right.Profiles).All(pair => pair.First.Name == pair.Second.Name && pair.First.Mode == pair.Second.Mode && pair.First.Deadband == pair.Second.Deadband && pair.First.MinimumIntervalMilliseconds == pair.Second.MinimumIntervalMilliseconds && pair.First.MaximumIntervalMilliseconds == pair.Second.MaximumIntervalMilliseconds && pair.First.QualityOfService == pair.Second.QualityOfService && pair.First.Retain == pair.Second.Retain);
+
+    private static bool MachineSettingsEqual(MachineSettingsOptions left, MachineSettingsOptions right) =>
+        left.Pages.Count == right.Pages.Count && left.Pages.Zip(right.Pages).All(pair =>
+            pair.First.Id == pair.Second.Id && pair.First.Title == pair.Second.Title && pair.First.Description == pair.Second.Description &&
+            pair.First.Group == pair.Second.Group && pair.First.Order == pair.Second.Order && pair.First.IsVisible == pair.Second.IsVisible &&
+            pair.First.Parameters.Count == pair.Second.Parameters.Count && pair.First.Parameters.Zip(pair.Second.Parameters).All(items =>
+                items.First.Id == items.Second.Id && items.First.Name == items.Second.Name && items.First.Description == items.Second.Description && items.First.Group == items.Second.Group &&
+                items.First.ValueType == items.Second.ValueType && items.First.Value == items.Second.Value && items.First.Min == items.Second.Min && items.First.Max == items.Second.Max &&
+                items.First.Unit == items.Second.Unit && items.First.IsReadOnly == items.Second.IsReadOnly && items.First.IsVisible == items.Second.IsVisible &&
+                items.First.Order == items.Second.Order && items.First.LiveTagId == items.Second.LiveTagId));
 
     private static bool DictionaryEquals(
         IReadOnlyDictionary<string, string> left,

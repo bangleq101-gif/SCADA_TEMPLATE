@@ -1,0 +1,83 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:machine="clr-namespace:Scada.Core.MachineSettings;assembly=Scada.Core"
+                    xmlns:vm="clr-namespace:Scada.App.ViewModels">
+    <BooleanToVisibilityConverter x:Key="BooleanToVisibility" />
+
+    <DataTemplate x:Key="BooleanParameterInputTemplate">
+        <CheckBox Content="Enabled" IsChecked="{Binding BooleanValue}" IsEnabled="{Binding IsEditable}"
+                  AutomationProperties.Name="{Binding Name}" AutomationProperties.HelpText="{Binding Description}" />
+    </DataTemplate>
+    <DataTemplate x:Key="IntegerParameterInputTemplate">
+        <TextBox Text="{Binding EditValueText, UpdateSourceTrigger=PropertyChanged, ValidatesOnDataErrors=True}"
+                 IsReadOnly="{Binding IsReadOnly}"
+                 AutomationProperties.Name="{Binding Name}" AutomationProperties.HelpText="{Binding Description}" />
+    </DataTemplate>
+    <DataTemplate x:Key="DecimalParameterInputTemplate">
+        <TextBox Text="{Binding EditValueText, UpdateSourceTrigger=PropertyChanged, ValidatesOnDataErrors=True}"
+                 IsReadOnly="{Binding IsReadOnly}"
+                 AutomationProperties.Name="{Binding Name}" AutomationProperties.HelpText="{Binding Description}" />
+    </DataTemplate>
+    <DataTemplate x:Key="StringParameterInputTemplate">
+        <TextBox Text="{Binding EditValueText, UpdateSourceTrigger=PropertyChanged, ValidatesOnDataErrors=True}"
+                 IsReadOnly="{Binding IsReadOnly}"
+                 AutomationProperties.Name="{Binding Name}" AutomationProperties.HelpText="{Binding Description}" />
+    </DataTemplate>
+
+    <DataTemplate x:Key="ParameterEditorTemplate">
+        <Border Background="White" BorderBrush="#D6DEE6" BorderThickness="1" CornerRadius="6" Padding="20" Margin="0,0,0,8"
+                Visibility="{Binding IsVisible, Converter={StaticResource BooleanToVisibility}}">
+            <Grid AutomationProperties.Name="{Binding Name}" AutomationProperties.HelpText="{Binding Description}">
+                <Grid.ColumnDefinitions><ColumnDefinition Width="220"/><ColumnDefinition Width="*"/><ColumnDefinition Width="150"/></Grid.ColumnDefinitions>
+                <StackPanel>
+                    <TextBlock Text="{Binding Name}" FontSize="16" FontWeight="SemiBold" Foreground="#162536" />
+                    <TextBlock Text="{Binding Description}" Foreground="#607080" Margin="4" />
+                    <TextBlock Text="{Binding Unit}" />
+                    <TextBlock Text="{Binding Definition.Min, StringFormat=Min: {0}}" />
+                    <TextBlock Text="{Binding Definition.Max, StringFormat=Max: {0}}" />
+                </StackPanel>
+                <StackPanel Grid.Column="1">
+                    <ContentControl Content="{Binding}" KeyboardNavigation.TabNavigation="Local">
+                        <ContentControl.Style>
+                            <Style TargetType="ContentControl">
+                                <Setter Property="ContentTemplate" Value="{StaticResource StringParameterInputTemplate}" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding ValueType}" Value="{x:Static machine:MachineParameterValueType.Boolean}"><Setter Property="ContentTemplate" Value="{StaticResource BooleanParameterInputTemplate}" /></DataTrigger>
+                                    <DataTrigger Binding="{Binding ValueType}" Value="{x:Static machine:MachineParameterValueType.Integer}"><Setter Property="ContentTemplate" Value="{StaticResource IntegerParameterInputTemplate}" /></DataTrigger>
+                                    <DataTrigger Binding="{Binding ValueType}" Value="{x:Static machine:MachineParameterValueType.Decimal}"><Setter Property="ContentTemplate" Value="{StaticResource DecimalParameterInputTemplate}" /></DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </ContentControl.Style>
+                    </ContentControl>
+                    <TextBlock Text="{Binding ErrorMessage, StringFormat=Validation error: {0}}" Foreground="OrangeRed"
+                               Visibility="{Binding HasErrors, Converter={StaticResource BooleanToVisibility}}"
+                               AutomationProperties.Name="Validation error" AutomationProperties.LiveSetting="Polite" />
+                </StackPanel>
+                <StackPanel Grid.Column="2" AutomationProperties.Name="Live value">
+                    <TextBlock Text="{Binding LiveValue, StringFormat=Value: {0}}" />
+                    <TextBlock Text="{Binding LiveQuality, StringFormat=Quality: {0}}" />
+                    <TextBlock Text="{Binding LiveTimestamp, StringFormat=Timestamp: {0:O}}" />
+                </StackPanel>
+            </Grid>
+        </Border>
+    </DataTemplate>
+    <DataTemplate x:Key="ParameterGroupTemplate">
+        <Border Margin="0,12,0,6" Padding="0,0,0,4" BorderBrush="#D6DEE6" BorderThickness="0,0,0,1"
+                AutomationProperties.Name="{Binding Name}">
+            <TextBlock Text="{Binding Name}" FontSize="16" FontWeight="SemiBold" Foreground="#162536" />
+        </Border>
+    </DataTemplate>
+    <DataTemplate x:Key="MachineSettingsPageTemplate" DataType="{x:Type vm:MachineSettingsPageViewModel}">
+        <TextBlock Text="{Binding Title}" AutomationProperties.Name="{Binding Title}" />
+    </DataTemplate>
+    <HierarchicalDataTemplate x:Key="MachineSettingsPageGroupTemplate" ItemsSource="{Binding Pages}"
+                              ItemTemplate="{StaticResource MachineSettingsPageTemplate}">
+        <TextBlock Text="{Binding Name}" FontWeight="SemiBold" AutomationProperties.Name="{Binding Name}" />
+    </HierarchicalDataTemplate>
+    <DataTemplate DataType="{x:Type vm:ParameterGroupViewModel}">
+        <ContentPresenter Content="{Binding}" ContentTemplate="{StaticResource ParameterGroupTemplate}" />
+    </DataTemplate>
+    <DataTemplate DataType="{x:Type vm:ParameterEditorViewModel}">
+        <ContentPresenter Content="{Binding}" ContentTemplate="{StaticResource ParameterEditorTemplate}" />
+    </DataTemplate>
+</ResourceDictionary>

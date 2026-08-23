@@ -24,7 +24,11 @@ Current M7 scope is publisher-only: MQTT consumes the central TagCache, applies 
 
 Milestone 8:
 
-Implemented on `feature/milestone-8-hmi-controls`; pending verification and independent review/PR. It adds App-layer reusable read-only HMI controls and faceplate foundations without changing TagCache, polling, PLC reads or write paths.
+Completed and merged to `main` via PR #10. It adds App-layer reusable read-only HMI controls and faceplate foundations without changing TagCache, polling, PLC reads or write paths.
+
+Milestone 9:
+
+Implemented on `feature/milestone-9-machine-settings`; PR #11 is open and pending independent source re-review and merge. PLC Write, MQTT Write, command/interlock and authorization frameworks are not implemented.
 
 ## Implemented in Milestone 1
 
@@ -139,17 +143,29 @@ n PLC
 - Remote-only history queries with exact recorded-tick filtering and widened rollback windows; no local pending samples are merged into query results.
 - History Settings provider selection, candidate-only Test Connection, retention and separately confirmed buffer maintenance actions.
 
+## Implemented in Milestone 9
+
+- Versioned project-persisted Machine Settings pages, groups and typed parameters with schema v4 → v5 in-memory migration.
+- Pure Core canonical value codec and validation for Boolean, Integer, Decimal and String values, culture-aware editor conversion and invariant persistence.
+- Transactional page Apply: all editable drafts validate/normalize before any project value changes, with a single dirty transition after success.
+- `ProjectEditSession` remains the sole clone/comparison/save/revert/dirty authority for Machine Settings.
+- `machine-settings.overview` internal hierarchical page/group navigation with typed WPF editor templates, validation, read-only/hidden behavior and accessible semantic labels.
+- A flattened group-header/editor row composition preserves visible `ParameterGroup` semantics while one recycling `ListBox` owns parameter virtualization.
+- Non-destructive UI rebuilds and successful Save preserve unapplied drafts; explicit page/project Revert deterministically discards the corresponding drafts.
+- Read-only logical `LiveTagId` values sourced only from the central TagCache, with enabled-catalog resolution, active-page deduplication, subscribe-before-seed and generation-guarded UI updates.
+- Deterministic lifecycle coverage for deactivation/disposal during subscription acquisition, stale queued callbacks and page replacement.
+
 ## Verified
 
 - `dotnet restore Scada.sln --ignore-failed-sources` — PASS.
 - `dotnet build Scada.sln -c Release --no-restore` — PASS with 0 warnings and 0 errors.
-- `dotnet test Scada.sln -c Release --no-build` — PASS; 199 tests, 0 failures (60 App, 59 Runtime, 17 Core, 3 Drivers, 60 Infrastructure).
+- `dotnet test Scada.sln -c Release --no-build` — PASS; 289 tests, 0 failures (127 App, 68 Runtime, 31 Core, 3 Drivers, 60 Infrastructure).
 - `dotnet list Scada.sln package --include-transitive --vulnerable` — PASS; no vulnerable packages reported. `SQLitePCLRaw.bundle_e_sqlite3`, `core`, `lib.e_sqlite3` and `provider.e_sqlite3` resolve to 2.1.12 through `Microsoft.Data.Sqlite` 10.0.11.
 - `git diff --check` — PASS.
 - InfluxDB package audit — PASS; no vulnerable packages reported.
 - WPF startup smoke test — PASS; `Scada.App` stayed running through the startup check and resolved `MainWindow` with resources/templates loaded without a startup DI/XAML exception.
 - Copy-folder portability verification — PASS on a fresh copy outside the repository; restore/build/startup do not depend on the original folder, and no original repository path was found in copied source/configuration files.
-- GitNexus post-change review — PASS; 0 import cycles, `Scada.Runtime` still depends only on `Scada.Core`, Influx client/outbox/transport remain in Infrastructure, no TagCache source change, and no direct PLC reads from the History Settings workspace. Interface impacts remain lower-bound where DI/dynamic dispatch is not statically traced.
+- GitNexus post-change review — PASS; refreshed M9 index contains 2,919 nodes / 9,872 edges / 245 flows with 0 import cycles. Changed execution flows remain within Machine Settings/App and tests; `Scada.Runtime` still references only `Scada.Core`, and static boundary scans find no Machine Settings, WPF, App or concrete-driver dependency in Runtime.
 - UI automation remains out of scope.
 
 ## Not implemented — later milestones
@@ -157,8 +173,7 @@ n PLC
 - Real Siemens, Mitsubishi, Modbus or OPC UA drivers.
 - MQTT publisher or write support.
 - Complete Alarm and Trend systems.
-- Reusable HMI controls and Faceplates.
-- Full Machine Settings implementation.
+- PLC-backed Machine Settings Apply/Write, recipes, calibration workflow, audit trail and authorization.
 - Deployment tooling.
 - Stress testing at 50 simulated PLCs / approximately 10,000 tags.
 - Deeper active-view subscription lifecycle optimization beyond the M3 activation/deactivation boundary.

@@ -3,12 +3,14 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
     <Application.Resources>
         <ResourceDictionary>
+            <BooleanToVisibilityConverter x:Key="BooleanToVisibility" />
             <ResourceDictionary.MergedDictionaries>
                 <ResourceDictionary Source="Resources/Colors.xaml" />
                 <ResourceDictionary Source="Resources/Controls.xaml" />
                 <ResourceDictionary Source="Resources/Hmi/HmiColors.xaml" />
                 <ResourceDictionary Source="Resources/Hmi/HmiControls.xaml" />
                 <ResourceDictionary Source="Resources/Hmi/HmiFaceplates.xaml" />
+                <ResourceDictionary Source="Resources/MachineSettings/ParameterEditors.xaml" />
             </ResourceDictionary.MergedDictionaries>
         </ResourceDictionary>
     </Application.Resources>

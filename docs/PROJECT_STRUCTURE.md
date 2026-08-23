@@ -4,6 +4,8 @@
 
 `Scada.App/Hmi` contains the App-layer logical equipment contexts and faceplate host state. `Scada.App/Controls/Hmi` contains passive WPF controls; `Scada.App/Resources/Hmi` contains their copy-folder-contained styles and vendor-neutral fallback visuals. These controls consume TagCache only through their screen-owned context and do not read PLC data directly.
 
+`Scada.Core/MachineSettings` contains persisted page/parameter definitions, canonical text conversion and pure validation. `Scada.App/ViewModels/MachineSettingsViewModel.cs` owns page drafts, transactional Apply and active-page logical TagCache observation; it does not own project persistence or PLC commands.
+
 ## Production dependency graph
 
 ```text

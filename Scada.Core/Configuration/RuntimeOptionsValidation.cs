@@ -3,6 +3,7 @@ using Scada.Core.History;
 using System.Globalization;
 using System.Text.RegularExpressions;
 using Scada.Core.Mqtt;
+using Scada.Core.MachineSettings;
 
 namespace Scada.Core.Configuration;
 
@@ -33,6 +34,7 @@ public static class RuntimeOptionsValidation
         ValidateHistorianStorage(historian, issues);
         issues.AddRange(HistoryProfileValidation.CollectIssues(historian));
         ValidateMqtt(mqtt, issues);
+        issues.AddRange(MachineSettingsValidation.CollectIssues(options.MachineSettings, options.Tags ?? []));
 
         var historyRegistry = new HistoryProfileRegistry(historian.Profiles ?? []);
 

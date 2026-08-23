@@ -3,6 +3,7 @@ using Scada.App.Services;
 using Scada.Core.Configuration;
 using Scada.Core.Devices;
 using Scada.Core.Tags;
+using Scada.Core.MachineSettings;
 using Scada.Infrastructure.Persistence;
 using Xunit;
 
@@ -109,6 +110,33 @@ public sealed class ProjectEditSessionTests
 
         Assert.False(session.TrySave());
         Assert.Contains(session.ValidationIssues, issue => issue.Code == "PROJECT_PATH_REQUIRED");
+    }
+
+    [Fact]
+    public void MachineSettingsAreDeepClonedSavedAndRestoredByProjectRevert()
+    {
+        var directory = CreateTempDirectory();
+        try
+        {
+            var options = CreateOptions();
+            options.MachineSettings.Pages = [new MachineSettingsPageDefinition { Id = "page", Title = "Page", Group = "Drive", Parameters = [new MachineParameterDefinition { Id = "speed", Name = "Speed", Group = "Limits", ValueType = MachineParameterValueType.Integer, Value = "10", Min = 0, Max = 20, Unit = "rpm" }] }];
+            var session = CreateSession(options, directory);
+            session.WorkingProject.MachineSettings.Pages[0].Parameters[0].Value = "12";
+            session.MarkChanged();
+
+            Assert.True(session.TrySave());
+            Assert.True(session.RestartRequired);
+            Assert.Equal("10", session.StartupProject.MachineSettings.Pages[0].Parameters[0].Value);
+            session.WorkingProject.MachineSettings.Pages[0].Group = "Changed";
+            session.WorkingProject.MachineSettings.Pages[0].Parameters[0].Group = "Changed";
+            session.MarkChanged();
+            session.Revert();
+
+            Assert.Equal("Drive", session.WorkingProject.MachineSettings.Pages[0].Group);
+            Assert.Equal("Limits", session.WorkingProject.MachineSettings.Pages[0].Parameters[0].Group);
+            Assert.Equal("12", session.WorkingProject.MachineSettings.Pages[0].Parameters[0].Value);
+        }
+        finally { DeleteDirectory(directory); }
     }
 
     private static ProjectEditSession CreateSession(RuntimeOptions options, string? directory = null)

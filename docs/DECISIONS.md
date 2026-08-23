@@ -1,6 +1,10 @@
 
 # Architecture Decisions
 
+## D55 — Machine Settings uses project candidates and read-only live observation
+
+Machine Settings definitions are persisted as a `RuntimeOptions.MachineSettings` project-document container only; Runtime, polling, drivers, Historian and MQTT do not consume it. Parameter values are canonical text using the Core codec, with draft edit text owned by the App. Page Apply validates every draft before mutating the single `ProjectEditSession.WorkingProject` authority and Project Save/Revert retain their existing atomic/restart-required behavior. Optional `LiveTagId` values are logical TagCache identifiers only; active pages own deduplicated subscriptions and no Machine Settings path performs PLC writes. `IsReadOnly` is configuration safety, not authorization.
+
 ## D54 — App-layer HMI contexts and non-owning faceplates
 
 Reusable HMI controls remain passive WPF controls in `Scada.App` and bind a logical `HmiEquipmentContext`, never PLC addresses or `ITagCache`. A screen-owned context deduplicates logical TagId subscriptions within its equipment instance, seeds from TagCache and owns lifecycle disposal. Faceplate hosts borrow the already-active context and never deactivate or dispose it. M8 is read-only and uses vendor-neutral packaged XAML fallbacks; external assets remain optional graphic sources subject to separate license review.
