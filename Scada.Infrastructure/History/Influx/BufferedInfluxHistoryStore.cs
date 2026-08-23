@@ -14,6 +14,7 @@ namespace Scada.Infrastructure.History.Influx;
 public sealed class BufferedInfluxHistoryStore : IHistoryStore, IHistoryStoreDiagnostics, IHistoryStoreMaintenance
 {
     private const int MaximumIsolationAttempts = 20_000;
+    private const long ExclusiveMaximumNanoseconds = InfluxPointTimestamp.MaxNanoseconds + 1;
     private readonly ProjectPath? _projectPath;
     private readonly InfluxDbOptions _options;
     private readonly ILogger<BufferedInfluxHistoryStore> _logger;
@@ -179,6 +180,15 @@ public sealed class BufferedInfluxHistoryStore : IHistoryStore, IHistoryStoreDia
                 ? startNanoseconds
                 : InfluxPointTimestamp.MinNanoseconds;
             var hasStop = InfluxPointTimestamp.TryGetBaseNanoseconds(query.ToRecordedAtUtc, out var stopNanoseconds);
+            if (!hasStop)
+            {
+                // Flux range stops are exclusive. Use the explicit signed integer
+                // epoch-nanosecond form so the valid Influx maximum is included
+                // without relying on a duration literal at Int64.MaxValue.
+                stopNanoseconds = ExclusiveMaximumNanoseconds;
+                hasStop = true;
+            }
+
             if (lastRemoteTimestamp is long previous && previous >= InfluxPointTimestamp.MinNanoseconds && previous < InfluxPointTimestamp.MaxNanoseconds)
             {
                 var widenedStop = previous + 1;
@@ -384,7 +394,7 @@ public sealed class BufferedInfluxHistoryStore : IHistoryStore, IHistoryStoreDia
                     return;
                 }
 
-                await WaitForWorkOrDelayAsync(
+                await DelayOnlyAsync(
                         TimeSpan.FromMilliseconds(_options.ReconnectMaxDelayMilliseconds),
                         cancellationToken)
                     .ConfigureAwait(false);
@@ -427,14 +437,14 @@ public sealed class BufferedInfluxHistoryStore : IHistoryStore, IHistoryStoreDia
                 consecutiveFailures++;
                 await RecordTransportFailureAsync(exception, cancellationToken).ConfigureAwait(false);
                 var delay = exception.RetryAfter ?? GetBackoff(consecutiveFailures);
-                await WaitForWorkOrDelayAsync(delay, cancellationToken).ConfigureAwait(false);
+                await DelayOnlyAsync(delay, cancellationToken).ConfigureAwait(false);
             }
             catch (HistoryStoreTransientException exception)
             {
                 consecutiveFailures++;
                 await RecordFailureAsync(exception.Code, exception.Message, HistoryStoreState.Offline, cancellationToken)
                     .ConfigureAwait(false);
-                await WaitForWorkOrDelayAsync(GetBackoff(consecutiveFailures), cancellationToken)
+                await DelayOnlyAsync(GetBackoff(consecutiveFailures), cancellationToken)
                     .ConfigureAwait(false);
             }
             catch (Exception exception)
@@ -449,7 +459,7 @@ public sealed class BufferedInfluxHistoryStore : IHistoryStore, IHistoryStoreDia
                         HistoryStoreState.Offline,
                         cancellationToken)
                     .ConfigureAwait(false);
-                await WaitForWorkOrDelayAsync(GetBackoff(consecutiveFailures), cancellationToken)
+                await DelayOnlyAsync(GetBackoff(consecutiveFailures), cancellationToken)
                     .ConfigureAwait(false);
             }
         }
@@ -741,6 +751,11 @@ public sealed class BufferedInfluxHistoryStore : IHistoryStore, IHistoryStoreDia
         }
     }
 
+    private async Task DelayOnlyAsync(TimeSpan delay, CancellationToken cancellationToken)
+    {
+        await Task.Delay(delay, _timeProvider, cancellationToken).ConfigureAwait(false);
+    }
+
     private void SignalWork()
     {
         TryReleaseWorkSignal(_workSignal);
@@ -783,7 +798,9 @@ public sealed class BufferedInfluxHistoryStore : IHistoryStore, IHistoryStoreDia
     {
         var start = startNanoseconds.ToString(CultureInfo.InvariantCulture);
         var stop = stopNanoseconds is long value
-            ? $", stop: time(v: {value.ToString(CultureInfo.InvariantCulture)}ns)"
+            ? value == ExclusiveMaximumNanoseconds
+                ? $", stop: time(v: {value.ToString(CultureInfo.InvariantCulture)})"
+                : $", stop: time(v: {value.ToString(CultureInfo.InvariantCulture)}ns)"
             : string.Empty;
         return $"""
             from(bucket: {FluxString(_options.Bucket)})

@@ -255,6 +255,107 @@ public sealed class InfluxProviderTests
     }
 
     [Fact]
+    public async Task FailureBackoffDoesNotWakeForNewSamples()
+    {
+        var directory = CreateTempDirectory();
+        try
+        {
+            var clock = new ManualTimeProvider();
+            var transport = new FakeInfluxTransport
+            {
+                ProbeFailure = probeNumber => probeNumber == 1
+                    ? new InfluxTransportException("INFLUX_REMOTE_UNAVAILABLE", "offline")
+                    : null
+            };
+            var options = CreateInfluxOptions();
+            options.HealthProbeIntervalMilliseconds = 1;
+            options.ReconnectInitialDelayMilliseconds = 5_000;
+            options.ReconnectMaxDelayMilliseconds = 5_000;
+            await using var store = CreateStore(directory, options, transport, clock);
+            await store.InitializeAsync(CancellationToken.None);
+            await store.WriteBatchAsync([Sample("T1", TagDataType.Double, 1d, sequence: 1)], CancellationToken.None);
+
+            await WaitUntilAsync(() => transport.ProbeCount == 1 && store.Snapshot.SyncFailures > 0);
+            await clock.WaitForTimerCountAsync(1);
+
+            for (var sequence = 2; sequence <= 6; sequence++)
+            {
+                await store.WriteBatchAsync(
+                    [Sample("T1", TagDataType.Double, (double)sequence, sequence: sequence)],
+                    CancellationToken.None);
+            }
+
+            await Task.Yield();
+            Assert.Equal(1, transport.ProbeCount);
+            Assert.Equal(0, transport.WriteCount);
+
+            clock.Advance(TimeSpan.FromSeconds(5));
+            await WaitUntilAsync(() => transport.ProbeCount >= 2 && transport.WrittenLines.Count == 6);
+
+            Assert.True(transport.ProbeCount >= 2);
+            Assert.Equal(1, transport.WriteCount);
+            Assert.Equal(0, store.Snapshot.PendingSamples);
+            Assert.Equal(6, transport.WrittenLines.Count);
+        }
+        finally
+        {
+            DeleteDirectory(directory);
+        }
+    }
+
+    [Fact]
+    public async Task RateLimitRetryAfterDoesNotWakeForNewSamples()
+    {
+        var directory = CreateTempDirectory();
+        try
+        {
+            var clock = new ManualTimeProvider();
+            var writeAttempts = 0;
+            var transport = new FakeInfluxTransport
+            {
+                WriteFailure = _ => Interlocked.Increment(ref writeAttempts) == 1
+                    ? new InfluxTransportException(
+                        "INFLUX_RATE_LIMITED",
+                        "rate limited",
+                        statusCode: 429,
+                        retryAfter: TimeSpan.FromSeconds(5))
+                    : null
+            };
+            var options = CreateInfluxOptions();
+            options.HealthProbeIntervalMilliseconds = 1;
+            options.SyncIntervalMilliseconds = 1;
+            options.ReconnectMaxDelayMilliseconds = 100;
+            await using var store = CreateStore(directory, options, transport, clock);
+            await store.InitializeAsync(CancellationToken.None);
+            await store.WriteBatchAsync([Sample("T1", TagDataType.Double, 1d, sequence: 1)], CancellationToken.None);
+
+            await WaitUntilAsync(() => transport.WriteCount == 1 && store.Snapshot.SyncFailures > 0);
+            await clock.WaitForTimerCountAsync(2);
+
+            for (var sequence = 2; sequence <= 4; sequence++)
+            {
+                await store.WriteBatchAsync(
+                    [Sample("T1", TagDataType.Double, (double)sequence, sequence: sequence)],
+                    CancellationToken.None);
+            }
+
+            await Task.Yield();
+            Assert.Equal(1, transport.WriteCount);
+
+            clock.Advance(TimeSpan.FromSeconds(5));
+            await WaitUntilAsync(() => transport.WriteCount >= 2 && transport.WrittenLines.Count == 4);
+
+            Assert.Equal(2, transport.WriteCount);
+            Assert.Equal(0, store.Snapshot.PendingSamples);
+            Assert.Equal(4, transport.WrittenLines.Count);
+        }
+        finally
+        {
+            DeleteDirectory(directory);
+        }
+    }
+
+    [Fact]
     public async Task OnlineTransportAcksDurableRowsWithoutAThirdQueue()
     {
         var directory = CreateTempDirectory();
@@ -375,6 +476,76 @@ public sealed class InfluxProviderTests
     }
 
     [Fact]
+    public async Task QueryUsesExplicitMaximumStopWithoutLocalCounter()
+    {
+        var directory = CreateTempDirectory();
+        try
+        {
+            var transport = new FakeInfluxTransport();
+            await using var store = CreateStore(directory, CreateInfluxOptions(), transport);
+            await store.InitializeAsync(CancellationToken.None);
+
+            await store.QueryAsync(
+                new HistoryQuery(
+                    "Runtime01",
+                    "T1",
+                    DateTimeOffset.Parse("2026-01-01T00:00:00Z"),
+                    DateTimeOffset.MaxValue,
+                    10),
+                CancellationToken.None);
+
+            var expectedStop = InfluxPointTimestamp.MaxNanoseconds + 1;
+            Assert.Contains($"stop: time(v: {expectedStop})", transport.LastQuery, StringComparison.Ordinal);
+        }
+        finally
+        {
+            DeleteDirectory(directory);
+        }
+    }
+
+    [Fact]
+    public async Task QueryIncludesPointAtInfluxMaximumWithExplicitExclusiveStop()
+    {
+        var directory = CreateTempDirectory();
+        try
+        {
+            var maximumRecorded = DateTimeOffset.UnixEpoch.AddTicks(92_233_720_368_547_758L);
+            var transport = new FakeInfluxTransport
+            {
+                QueryResponse = $"""
+#group,false,false,false,false,false,false,false,false,false,false,false,false
+#datatype,string,long,dateTime:RFC3339,string,string,string,string,string,boolean,long,long,long,double
+#default,_result,,,,,,,,,,,,
+,result,table,_time,_measurement,runtime_id,tag_id,data_type,quality,has_value,source_timestamp_utc_ticks,recorded_at_utc_ticks,tag_sequence,value_real
+,_result,0,2262-04-11T23:47:16.854775806Z,scada_history,Runtime01,T1,Double,Good,true,{maximumRecorded.UtcDateTime.Ticks},{maximumRecorded.UtcDateTime.Ticks},1,1.5
+"""
+            };
+            await using var store = CreateStore(directory, CreateInfluxOptions(), transport);
+            await store.InitializeAsync(CancellationToken.None);
+
+            var results = await store.QueryAsync(
+                new HistoryQuery(
+                    "Runtime01",
+                    "T1",
+                    maximumRecorded.AddTicks(-1),
+                    DateTimeOffset.MaxValue,
+                    10),
+                CancellationToken.None);
+
+            Assert.Single(results);
+            Assert.Equal(maximumRecorded, results[0].RecordedAtUtc);
+            Assert.Contains(
+                $"stop: time(v: {InfluxPointTimestamp.MaxNanoseconds + 1})",
+                transport.LastQuery,
+                StringComparison.Ordinal);
+        }
+        finally
+        {
+            DeleteDirectory(directory);
+        }
+    }
+
+    [Fact]
     public async Task QueryClampsBelowMinimumAndRejectsRangesOutsideInfluxBounds()
     {
         var directory = CreateTempDirectory();
@@ -457,7 +628,8 @@ public sealed class InfluxProviderTests
     private static BufferedInfluxHistoryStore CreateStore(
         string directory,
         InfluxDbOptions options,
-        IInfluxTransport? transport = null)
+        IInfluxTransport? transport = null,
+        TimeProvider? timeProvider = null)
     {
         var projectPath = new ProjectPath(Path.Combine(directory, "project.json"));
         var historian = new HistorianOptions
@@ -469,7 +641,7 @@ public sealed class InfluxProviderTests
             projectPath,
             historian,
             NullLogger<BufferedInfluxHistoryStore>.Instance,
-            TimeProvider.System,
+            timeProvider ?? TimeProvider.System,
             transport);
     }
 
@@ -506,7 +678,7 @@ public sealed class InfluxProviderTests
 
     private static async Task WaitUntilAsync(Func<bool> condition)
     {
-        for (var attempt = 0; attempt < 200; attempt++)
+        for (var attempt = 0; attempt < 500; attempt++)
         {
             if (condition())
             {
@@ -538,12 +710,16 @@ public sealed class InfluxProviderTests
     private sealed class FakeInfluxTransport : IInfluxTransport
     {
         private readonly List<string> _writtenLines = [];
+        private int _probeCount;
+        private int _writeCount;
+        private int _queryCount;
 
-        public int ProbeCount { get; private set; }
-        public int WriteCount { get; private set; }
-        public int QueryCount { get; private set; }
+        public int ProbeCount => Volatile.Read(ref _probeCount);
+        public int WriteCount => Volatile.Read(ref _writeCount);
+        public int QueryCount => Volatile.Read(ref _queryCount);
         public string LastQuery { get; private set; } = string.Empty;
         public string QueryResponse { get; set; } = string.Empty;
+        public Func<int, InfluxTransportException?>? ProbeFailure { get; init; }
         public Func<IReadOnlyList<string>, InfluxTransportException?>? WriteFailure { get; init; }
         public TaskCompletionSource<bool>? WriteStarted { get; init; }
         public TaskCompletionSource<bool>? AllowWrite { get; init; }
@@ -551,7 +727,13 @@ public sealed class InfluxProviderTests
 
         public Task ProbeAsync(CancellationToken cancellationToken)
         {
-            ProbeCount++;
+            var probeNumber = Interlocked.Increment(ref _probeCount);
+            var failure = ProbeFailure?.Invoke(probeNumber);
+            if (failure is not null)
+            {
+                throw failure;
+            }
+
             return Task.CompletedTask;
         }
 
@@ -561,7 +743,7 @@ public sealed class InfluxProviderTests
             string organization,
             CancellationToken cancellationToken)
         {
-            WriteCount++;
+            Interlocked.Increment(ref _writeCount);
             WriteStarted?.TrySetResult(true);
             if (AllowWrite is not null)
             {
@@ -579,7 +761,7 @@ public sealed class InfluxProviderTests
 
         public Task<string> QueryRawAsync(string flux, string organization, CancellationToken cancellationToken)
         {
-            QueryCount++;
+            Interlocked.Increment(ref _queryCount);
             LastQuery = flux;
             return Task.FromResult(QueryResponse);
         }
@@ -591,5 +773,190 @@ public sealed class InfluxProviderTests
             Task.CompletedTask;
 
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
+
+    private sealed class ManualTimeProvider : TimeProvider
+    {
+        private readonly object _sync = new();
+        private readonly List<ManualTimer> _timers = [];
+        private DateTimeOffset _utcNow = DateTimeOffset.Parse("2026-01-01T00:00:00Z");
+        private long _timestamp;
+        private int _timerCreationCount;
+        private TaskCompletionSource<bool> _timerCreated = CreateSignal();
+
+        public override long TimestampFrequency => TimeSpan.TicksPerSecond;
+
+        public override DateTimeOffset GetUtcNow()
+        {
+            lock (_sync)
+            {
+                return _utcNow;
+            }
+        }
+
+        public override long GetTimestamp()
+        {
+            lock (_sync)
+            {
+                return _timestamp;
+            }
+        }
+
+        public override System.Threading.ITimer CreateTimer(
+            TimerCallback callback,
+            object? state,
+            TimeSpan dueTime,
+            TimeSpan period)
+        {
+            TaskCompletionSource<bool> signal;
+            lock (_sync)
+            {
+                var timer = new ManualTimer(this, callback, state);
+                _timers.Add(timer);
+                timer.SetSchedule(dueTime, period, _utcNow);
+                _timerCreationCount++;
+                signal = _timerCreated;
+                _timerCreated = CreateSignal();
+                signal.TrySetResult(true);
+                return timer;
+            }
+        }
+
+        public async Task WaitForTimerCountAsync(int expectedCount)
+        {
+            while (true)
+            {
+                Task waitTask;
+                lock (_sync)
+                {
+                    if (_timerCreationCount >= expectedCount)
+                    {
+                        return;
+                    }
+
+                    waitTask = _timerCreated.Task;
+                }
+
+                await waitTask.WaitAsync(TimeSpan.FromSeconds(2));
+            }
+        }
+
+        public void Advance(TimeSpan elapsed)
+        {
+            if (elapsed < TimeSpan.Zero)
+            {
+                throw new ArgumentOutOfRangeException(nameof(elapsed));
+            }
+
+            List<ManualTimer> dueTimers;
+            lock (_sync)
+            {
+                _utcNow = _utcNow.Add(elapsed);
+                _timestamp = checked(_timestamp + (long)(elapsed.TotalSeconds * TimestampFrequency));
+                dueTimers = [];
+                foreach (var timer in _timers.ToArray())
+                {
+                    while (timer.IsDue(_utcNow))
+                    {
+                        dueTimers.Add(timer);
+                        if (!timer.RepeatAfterDue(_utcNow))
+                        {
+                            break;
+                        }
+                    }
+                }
+            }
+
+            foreach (var timer in dueTimers)
+            {
+                timer.Invoke();
+            }
+        }
+
+        private static TaskCompletionSource<bool> CreateSignal() =>
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        private bool ChangeTimer(ManualTimer timer, TimeSpan dueTime, TimeSpan period)
+        {
+            lock (_sync)
+            {
+                if (timer.IsDisposed)
+                {
+                    return false;
+                }
+
+                timer.SetSchedule(dueTime, period, _utcNow);
+                return true;
+            }
+        }
+
+        private void DisposeTimer(ManualTimer timer)
+        {
+            lock (_sync)
+            {
+                timer.MarkDisposed();
+                _timers.Remove(timer);
+            }
+        }
+
+        private sealed class ManualTimer : System.Threading.ITimer
+        {
+            private readonly ManualTimeProvider _owner;
+            private readonly TimerCallback _callback;
+            private readonly object? _state;
+            private DateTimeOffset? _dueAtUtc;
+            private TimeSpan _period;
+
+            public ManualTimer(ManualTimeProvider owner, TimerCallback callback, object? state)
+            {
+                _owner = owner;
+                _callback = callback;
+                _state = state;
+            }
+
+            public bool IsDisposed { get; private set; }
+
+            public bool Change(TimeSpan dueTime, TimeSpan period) =>
+                _owner.ChangeTimer(this, dueTime, period);
+
+            public void Dispose() => _owner.DisposeTimer(this);
+
+            public ValueTask DisposeAsync()
+            {
+                Dispose();
+                return ValueTask.CompletedTask;
+            }
+
+            public bool IsDue(DateTimeOffset now) =>
+                !IsDisposed && _dueAtUtc is DateTimeOffset dueAtUtc && dueAtUtc <= now;
+
+            public bool RepeatAfterDue(DateTimeOffset now)
+            {
+                if (_period == Timeout.InfiniteTimeSpan || _period <= TimeSpan.Zero)
+                {
+                    _dueAtUtc = null;
+                    return false;
+                }
+
+                _dueAtUtc = now.Add(_period);
+                return true;
+            }
+
+            public void Invoke()
+            {
+                if (!IsDisposed)
+                {
+                    _callback(_state);
+                }
+            }
+
+            public void SetSchedule(TimeSpan dueTime, TimeSpan period, DateTimeOffset now)
+            {
+                _period = period;
+                _dueAtUtc = dueTime == Timeout.InfiniteTimeSpan ? null : now.Add(dueTime);
+            }
+
+            public void MarkDisposed() => IsDisposed = true;
+        }
     }
 }
