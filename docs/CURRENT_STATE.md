@@ -8,7 +8,7 @@ Milestone 5 — Historian Foundation
 
 Status:
 
-Implemented and targeted stabilization complete on `feature/milestone-5-historian-foundation`; the feature branch is ready for final source review. No Pull Request has been created yet.
+Implemented, stabilized and source-reviewed on `feature/milestone-5-historian-foundation`; pending PR.
 
 Base commit:
 
