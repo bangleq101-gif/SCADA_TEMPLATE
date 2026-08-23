@@ -11,6 +11,8 @@ internal sealed class TestTagCache : ITagCache
 
     public int TryGetCount { get; private set; }
 
+    public Action? SubscribeHook { get; set; }
+
     public int ActiveSubscriptionCount
     {
         get
@@ -70,6 +72,8 @@ internal sealed class TestTagCache : ITagCache
         {
             _subscriptions.Add(subscription);
         }
+
+        SubscribeHook?.Invoke();
 
         return subscription;
     }

@@ -1,0 +1,5 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <SolidColorBrush x:Key="HmiStoppedBrush" Color="#718096"/><SolidColorBrush x:Key="HmiRunningBrush" Color="#2E8B57"/>
+  <SolidColorBrush x:Key="HmiFaultBrush" Color="#B33A3A"/><SolidColorBrush x:Key="HmiWarningBrush" Color="#C47F00"/>
+  <SolidColorBrush x:Key="HmiUnknownBrush" Color="#6B7280"/><SolidColorBrush x:Key="HmiBadQualityBrush" Color="#7A4E00"/>
+</ResourceDictionary>

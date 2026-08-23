@@ -1,6 +1,10 @@
 
 # Architecture Decisions
 
+## D54 — App-layer HMI contexts and non-owning faceplates
+
+Reusable HMI controls remain passive WPF controls in `Scada.App` and bind a logical `HmiEquipmentContext`, never PLC addresses or `ITagCache`. A screen-owned context deduplicates logical TagId subscriptions within its equipment instance, seeds from TagCache and owns lifecycle disposal. Faceplate hosts borrow the already-active context and never deactivate or dispose it. M8 is read-only and uses vendor-neutral packaged XAML fallbacks; external assets remain optional graphic sources subject to separate license review.
+
 ## D53 — MQTT publisher uses TagCache latest-state coalescing
 
 Milestone 7 publishes selected tags from the central TagCache only. MQTT is publisher-only and uses one latest pending value per tag while a broker is unavailable; it is not a durable event historian. MQTTnet is isolated in Infrastructure behind Core transport contracts, while Runtime owns profile evaluation, coalescing and reconnect orchestration. MQTT Write, command subscriptions and PLC-write paths remain out of scope.

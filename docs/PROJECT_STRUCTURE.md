@@ -1,5 +1,9 @@
 # SCADA V1 Project Structure
 
+## HMI controls and faceplates
+
+`Scada.App/Hmi` contains the App-layer logical equipment contexts and faceplate host state. `Scada.App/Controls/Hmi` contains passive WPF controls; `Scada.App/Resources/Hmi` contains their copy-folder-contained styles and vendor-neutral fallback visuals. These controls consume TagCache only through their screen-owned context and do not read PLC data directly.
+
 ## Production dependency graph
 
 ```text

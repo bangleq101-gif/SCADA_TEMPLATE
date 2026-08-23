@@ -1819,16 +1819,16 @@ Historian foundation + SQLite
 Milestone 7
 InfluxDB + buffering
 
-Milestone 8
+Milestone 7
 MQTT
 
-Milestone 9
+Milestone 8
 Reusable Controls + Faceplates
 
-Milestone 10
+Milestone 9
 Machine Settings reusable parameter UI
 
-Milestone 11
+Milestone 10
 Performance/stress hardening
 ```
 
