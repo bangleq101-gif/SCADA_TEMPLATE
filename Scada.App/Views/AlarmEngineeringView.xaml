@@ -1,0 +1,73 @@
+<UserControl x:Class="Scada.App.Views.AlarmEngineeringView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controls="clr-namespace:Scada.App.Controls">
+    <controls:WorkspaceLayout Title="Alarm Settings"
+                              Description="Configure PLC-read-only Alarm definitions. Saved changes require a runtime restart."
+                              Style="{StaticResource WorkspaceLayoutStyle}">
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+            <Border Style="{StaticResource CardBorderStyle}" Padding="12" Margin="0,0,0,10">
+                <Grid>
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="120"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                    <CheckBox Content="Enable Alarm runtime" IsChecked="{Binding Enabled}" Margin="0,0,18,0"
+                              AutomationProperties.Name="Enable Alarm runtime" />
+                    <CheckBox Grid.Column="1" Content="Enable SQLite persistence" IsChecked="{Binding PersistenceEnabled}" Margin="0,0,18,0"
+                              AutomationProperties.Name="Enable Alarm persistence" />
+                    <TextBlock Grid.Column="2" Text="Database path" VerticalAlignment="Center" />
+                    <TextBox Grid.Column="3" Text="{Binding DatabasePath, UpdateSourceTrigger=PropertyChanged}"
+                             AutomationProperties.Name="Project-relative Alarm database path" />
+                </Grid>
+            </Border>
+            <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,0,0,10">
+                <Button Content="Add" Command="{Binding AddCommand}" Style="{StaticResource PrimaryButtonStyle}" />
+                <Button Content="Duplicate" Command="{Binding DuplicateCommand}" Style="{StaticResource SecondaryButtonStyle}" Margin="8,0,0,0" />
+                <Button Content="Delete" Command="{Binding DeleteCommand}" Style="{StaticResource SecondaryButtonStyle}" Margin="8,0,0,0" />
+                <Button Content="Save project" Command="{Binding SaveCommand}" Style="{StaticResource PrimaryButtonStyle}" Margin="24,0,0,0" />
+                <Button Content="Revert saved" Command="{Binding RevertCommand}" Style="{StaticResource SecondaryButtonStyle}" Margin="8,0,0,0" />
+                <TextBlock Text="{Binding RestartRequired, StringFormat=Restart required: {0}}" Margin="18,5,0,0" />
+            </StackPanel>
+            <Grid Grid.Row="2" Margin="0,0,0,10">
+                <Grid.ColumnDefinitions><ColumnDefinition Width="2*"/><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                <TextBox Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.Name="Search Alarm definitions" />
+                <ComboBox Grid.Column="1" ItemsSource="{Binding RuleFilters}" SelectedItem="{Binding RuleFilter}" Margin="8,0,0,0" AutomationProperties.Name="Alarm rule filter" />
+                <ComboBox Grid.Column="2" ItemsSource="{Binding SeverityFilters}" SelectedItem="{Binding SeverityFilter}" Margin="8,0,0,0" AutomationProperties.Name="Alarm severity filter" />
+                <ComboBox Grid.Column="3" ItemsSource="{Binding EnabledFilters}" SelectedItem="{Binding EnabledFilter}" Margin="8,0,0,0" AutomationProperties.Name="Alarm enabled filter" />
+            </Grid>
+            <DataGrid Grid.Row="3" ItemsSource="{Binding DefinitionsView}" SelectedItem="{Binding SelectedDefinition}"
+                      Style="{StaticResource TagManagerDataGridStyle}" AutomationProperties.Name="Alarm definition list">
+                <DataGrid.Columns>
+                    <DataGridCheckBoxColumn Header="Enabled" Binding="{Binding Enabled}" Width="70" />
+                    <DataGridTextColumn Header="Id" Binding="{Binding Id, UpdateSourceTrigger=PropertyChanged}" Width="1*" />
+                    <DataGridTextColumn Header="Name" Binding="{Binding Name, UpdateSourceTrigger=PropertyChanged}" Width="1.3*" />
+                    <DataGridTextColumn Header="Message" Binding="{Binding Message, UpdateSourceTrigger=PropertyChanged}" Width="1.5*" />
+                    <DataGridTextColumn Header="TagId" Binding="{Binding TagId, UpdateSourceTrigger=PropertyChanged}" Width="1.2*" />
+                    <DataGridComboBoxColumn Header="Rule" SelectedItemBinding="{Binding RuleType}" ItemsSource="{Binding DataContext.RuleTypes, RelativeSource={RelativeSource AncestorType=DataGrid}}" Width="1*" />
+                    <DataGridComboBoxColumn Header="Severity" SelectedItemBinding="{Binding Severity}" ItemsSource="{Binding DataContext.Severities, RelativeSource={RelativeSource AncestorType=DataGrid}}" Width="0.9*" />
+                    <DataGridCheckBoxColumn Header="Expected" Binding="{Binding DigitalExpectedValue}" Width="80" />
+                    <DataGridTextColumn Header="Threshold" Binding="{Binding Threshold, UpdateSourceTrigger=PropertyChanged}" Width="85" />
+                    <DataGridTextColumn Header="Deadband" Binding="{Binding Deadband, UpdateSourceTrigger=PropertyChanged}" Width="80" />
+                    <DataGridTextColumn Header="Delay" Binding="{Binding ActivationDelay, UpdateSourceTrigger=PropertyChanged}" Width="90" />
+                    <DataGridCheckBoxColumn Header="ACK required" Binding="{Binding AcknowledgementRequired}" Width="95" />
+                </DataGrid.Columns>
+            </DataGrid>
+            <Border Grid.Row="4" Style="{StaticResource CardBorderStyle}" Padding="10" Margin="0,10,0,0">
+                <StackPanel>
+                    <TextBlock Text="Validation" FontWeight="SemiBold" />
+                    <ItemsControl ItemsSource="{Binding ValidationIssues}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate><TextBlock Text="{Binding Message}" TextWrapping="Wrap" AutomationProperties.Name="Alarm validation issue" /></DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                    <TextBlock Text="{Binding LastErrorMessage}" TextWrapping="Wrap" />
+                </StackPanel>
+            </Border>
+        </Grid>
+    </controls:WorkspaceLayout>
+</UserControl>

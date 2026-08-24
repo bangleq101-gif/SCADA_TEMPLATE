@@ -11,6 +11,12 @@
                 <TextBlock Text="{Binding RuntimeSummary}"
                            Margin="0,8,0,0"
                            Foreground="{StaticResource SecondaryTextBrush}" />
+                <Separator Margin="0,14" />
+                <TextBlock Text="Alarm summary" Style="{StaticResource CardTitleTextStyle}" />
+                <TextBlock Text="{Binding AlarmSummary}"
+                           AutomationProperties.Name="Alarm summary"
+                           Margin="0,8,0,0"
+                           Foreground="{StaticResource SecondaryTextBrush}" />
             </StackPanel>
         </Border>
     </controls:WorkspaceLayout>

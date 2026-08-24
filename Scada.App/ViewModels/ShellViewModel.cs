@@ -32,6 +32,19 @@ public sealed class ShellViewModel : INotifyPropertyChanged
         {
             engineeringChildren.Add(new NavigationItem("MQTT Settings", NavigationService.EngineeringMqttRoute));
         }
+        if (_navigation.HasRoute(NavigationService.EngineeringAlarmsRoute))
+        {
+            engineeringChildren.Add(new NavigationItem("Alarm Settings", NavigationService.EngineeringAlarmsRoute));
+        }
+
+        var monitoringChildren = new List<NavigationItem>
+        {
+            new("Online Tag Monitor", NavigationService.MonitoringOnlineTagsRoute)
+        };
+        if (_navigation.HasRoute(NavigationService.MonitoringAlarmsRoute))
+        {
+            monitoringChildren.Add(new NavigationItem("Alarms", NavigationService.MonitoringAlarmsRoute));
+        }
 
         NavigationItems =
         [
@@ -43,7 +56,7 @@ public sealed class ShellViewModel : INotifyPropertyChanged
                 children: [new NavigationItem("Machine Settings", NavigationService.MachineSettingsOverviewRoute)]),
             new NavigationItem(
                 "MONITORING",
-                children: [new NavigationItem("Online Tag Monitor", NavigationService.MonitoringOnlineTagsRoute)]),
+                children: monitoringChildren),
             new NavigationItem("ENGINEERING", children: engineeringChildren)
         ];
         NavigateCommand = new RelayCommand(parameter =>

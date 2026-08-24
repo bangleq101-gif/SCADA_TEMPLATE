@@ -34,6 +34,46 @@ public sealed class AlarmConfigurationTests
     }
 
     [Fact]
+    public void FingerprintCoversEveryMaterialFieldAndIgnoresEveryDisplayOnlyField()
+    {
+        var original = CreateNumericAlarm();
+        var fingerprint = AlarmDefinitionFingerprint.Create(original);
+        var materialMutations = new Action<AlarmDefinition>[]
+        {
+            alarm => alarm.TagId = "OTHER",
+            alarm => alarm.RuleType = AlarmRuleType.Low,
+            alarm => alarm.Threshold = 82,
+            alarm => alarm.Deadband = 3,
+            alarm => alarm.ActivationDelay = TimeSpan.FromSeconds(2),
+            alarm => alarm.AcknowledgementRequired = false,
+            alarm => alarm.Severity = AlarmSeverity.Critical
+        };
+
+        foreach (var mutate in materialMutations)
+        {
+            var candidate = Clone(original);
+            mutate(candidate);
+            Assert.NotEqual(fingerprint, AlarmDefinitionFingerprint.Create(candidate));
+        }
+
+        var digital = new AlarmDefinition
+        {
+            Id = "D1", Name = "Digital", TagId = "BOOL", RuleType = AlarmRuleType.DigitalEquals,
+            DigitalExpectedValue = true
+        };
+        var digitalFingerprint = AlarmDefinitionFingerprint.Create(digital);
+        digital.DigitalExpectedValue = false;
+        Assert.NotEqual(digitalFingerprint, AlarmDefinitionFingerprint.Create(digital));
+
+        var displayOnly = Clone(original);
+        displayOnly.Name = "Renamed";
+        displayOnly.Message = "New display text";
+        displayOnly.Order = 42;
+        displayOnly.Enabled = false;
+        Assert.Equal(fingerprint, AlarmDefinitionFingerprint.Create(displayOnly));
+    }
+
+    [Fact]
     public void ValidationRequiresRuleCompatibleTagsAndFields()
     {
         var tags = new[]
@@ -110,5 +150,22 @@ public sealed class AlarmConfigurationTests
         Deadband = 2,
         ActivationDelay = TimeSpan.FromSeconds(1),
         AcknowledgementRequired = true
+    };
+
+    private static AlarmDefinition Clone(AlarmDefinition source) => new()
+    {
+        Id = source.Id,
+        Name = source.Name,
+        Message = source.Message,
+        TagId = source.TagId,
+        Enabled = source.Enabled,
+        Order = source.Order,
+        RuleType = source.RuleType,
+        Severity = source.Severity,
+        DigitalExpectedValue = source.DigitalExpectedValue,
+        Threshold = source.Threshold,
+        Deadband = source.Deadband,
+        ActivationDelay = source.ActivationDelay,
+        AcknowledgementRequired = source.AcknowledgementRequired
     };
 }

@@ -8,7 +8,7 @@ Milestone 11 — Alarm System
 
 Status:
 
-Architecture plan approved for roadmap/spec synchronization. Implementation has not started.
+Implemented and fully verified on `feature/milestone-11-alarm-system`; pending PR review and merge.
 
 Milestone 7:
 
@@ -34,7 +34,7 @@ All 15 compatible qualification runs passed. No optimization was justified by me
 
 Milestone 11:
 
-The Revision 1 Alarm architecture plan is approved. The approved scope is a PLC-read-only Alarm System using central TagCache values, exact-instance SCADA-state acknowledgement, monotonic activation delays, project-relative SQLite persistence and trusted-checkpoint recovery. Project schema v6 will default `AlarmOptions.Enabled` to `false`. Source implementation remains blocked pending a separate implementation authorization.
+The approved Revision 1 Alarm architecture is implemented on the feature branch. The implementation is PLC-read-only, consumes central TagCache values, uses exact-instance SCADA-state acknowledgement, monotonic activation delays, bounded persistence coordination, project-relative SQLite storage and trusted-checkpoint recovery. Project schema v6 migrates existing v5 projects in memory with `AlarmOptions.Enabled = false`. M11 is not yet merged to `main`.
 
 ## Implemented in Milestone 1
 
@@ -161,11 +161,32 @@ n PLC
 - Read-only logical `LiveTagId` values sourced only from the central TagCache, with enabled-catalog resolution, active-page deduplication, subscribe-before-seed and generation-guarded UI updates.
 - Deterministic lifecycle coverage for deactivation/disposal during subscription acquisition, stale queued callbacks and page replacement.
 
+## Implemented in Milestone 11
+
+- Project schema v6 with in-memory v5 → v6 migration, Alarm disabled by default, and atomic clone/comparer/validation/save/revert/restart-required integration through `ProjectEditSession`.
+- Store-neutral Alarm configuration, lifecycle, event, exact-instance ACK, fingerprint, checkpoint/recovery and `IAlarmEventStore` contracts in `Scada.Core`.
+- `AlarmRuntimeService` with Good-only TagCache evaluation, stale-sequence suppression, one subscription per distinct enabled logical TagId and subscribe-before-seed behavior.
+- `DigitalEquals`, High, HighHigh, Low and LowLow evaluators with deterministic deadband and `ReturnedUnacknowledged` state semantics.
+- One shared monotonic activation-delay coordinator using `TimeProvider` timestamps; observable transition, ACK and journal timestamps use UTC wall time only.
+- Exact-instance ACK, stale-safe/idempotent ACK, ACK-all through the same per-instance path and deterministic ACK/current-value race isolation.
+- Bounded Alarm persistence channel and batch coordinator with separate rejected, dropped, abandoned and write-failure diagnostics.
+- Fail-closed durable recovery-untrusted startup marker: marker failure creates no TagCache subscription, deadline or live Alarm lifecycle state.
+- Gap-free clean-drain trusted checkpoints, compatible material-definition recovery, untrusted recovery diagnostics and orphaned/incompatible instance accounting.
+- Project-relative `Data/alarms.db` SQLite event/open-instance store with rooted/traversal path rejection, atomic session metadata and corrupt/newer-schema handling.
+- `engineering.alarms`, `monitoring.alarms`, read-only Alarm journal query and compact Operation Alarm summary in WPF.
+- Deterministic clock/state/ACK/quality/sequence/recovery/persistence/lifecycle/UI tests and a bounded sanity using 10,000 project tags, 2,000 Alarm definitions and 500 distinct Alarm TagIds.
+
 ## Verified
 
 - `dotnet restore Scada.sln --ignore-failed-sources` — PASS.
 - `dotnet build Scada.sln -c Release --no-restore` — PASS with 0 warnings and 0 errors.
-- `dotnet test Scada.sln -c Release --no-build` — PASS; 318 tests, 0 failures (127 App, 70 Runtime, 31 Core, 3 Drivers, 60 Infrastructure, 27 Stress).
+- M11 feature-branch restore and Release build — PASS with 0 warnings and 0 errors.
+- M11 full test suite — PASS; 382 tests, 0 failures (138 App, 114 Runtime, 36 Core, 3 Drivers, 64 Infrastructure, 27 Stress).
+- M11 vulnerability audit — PASS; no vulnerable direct or transitive package was reported.
+- M11 WPF startup smoke — PASS; the application remained running with Alarm resources, DI and routes loaded.
+- M11 fresh copy-folder restore/build and original-path scan — PASS; the verification folder was removed after the check.
+- M11 GitNexus post-change index — 3,731 nodes / 12,681 edges / 300 flows with 0 import cycles.
+- M11 Runtime boundary — PASS; `Scada.Runtime` references only `Scada.Core`, with no WPF, App, Infrastructure or concrete-driver dependency.
 - `dotnet list Scada.sln package --include-transitive --vulnerable` — PASS; no vulnerable packages reported. `SQLitePCLRaw.bundle_e_sqlite3`, `core`, `lib.e_sqlite3` and `provider.e_sqlite3` resolve to 2.1.12 through `Microsoft.Data.Sqlite` 10.0.11.
 - `git diff --check` — PASS.
 - InfluxDB package audit — PASS; no vulnerable packages reported.
@@ -178,7 +199,7 @@ n PLC
 
 - Real Siemens, Mitsubishi, Modbus or OPC UA drivers.
 - MQTT Write and command-subscription support.
-- Milestone 11 Alarm implementation and the later Trend system.
+- The later Trend system.
 - Automatic PLC communication alarms, Alarm-to-PLC acknowledgement and Alarm notification/escalation.
 - PLC-backed Machine Settings Apply/Write, recipes, calibration workflow, audit trail and authorization.
 - Deployment tooling.
@@ -189,7 +210,7 @@ n PLC
 
 - A per-device factory that creates a driver with a mismatched `DriverType` can leave that instance without lease ownership before `Acquire` throws. Correct `IDisposable`/`IAsyncDisposable` cleanup on this exceptional misconfiguration path is deferred until resolver acquisition/lifetime design is expanded.
 - A genuinely non-cooperative driver operation may remain in flight after the manager shutdown budget expires. M2 bounds manager return time and retains ownership rather than attempting to kill the task; deeper orphan-operation supervision is later work.
-- Project persistence currently supports sequential schema v1 → v2 → v3 → v4 → v5 migration. The approved M11 specification plans an in-memory v5 → v6 migration with Alarm disabled by default; implementation has not started. Multi-process conflict handling and undo/redo remain deferred.
+- Project persistence supports sequential schema v1 → v2 → v3 → v4 → v5 → v6 migration. Migration remains in memory until explicit Save; multi-process conflict handling and undo/redo remain deferred.
 - Project startup requires an explicit canonical `--project-file` path (the supplied launcher provides it); automatic project discovery and hot reload are intentionally not implemented.
 - Tag Manager validation is deterministic and synchronous; full UI automation, advanced tag scaling/offset semantics and runtime reconfiguration without restart remain later work.
 - Import conflict resolution currently offers explicit apply-all for conflict-free imports or append-non-conflicting/cancel for conflicted imports; identity regeneration after a conflict is deferred.
@@ -198,5 +219,6 @@ n PLC
 - The durable Influx outbox is single-process and SQLite-backed; multi-process writers and hot reload remain deferred. M10 already completed the authoritative 50-PLC/~10,000-tag qualification at `402ee9d46f41489fee8912bbed57dc1388550658`; live remote Influx integration remains a separate deferred test boundary.
 - History Settings Test Connection performs a non-writing candidate probe only; it does not claim write permission until a live integration test is added. UI command behavior is unit-tested, not UI-automation-tested.
 - Historian configuration changes are persisted and marked restart-required; runtime hot reload is intentionally not implemented.
+- Alarm configuration changes are persisted and marked restart-required; runtime hot reload, automatic communication alarms, notification/escalation and multi-process Alarm SQLite writers remain deferred.
 
-Implementation must follow the ordered milestones in `docs/ROADMAP.md` and the constraints in `docs/SCADA_ARCHITECTURE_V1.md`. M7 MQTT Publisher and M10 qualification are complete; only MQTT Write, command subscriptions and PLC-write paths remain deferred. M11 source implementation must not start without explicit implementation authorization.
+Implementation must follow the ordered milestones in `docs/ROADMAP.md` and the constraints in `docs/SCADA_ARCHITECTURE_V1.md`. M7 MQTT Publisher and M10 qualification are complete; MQTT Write, command subscriptions and PLC-write paths remain deferred. M11 is implemented on its feature branch and remains pending independent PR review and merge.

@@ -159,6 +159,30 @@ public sealed class AlarmRuntimeServiceTests
     }
 
     [Fact]
+    public async Task PersistenceCoordinatorBatchesToConfiguredBoundAndKeepsLatestOpenState()
+    {
+        var options = CreateOptions(TimeSpan.Zero);
+        options.Alarms.PersistenceEnabled = true;
+        options.Alarms.BatchSize = 2;
+        options.Alarms.FlushIntervalMilliseconds = 60_000;
+        var cache = new TrackingTagCache();
+        var store = new RecordingAlarmStore();
+        await using var service = new AlarmRuntimeService(
+            options, cache, store, NullLogger<AlarmRuntimeService>.Instance, new ManualTimeProvider());
+        await service.StartAsync(CancellationToken.None);
+
+        cache.Publish(Good(90, 1));
+        var instance = service.Snapshot.Alarms.Single().InstanceId!.Value;
+        service.Acknowledge(new(instance, "operator"));
+        await store.Persisted.Task.WaitAsync(TimeSpan.FromSeconds(2));
+
+        var batch = Assert.Single(store.PersistedBatches);
+        Assert.Equal([AlarmEventType.Activated, AlarmEventType.Acknowledged], batch.Events.Select(item => item.Type));
+        Assert.Equal(AlarmLifecycleState.ActiveAcknowledged, Assert.Single(batch.OpenInstances).State);
+        Assert.Equal(2, batch.ContinuitySequence);
+    }
+
+    [Fact]
     public async Task PersistenceWriteFailureDegradesAndPreventsTrustedCheckpoint()
     {
         var options = CreateOptions(TimeSpan.Zero);
@@ -217,6 +241,243 @@ public sealed class AlarmRuntimeServiceTests
         Assert.Null(exception);
         Assert.True(delivered > 0);
         Assert.True(service.Snapshot.SubscriberExceptions > 0);
+    }
+
+    [Fact]
+    public async Task StaleAndDuplicateSequencesDoNotReevaluateOrReplaceCurrentState()
+    {
+        var cache = new TrackingTagCache();
+        await using var service = CreateService(cache, delay: TimeSpan.Zero);
+        await service.StartAsync(CancellationToken.None);
+
+        cache.Publish(Good(90, 5));
+        var instance = service.Snapshot.Alarms.Single().InstanceId;
+        cache.Publish(Good(0, 5));
+        cache.Publish(Good(0, 4));
+
+        Assert.Equal(instance, service.Snapshot.Alarms.Single().InstanceId);
+        Assert.Equal(AlarmLifecycleState.ActiveUnacknowledged, service.Snapshot.Alarms.Single().State);
+        Assert.Equal(2, service.Snapshot.StaleTagUpdates);
+    }
+
+    [Theory]
+    [InlineData(TagQuality.Bad)]
+    [InlineData(TagQuality.Uncertain)]
+    [InlineData(TagQuality.Disconnected)]
+    [InlineData(TagQuality.NotConfigured)]
+    public async Task UnavailableQualityCancelsPendingButCannotActivateReturnOrClear(TagQuality quality)
+    {
+        var clock = new ManualTimeProvider();
+        var cache = new TrackingTagCache();
+        await using var service = CreateService(cache, clock, TimeSpan.FromSeconds(5));
+        await service.StartAsync(CancellationToken.None);
+
+        cache.Publish(Good(90, 1));
+        cache.Publish(new TagValue("T1", 0d, quality, DateTimeOffset.UtcNow, 2));
+        clock.AdvanceMonotonic(TimeSpan.FromSeconds(5));
+        service.ProcessDueDeadlines();
+        Assert.Equal(AlarmLifecycleState.Normal, service.Snapshot.Alarms.Single().State);
+        Assert.False(service.Snapshot.Alarms.Single().IsEvaluationAvailable);
+
+        cache.Publish(Good(90, 3));
+        clock.AdvanceMonotonic(TimeSpan.FromSeconds(5));
+        service.ProcessDueDeadlines();
+        cache.Publish(new TagValue("T1", 0d, quality, DateTimeOffset.UtcNow, 4));
+        Assert.Equal(AlarmLifecycleState.ActiveUnacknowledged, service.Snapshot.Alarms.Single().State);
+    }
+
+    [Fact]
+    public async Task AlarmWithoutAcknowledgementRequirementClosesDirectlyOnReturn()
+    {
+        var options = CreateOptions(TimeSpan.Zero);
+        options.Alarms.Definitions.Single().AcknowledgementRequired = false;
+        var cache = new TrackingTagCache();
+        await using var service = CreateService(options, cache, new ManualTimeProvider());
+        await service.StartAsync(CancellationToken.None);
+
+        cache.Publish(Good(90, 1));
+        Assert.Equal(AlarmLifecycleState.ActiveAcknowledged, service.Snapshot.Alarms.Single().State);
+        cache.Publish(Good(0, 2));
+        Assert.Equal(AlarmLifecycleState.Normal, service.Snapshot.Alarms.Single().State);
+        Assert.Equal(1, service.Snapshot.ReturnedTransitions);
+        Assert.Equal(1, service.Snapshot.ClosedTransitions);
+    }
+
+    [Theory]
+    [InlineData(TagQuality.Good, 0d, AlarmLifecycleState.Normal, true)]
+    [InlineData(TagQuality.Disconnected, 0d, AlarmLifecycleState.ActiveAcknowledged, false)]
+    public async Task TrustedRecoveryReconcilesOnlyFromCurrentGoodSeed(
+        TagQuality quality, double seedValue, AlarmLifecycleState expectedState, bool expectedAvailable)
+    {
+        var options = CreateOptions(TimeSpan.Zero);
+        options.Alarms.PersistenceEnabled = true;
+        var definition = options.Alarms.Definitions.Single();
+        var recovered = new AlarmInstanceRecord(
+            definition.Id, Guid.NewGuid(), AlarmLifecycleState.ActiveAcknowledged, definition.Severity,
+            AlarmDefinitionFingerprint.Create(definition), DateTimeOffset.UtcNow, DateTimeOffset.UtcNow,
+            "operator", 5, DateTimeOffset.UtcNow, TagQuality.Good);
+        var store = new RecordingAlarmStore { Recovery = new(true, 5, [recovered]) };
+        var cache = new TrackingTagCache
+        {
+            Seed = new TagValue("T1", seedValue, quality, DateTimeOffset.UtcNow, 1)
+        };
+        await using var service = new AlarmRuntimeService(
+            options, cache, store, NullLogger<AlarmRuntimeService>.Instance, new ManualTimeProvider());
+
+        await service.StartAsync(CancellationToken.None);
+
+        Assert.Equal(expectedState, service.Snapshot.Alarms.Single().State);
+        Assert.Equal(expectedAvailable, service.Snapshot.Alarms.Single().IsEvaluationAvailable);
+    }
+
+    [Fact]
+    public async Task TrustedRecoveryRejectsMateriallyChangedOrMissingDefinitionsWithoutFabricatedTransitions()
+    {
+        var options = CreateOptions(TimeSpan.Zero);
+        options.Alarms.PersistenceEnabled = true;
+        var definition = options.Alarms.Definitions.Single();
+        var incompatible = new AlarmInstanceRecord(
+            definition.Id, Guid.NewGuid(), AlarmLifecycleState.ActiveUnacknowledged, definition.Severity,
+            "INCOMPATIBLE", DateTimeOffset.UtcNow, null, null, 5, DateTimeOffset.UtcNow, TagQuality.Good);
+        var missing = incompatible with { AlarmId = "DELETED", InstanceId = Guid.NewGuid() };
+        var store = new RecordingAlarmStore { Recovery = new(true, 5, [incompatible, missing], OrphanedInstanceCount: 3) };
+        await using var service = new AlarmRuntimeService(
+            options, new TrackingTagCache(), store, NullLogger<AlarmRuntimeService>.Instance, new ManualTimeProvider());
+
+        await service.StartAsync(CancellationToken.None);
+
+        Assert.Equal(5, service.Snapshot.OrphanedInstances);
+        Assert.Equal(AlarmLifecycleState.Normal, service.Snapshot.Alarms.Single().State);
+        Assert.Empty(store.PersistedBatches);
+    }
+
+    [Fact]
+    public async Task FaultyOperationCanceledPersistenceIsIsolatedAndPreventsTrustedCheckpoint()
+    {
+        var options = CreateOptions(TimeSpan.Zero);
+        options.Alarms.PersistenceEnabled = true;
+        var cache = new TrackingTagCache();
+        var store = new RecordingAlarmStore { CancelPersistIndependently = true };
+        await using var service = new AlarmRuntimeService(
+            options, cache, store, NullLogger<AlarmRuntimeService>.Instance, new ManualTimeProvider());
+        await service.StartAsync(CancellationToken.None);
+
+        cache.Publish(Good(90, 1));
+        await store.Persisted.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        var exception = await Record.ExceptionAsync(() => service.StopAsync(CancellationToken.None));
+
+        Assert.Null(exception);
+        Assert.Equal(1, service.Snapshot.PersistenceWriteFailures);
+        Assert.Null(store.TrustedCheckpoint);
+    }
+
+    [Fact]
+    public async Task NonCooperativePersistenceCannotBlockShutdownOrCreateTrustedCheckpoint()
+    {
+        var options = CreateOptions(TimeSpan.Zero);
+        options.Alarms.PersistenceEnabled = true;
+        options.Alarms.ShutdownDrainTimeoutMilliseconds = 25;
+        var cache = new TrackingTagCache();
+        var store = new RecordingAlarmStore { BlockPersist = true };
+        var service = new AlarmRuntimeService(
+            options, cache, store, NullLogger<AlarmRuntimeService>.Instance, new ManualTimeProvider());
+        await service.StartAsync(CancellationToken.None);
+        cache.Publish(Good(90, 1));
+        await store.PersistEntered.Task.WaitAsync(TimeSpan.FromSeconds(2));
+
+        var stopTask = service.StopAsync(CancellationToken.None);
+        await stopTask.WaitAsync(TimeSpan.FromSeconds(1));
+
+        Assert.Equal(AlarmRuntimeState.Degraded, service.Snapshot.State);
+        Assert.Equal("ALARM_SHUTDOWN_DRAIN_TIMEOUT", service.Snapshot.LastErrorCode);
+        Assert.Null(store.TrustedCheckpoint);
+        Assert.Equal(0, cache.ActiveSubscriptions);
+        store.ReleasePersist.TrySetResult(true);
+        await service.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task FullPersistenceQueueMarksGapAndDisqualifiesTrustedRecovery()
+    {
+        var options = CreateOptions(TimeSpan.Zero);
+        options.Alarms.PersistenceEnabled = true;
+        options.Alarms.QueueCapacity = 1;
+        options.Alarms.BatchSize = 1;
+        options.Alarms.ShutdownDrainTimeoutMilliseconds = 25;
+        var cache = new TrackingTagCache();
+        var store = new RecordingAlarmStore { BlockPersist = true };
+        var service = new AlarmRuntimeService(
+            options, cache, store, NullLogger<AlarmRuntimeService>.Instance, new ManualTimeProvider());
+        await service.StartAsync(CancellationToken.None);
+        cache.Publish(Good(90, 1));
+        await store.PersistEntered.Task.WaitAsync(TimeSpan.FromSeconds(2));
+
+        cache.Publish(Good(0, 2));
+        cache.Publish(Good(90, 3));
+
+        Assert.True(service.Snapshot.DroppedPersistenceItems > 0);
+        store.ReleasePersist.TrySetResult(true);
+        await service.StopAsync(CancellationToken.None);
+        Assert.Null(store.TrustedCheckpoint);
+        await service.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task ConcurrentAcknowledgementAndReturnProduceOneDeterministicClosedInstance()
+    {
+        var cache = new TrackingTagCache();
+        await using var service = CreateService(cache, delay: TimeSpan.Zero);
+        await service.StartAsync(CancellationToken.None);
+        cache.Publish(Good(90, 1));
+        var instance = service.Snapshot.Alarms.Single().InstanceId!.Value;
+
+        await Task.WhenAll(
+            Task.Run(() => service.Acknowledge(new(instance, "operator"))),
+            Task.Run(() => cache.Publish(Good(0, 2))));
+
+        var snapshot = service.Snapshot;
+        Assert.Equal(AlarmLifecycleState.Normal, snapshot.Alarms.Single().State);
+        Assert.Equal(1, snapshot.AcknowledgedTransitions);
+        Assert.Equal(1, snapshot.ReturnedTransitions);
+        Assert.Equal(1, snapshot.ClosedTransitions);
+    }
+
+    [Fact]
+    public async Task BoundedScaleUsesOneSubscriptionPerDistinctTagAndCleansUp()
+    {
+        const int tagCount = 10_000;
+        const int alarmCount = 2_000;
+        const int distinctAlarmTags = 500;
+        var options = new RuntimeOptions
+        {
+            Tags = Enumerable.Range(0, tagCount).Select(index => new TagDefinition
+            {
+                Id = $"T{index}", Name = $"Tag {index}", DeviceId = "SIM", Address = $"T{index}", DataType = TagDataType.Double
+            }).ToList(),
+            Alarms = new AlarmOptions
+            {
+                Enabled = true,
+                PersistenceEnabled = false,
+                FlushIntervalMilliseconds = 1,
+                Definitions = Enumerable.Range(0, alarmCount).Select(index => new AlarmDefinition
+                {
+                    Id = $"A{index}", Name = $"Alarm {index}", TagId = $"T{index % distinctAlarmTags}",
+                    RuleType = AlarmRuleType.High, Threshold = 80, Deadband = 5
+                }).ToList()
+            }
+        };
+        var cache = new TrackingTagCache();
+        await using var service = CreateService(options, cache, new ManualTimeProvider());
+
+        await service.StartAsync(CancellationToken.None);
+        for (var index = 0; index < distinctAlarmTags; index++)
+            cache.Publish(new TagValue($"T{index}", 90d, TagQuality.Good, DateTimeOffset.UtcNow, 1));
+
+        Assert.Equal(distinctAlarmTags, cache.ActiveSubscriptions);
+        Assert.Equal(distinctAlarmTags, service.Snapshot.DistinctTagSubscriptions);
+        Assert.Equal(alarmCount, service.Snapshot.ActivatedTransitions);
+        await service.StopAsync(CancellationToken.None);
+        Assert.Equal(0, cache.ActiveSubscriptions);
     }
 
     private static AlarmRuntimeService CreateService(
@@ -298,11 +559,15 @@ public sealed class AlarmRuntimeServiceTests
     {
         public bool FailBeginSession { get; init; }
         public bool FailPersist { get; init; }
+        public bool CancelPersistIndependently { get; init; }
+        public bool BlockPersist { get; init; }
         public int BeginSessionAttempts { get; private set; }
         public AlarmRecoveryResult Recovery { get; init; } = new(false, 0, []);
         public List<AlarmPersistenceBatch> PersistedBatches { get; } = [];
         public AlarmStoreCheckpoint? TrustedCheckpoint { get; private set; }
         public TaskCompletionSource<bool> Persisted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource<bool> PersistEntered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource<bool> ReleasePersist { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public Task InitializeAsync(CancellationToken cancellationToken) => Task.CompletedTask;
         public Task<AlarmRecoveryResult> LoadRecoveryAsync(CancellationToken cancellationToken) =>
             Task.FromResult(Recovery);
@@ -311,11 +576,14 @@ public sealed class AlarmRuntimeServiceTests
             BeginSessionAttempts++;
             return FailBeginSession ? Task.FromException(new IOException("marker failed")) : Task.CompletedTask;
         }
-        public Task PersistBatchAsync(AlarmPersistenceBatch batch, CancellationToken cancellationToken)
+        public async Task PersistBatchAsync(AlarmPersistenceBatch batch, CancellationToken cancellationToken)
         {
             PersistedBatches.Add(batch);
             Persisted.TrySetResult(true);
-            return FailPersist ? Task.FromException(new IOException("write failed")) : Task.CompletedTask;
+            PersistEntered.TrySetResult(true);
+            if (BlockPersist) await ReleasePersist.Task.ConfigureAwait(false);
+            if (CancelPersistIndependently) throw new OperationCanceledException("store cancelled independently");
+            if (FailPersist) throw new IOException("write failed");
         }
         public Task CommitTrustedCheckpointAsync(AlarmStoreCheckpoint checkpoint, CancellationToken cancellationToken)
         {

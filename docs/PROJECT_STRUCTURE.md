@@ -31,7 +31,7 @@ Milestone 6 keeps the product-project dependency graph unchanged. Historian orch
 
 `Scada.Runtime` is driver-neutral. It consumes `IPlcDriver` from `Scada.Core` and owns only the runtime-local resolver, lease, manager and polling workers. Concrete drivers are composed by `Scada.App` from `Scada.Drivers`.
 
-## Planned Milestone 11 Alarm ownership
+## Milestone 11 Alarm ownership
 
 ```text
 Scada.Core/Alarms
@@ -59,7 +59,7 @@ Scada.App
 
 Runtime-only snapshots, health state, evaluators and coordinators stay in `Scada.Runtime`; they are not duplicated in Core. Core contains only configuration, persisted/store-neutral domain records and the store abstraction needed by Runtime. Infrastructure implements SQLite behind that abstraction, and App composes the concrete store and WPF workspaces. No new product project or dependency direction is introduced.
 
-Planned M11 flow:
+M11 flow:
 
 ```text
 PLC / Simulator
@@ -85,6 +85,7 @@ When Alarm persistence is enabled, a new session must be durably and atomically 
 
 ```text
 Scada.Core/
+├── Alarms
 ├── Common
 ├── Configuration
 ├── Devices
@@ -93,6 +94,7 @@ Scada.Core/
 └── Tags
 
 Scada.Runtime/
+├── Alarms
 ├── Devices
 ├── Drivers
 ├── Engine
@@ -104,6 +106,7 @@ Scada.Drivers/
 └── Simulator
 
 Scada.Infrastructure/
+├── Alarms
 ├── Configuration
 ├── History
 └── Persistence

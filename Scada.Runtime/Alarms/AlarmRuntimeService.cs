@@ -273,12 +273,12 @@ public sealed class AlarmRuntimeService : IHostedService, IAsyncDisposable
             var now = _timeProvider.GetUtcNow();
             alarm.AcknowledgedAtUtc = now;
             alarm.AcknowledgedBy = request.AcknowledgedBy;
-            AddEventLocked(alarm, AlarmEventType.Acknowledged, now, request.AcknowledgedBy);
             _acknowledged++;
             if (alarm.State == AlarmLifecycleState.ReturnedUnacknowledged)
             {
                 alarm.State = AlarmLifecycleState.Normal;
                 alarm.TransitionTimestampUtc = now;
+                AddEventLocked(alarm, AlarmEventType.Acknowledged, now, request.AcknowledgedBy);
                 AddEventLocked(alarm, AlarmEventType.Closed, now);
                 _closed++;
             }
@@ -286,6 +286,7 @@ public sealed class AlarmRuntimeService : IHostedService, IAsyncDisposable
             {
                 alarm.State = AlarmLifecycleState.ActiveAcknowledged;
                 alarm.TransitionTimestampUtc = now;
+                AddEventLocked(alarm, AlarmEventType.Acknowledged, now, request.AcknowledgedBy);
             }
             changedSnapshot = _snapshot = BuildSnapshotLocked(CurrentOperationalStateLocked());
             result = new(request.InstanceId, AlarmAcknowledgementStatus.Acknowledged, now);
@@ -349,11 +350,12 @@ public sealed class AlarmRuntimeService : IHostedService, IAsyncDisposable
             if (!_accepting) return;
             foreach (var alarm in _alarms.Values.Where(item => item.Definition.TagId.Equals(tagId, StringComparison.OrdinalIgnoreCase)))
             {
-                if (value.Sequence <= alarm.LastSourceSequence)
+                if (value.Sequence <= alarm.LastEvaluatedSequence)
                 {
                     _staleUpdates++;
                     continue;
                 }
+                alarm.LastEvaluatedSequence = value.Sequence;
                 alarm.LastSourceSequence = value.Sequence;
                 alarm.LastSourceTimestampUtc = value.Timestamp;
                 alarm.EvaluationQuality = value.Quality;
@@ -413,15 +415,16 @@ public sealed class AlarmRuntimeService : IHostedService, IAsyncDisposable
 
         if (alarm.ConditionActive) return;
         alarm.TransitionTimestampUtc = now;
-        AddEventLocked(alarm, AlarmEventType.Returned, now);
         _returned++;
         if (alarm.State == AlarmLifecycleState.ActiveUnacknowledged)
         {
             alarm.State = AlarmLifecycleState.ReturnedUnacknowledged;
+            AddEventLocked(alarm, AlarmEventType.Returned, now);
         }
         else
         {
             alarm.State = AlarmLifecycleState.Normal;
+            AddEventLocked(alarm, AlarmEventType.Returned, now);
             AddEventLocked(alarm, AlarmEventType.Closed, now);
             _closed++;
         }
@@ -471,24 +474,24 @@ public sealed class AlarmRuntimeService : IHostedService, IAsyncDisposable
         if (_persistenceChannel is null || _store is null) return;
         try
         {
-            await foreach (var batch in _persistenceChannel.Reader.ReadAllAsync(cancellationToken).ConfigureAwait(false))
+            while (await ReadPersistenceBatchAsync(_persistenceChannel.Reader, cancellationToken).ConfigureAwait(false) is { } pending)
             {
                 try
                 {
-                    await _store.PersistBatchAsync(batch, cancellationToken).ConfigureAwait(false);
+                    await _store.PersistBatchAsync(pending.Batch, cancellationToken).ConfigureAwait(false);
                     lock (_sync)
                     {
-                        _persistenceDepth--;
-                        _persistedEvents += batch.Events.Count;
+                        _persistenceDepth -= pending.SourceItemCount;
+                        _persistedEvents += pending.Batch.Events.Count;
                         _snapshot = BuildSnapshotLocked(CurrentOperationalStateLocked());
                     }
                 }
-                catch (Exception exception) when (exception is not OperationCanceledException)
+                catch (Exception exception) when (!cancellationToken.IsCancellationRequested)
                 {
                     _logger.LogWarning(exception, "Alarm persistence write failed.");
                     lock (_sync)
                     {
-                        _persistenceDepth--;
+                        _persistenceDepth -= pending.SourceItemCount;
                         _writeFailures++;
                         _persistenceGap = true;
                         _lastErrorCode = "ALARM_PERSISTENCE_WRITE_FAILED";
@@ -500,6 +503,61 @@ public sealed class AlarmRuntimeService : IHostedService, IAsyncDisposable
             }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { }
+    }
+
+    private async Task<PendingPersistenceBatch?> ReadPersistenceBatchAsync(
+        ChannelReader<AlarmPersistenceBatch> reader,
+        CancellationToken cancellationToken)
+    {
+        if (!await reader.WaitToReadAsync(cancellationToken).ConfigureAwait(false) || !reader.TryRead(out var first))
+            return null;
+
+        var events = new List<AlarmEvent>(Math.Min(_options.BatchSize, 256));
+        events.AddRange(first.Events);
+        var latest = first;
+        var sourceItemCount = 1;
+        using var flushCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        var flushTask = Task.Delay(
+            TimeSpan.FromMilliseconds(_options.FlushIntervalMilliseconds),
+            _timeProvider,
+            flushCts.Token);
+
+        while (events.Count < _options.BatchSize)
+        {
+            while (events.Count < _options.BatchSize && reader.TryRead(out var next))
+            {
+                events.AddRange(next.Events);
+                latest = next;
+                sourceItemCount++;
+            }
+            if (events.Count >= _options.BatchSize || reader.Completion.IsCompleted) break;
+
+            var availableTask = reader.WaitToReadAsync(flushCts.Token).AsTask();
+            var completed = await Task.WhenAny(availableTask, flushTask).ConfigureAwait(false);
+            if (completed == flushTask)
+            {
+                flushCts.Cancel();
+                try { await availableTask.ConfigureAwait(false); }
+                catch (OperationCanceledException) when (flushCts.IsCancellationRequested) { }
+                break;
+            }
+            if (!await availableTask.ConfigureAwait(false)) break;
+        }
+
+        flushCts.Cancel();
+        if (!flushTask.IsCompleted)
+        {
+            try { await flushTask.ConfigureAwait(false); }
+            catch (OperationCanceledException) when (flushCts.IsCancellationRequested) { }
+        }
+
+        return new PendingPersistenceBatch(
+            new AlarmPersistenceBatch(
+                first.SessionId,
+                events,
+                latest.OpenInstances,
+                latest.ContinuitySequence),
+            sourceItemCount);
     }
 
     private async Task RunDeadlineCoordinatorAsync(CancellationToken cancellationToken)
@@ -535,7 +593,9 @@ public sealed class AlarmRuntimeService : IHostedService, IAsyncDisposable
 
     private void ApplyRecoveryLocked(AlarmRecoveryResult recovery)
     {
+        _eventSequence = Math.Max(_eventSequence, recovery.ContinuitySequence);
         _recoveredFromTrustedCheckpoint = recovery.RecoveryTrusted;
+        _orphanedInstances = recovery.OrphanedInstanceCount;
         if (!recovery.RecoveryTrusted)
         {
             _recoveryUntrustedInstances = recovery.OpenInstances.Count;
@@ -665,12 +725,15 @@ public sealed class AlarmRuntimeService : IHostedService, IAsyncDisposable
         public bool IsEvaluationAvailable { get; set; }
         public TagQuality EvaluationQuality { get; set; } = TagQuality.NotConfigured;
         public long LastSourceSequence { get; set; }
+        public long LastEvaluatedSequence { get; set; }
         public DateTimeOffset? LastSourceTimestampUtc { get; set; }
         public DateTimeOffset? TransitionTimestampUtc { get; set; }
         public DateTimeOffset? ActivatedAtUtc { get; set; }
         public DateTimeOffset? AcknowledgedAtUtc { get; set; }
         public string? AcknowledgedBy { get; set; }
     }
+
+    private sealed record PendingPersistenceBatch(AlarmPersistenceBatch Batch, int SourceItemCount);
 
     private sealed class Subscription(Action dispose) : IDisposable
     {

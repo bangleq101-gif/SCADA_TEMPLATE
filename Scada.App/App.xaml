@@ -11,6 +11,7 @@
                 <ResourceDictionary Source="Resources/Hmi/HmiControls.xaml" />
                 <ResourceDictionary Source="Resources/Hmi/HmiFaceplates.xaml" />
                 <ResourceDictionary Source="Resources/MachineSettings/ParameterEditors.xaml" />
+                <ResourceDictionary Source="Resources/Alarms.xaml" />
             </ResourceDictionary.MergedDictionaries>
         </ResourceDictionary>
     </Application.Resources>
