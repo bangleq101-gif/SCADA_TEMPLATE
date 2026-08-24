@@ -114,6 +114,27 @@ public sealed class ProjectPersistenceTests
     }
 
     [Fact]
+    public void CurrentSchemaWithNullAlarmOptionsIsRejectedByStructuredValidation()
+    {
+        var directory = CreateTempDirectory();
+        try
+        {
+            var path = Path.Combine(directory, "project.json");
+            File.WriteAllText(path, "{\"SchemaVersion\":6,\"Scada\":{\"Alarms\":null}}");
+            var store = new ProjectConfigurationStore(new ProjectPath(path));
+
+            var exception = Assert.Throws<ConfigurationValidationException>(() => store.Load());
+
+            Assert.Contains(exception.Issues, issue =>
+                issue.Code == "ALARM_OPTIONS_REQUIRED" && issue.IsBlocking);
+        }
+        finally
+        {
+            DeleteDirectory(directory);
+        }
+    }
+
+    [Fact]
     public void FirstSaveCreatesCurrentVersionDocument()
     {
         var directory = CreateTempDirectory();

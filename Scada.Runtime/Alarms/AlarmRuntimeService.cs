@@ -101,19 +101,42 @@ public sealed class AlarmRuntimeService : IHostedService, IAsyncDisposable
                 return;
             }
 
+            var startupCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            startupCts.CancelAfter(_options.StartupTimeoutMilliseconds);
+            var startupTask = PreparePersistenceStartupAsync(startupCts.Token);
+            var startupDetached = false;
             try
             {
-                await _store.InitializeAsync(cancellationToken).ConfigureAwait(false);
-                recovery = await _store.LoadRecoveryAsync(cancellationToken).ConfigureAwait(false);
-                await _store.BeginUntrustedSessionAsync(
-                    new AlarmStoreSessionRequest(_sessionId, _runtimeOptions.RuntimeId, _timeProvider.GetUtcNow()),
-                    cancellationToken).ConfigureAwait(false);
+                recovery = await startupTask.WaitAsync(startupCts.Token).ConfigureAwait(false);
             }
-            catch (Exception exception) when (exception is not OperationCanceledException)
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                startupCts.Cancel();
+                startupDetached = DetachIfIncomplete(startupTask, startupCts, "persistence startup");
+                throw;
+            }
+            catch (OperationCanceledException exception)
+            {
+                var timedOut = startupCts.IsCancellationRequested;
+                startupCts.Cancel();
+                startupDetached = DetachIfIncomplete(startupTask, startupCts, "persistence startup");
+                _logger.LogError(exception, "Alarm durable recovery-untrusted startup marker failed.");
+                FailClosed(
+                    timedOut ? "ALARM_RECOVERY_MARKER_TIMEOUT" : "ALARM_RECOVERY_MARKER_FAILED",
+                    timedOut
+                        ? "Alarm persistence startup exceeded its configured budget."
+                        : exception.Message);
+                return;
+            }
+            catch (Exception exception)
             {
                 _logger.LogError(exception, "Alarm durable recovery-untrusted startup marker failed.");
                 FailClosed("ALARM_RECOVERY_MARKER_FAILED", exception.Message);
                 return;
+            }
+            finally
+            {
+                if (!startupDetached) startupCts.Dispose();
             }
         }
 
@@ -200,6 +223,7 @@ public sealed class AlarmRuntimeService : IHostedService, IAsyncDisposable
         if (deadlineTask is not null) await ObserveAsync(deadlineTask).ConfigureAwait(false);
 
         var drained = true;
+        var persistenceDetached = false;
         if (persistenceTask is not null)
         {
             try
@@ -208,7 +232,7 @@ public sealed class AlarmRuntimeService : IHostedService, IAsyncDisposable
                     TimeSpan.FromMilliseconds(_options.ShutdownDrainTimeoutMilliseconds), cancellationToken)
                     .ConfigureAwait(false);
             }
-            catch (TimeoutException)
+            catch (Exception exception) when (exception is TimeoutException or OperationCanceledException)
             {
                 persistenceCts?.Cancel();
                 drained = false;
@@ -219,20 +243,28 @@ public sealed class AlarmRuntimeService : IHostedService, IAsyncDisposable
                     _lastErrorCode = "ALARM_SHUTDOWN_DRAIN_TIMEOUT";
                     _lastErrorMessage = "Alarm persistence did not drain within the configured shutdown budget.";
                 }
+                if (persistenceCts is not null)
+                    persistenceDetached = DetachIfIncomplete(
+                        persistenceTask, persistenceCts, "persistence drain");
             }
         }
 
         if (_options.PersistenceEnabled && _store is not null && drained && !_persistenceGap)
         {
             var checkpoint = CreateCheckpoint(recoveryTrusted: true);
+            var checkpointCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            checkpointCts.CancelAfter(_options.ShutdownDrainTimeoutMilliseconds);
+            var checkpointTask = CommitTrustedCheckpointAsync(checkpoint, checkpointCts.Token);
+            var checkpointDetached = false;
             try
             {
-                await _store.CommitTrustedCheckpointAsync(checkpoint, cancellationToken)
-                    .WaitAsync(TimeSpan.FromMilliseconds(_options.ShutdownDrainTimeoutMilliseconds), cancellationToken)
-                    .ConfigureAwait(false);
+                await checkpointTask.WaitAsync(checkpointCts.Token).ConfigureAwait(false);
             }
-            catch (Exception exception) when (exception is not OperationCanceledException)
+            catch (Exception exception)
             {
+                checkpointCts.Cancel();
+                checkpointDetached = DetachIfIncomplete(
+                    checkpointTask, checkpointCts, "trusted checkpoint commit");
                 lock (_sync)
                 {
                     _persistenceGap = true;
@@ -241,6 +273,10 @@ public sealed class AlarmRuntimeService : IHostedService, IAsyncDisposable
                     _lastErrorMessage = exception.Message;
                 }
             }
+            finally
+            {
+                if (!checkpointDetached) checkpointCts.Dispose();
+            }
         }
 
         lock (_sync)
@@ -248,8 +284,11 @@ public sealed class AlarmRuntimeService : IHostedService, IAsyncDisposable
             _snapshot = BuildSnapshotLocked(_persistenceGap ? AlarmRuntimeState.Degraded : AlarmRuntimeState.Disabled);
             _deadlineCts?.Dispose();
             _deadlineCts = null;
-            _persistenceCts?.Dispose();
+            if (!persistenceDetached) _persistenceCts?.Dispose();
             _persistenceCts = null;
+            _deadlineTask = null;
+            _persistenceTask = null;
+            _persistenceChannel = null;
         }
         NotifySnapshotSubscribers();
     }
@@ -467,6 +506,23 @@ public sealed class AlarmRuntimeService : IHostedService, IAsyncDisposable
             _lastErrorCode = "ALARM_PERSISTENCE_QUEUE_FULL";
             _lastErrorMessage = "Alarm persistence queue is full.";
         }
+    }
+
+    private async Task<AlarmRecoveryResult> PreparePersistenceStartupAsync(CancellationToken cancellationToken)
+    {
+        await _store!.InitializeAsync(cancellationToken).ConfigureAwait(false);
+        var recovery = await _store.LoadRecoveryAsync(cancellationToken).ConfigureAwait(false);
+        await _store.BeginUntrustedSessionAsync(
+            new AlarmStoreSessionRequest(_sessionId, _runtimeOptions.RuntimeId, _timeProvider.GetUtcNow()),
+            cancellationToken).ConfigureAwait(false);
+        return recovery;
+    }
+
+    private async Task CommitTrustedCheckpointAsync(
+        AlarmStoreCheckpoint checkpoint,
+        CancellationToken cancellationToken)
+    {
+        await _store!.CommitTrustedCheckpointAsync(checkpoint, cancellationToken).ConfigureAwait(false);
     }
 
     private async Task RunPersistenceAsync(CancellationToken cancellationToken)
@@ -711,6 +767,44 @@ public sealed class AlarmRuntimeService : IHostedService, IAsyncDisposable
     {
         try { await task.ConfigureAwait(false); }
         catch (OperationCanceledException) { }
+    }
+
+    private bool DetachIfIncomplete(
+        Task task,
+        CancellationTokenSource lifetime,
+        string operation)
+    {
+        if (task.IsCompleted)
+        {
+            if (task.IsFaulted)
+            {
+                _ = task.Exception;
+                _logger.LogWarning(task.Exception, "Alarm detached {Operation} task failed.", operation);
+            }
+            return false;
+        }
+        _ = ObserveDetachedAsync(task, lifetime, operation);
+        return true;
+    }
+
+    private async Task ObserveDetachedAsync(
+        Task task,
+        CancellationTokenSource lifetime,
+        string operation)
+    {
+        try
+        {
+            await task.ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception exception)
+        {
+            _logger.LogWarning(exception, "Alarm detached {Operation} task failed.", operation);
+        }
+        finally
+        {
+            lifetime.Dispose();
+        }
     }
 
     private sealed class MutableAlarm(AlarmDefinition definition)

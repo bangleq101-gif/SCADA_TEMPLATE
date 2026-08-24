@@ -19,6 +19,29 @@ public sealed class AlarmConfigurationTests
     }
 
     [Fact]
+    public void RuntimeValidationRejectsMissingAlarmOptionsInsteadOfSubstitutingDefaults()
+    {
+        var options = new RuntimeOptions { Alarms = null! };
+
+        var issue = Assert.Single(
+            RuntimeOptionsValidation.CollectIssues(options),
+            candidate => candidate.Code == "ALARM_OPTIONS_REQUIRED");
+
+        Assert.True(issue.IsBlocking);
+        Assert.Equal(nameof(RuntimeOptions.Alarms), issue.PropertyName);
+    }
+
+    [Fact]
+    public void ValidationRejectsNonPositivePersistenceStartupBudget()
+    {
+        var options = new AlarmOptions { StartupTimeoutMilliseconds = 0 };
+
+        var issues = AlarmDefinitionValidation.CollectIssues(options, []);
+
+        Assert.Contains(issues, issue => issue.Code == "ALARM_OPTIONS_INVALID" && issue.IsBlocking);
+    }
+
+    [Fact]
     public void FingerprintChangesForMaterialFieldsButNotDisplayFields()
     {
         var definition = CreateNumericAlarm();

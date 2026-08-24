@@ -148,6 +148,7 @@ public sealed class ProjectEditSessionTests
         {
             var options = CreateOptions();
             options.Alarms.Enabled = true;
+            options.Alarms.StartupTimeoutMilliseconds = 1_234;
             options.Alarms.Definitions =
             [
                 new AlarmDefinition
@@ -159,6 +160,14 @@ public sealed class ProjectEditSessionTests
             ];
             options.Tags[0].DataType = TagDataType.Double;
             var session = CreateSession(options, directory);
+
+            session.WorkingProject.Alarms.StartupTimeoutMilliseconds = 2_345;
+            session.MarkChanged();
+            Assert.True(session.IsDirty);
+            Assert.Equal(1_234, session.StartupProject.Alarms.StartupTimeoutMilliseconds);
+            Assert.Equal(1_234, session.SavedProject.Alarms.StartupTimeoutMilliseconds);
+            session.Revert();
+            Assert.Equal(1_234, session.WorkingProject.Alarms.StartupTimeoutMilliseconds);
 
             session.WorkingProject.Alarms.Definitions[0].Threshold = 12;
             session.MarkChanged();

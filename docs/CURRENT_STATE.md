@@ -171,6 +171,9 @@ n PLC
 - Exact-instance ACK, stale-safe/idempotent ACK, ACK-all through the same per-instance path and deterministic ACK/current-value race isolation.
 - Bounded Alarm persistence channel and batch coordinator with separate rejected, dropped, abandoned and write-failure diagnostics.
 - Fail-closed durable recovery-untrusted startup marker: marker failure creates no TagCache subscription, deadline or live Alarm lifecycle state.
+- Bounded Alarm persistence startup operations; a timeout or store-owned cancellation fails Alarm closed without delaying unrelated polling startup, and late non-cooperative completion remains observed.
+- Bounded trusted-checkpoint commit using the actual store-operation cancellation token; timeout/cancellation cannot escape through host shutdown, and timed-out persistence workers retain an exception-observation owner.
+- Current-schema project validation rejects a missing/null Alarm options container with a structured blocking issue instead of allowing a later startup null-reference failure.
 - Gap-free clean-drain trusted checkpoints, compatible material-definition recovery, untrusted recovery diagnostics and orphaned/incompatible instance accounting.
 - Project-relative `Data/alarms.db` SQLite event/open-instance store with rooted/traversal path rejection, atomic session metadata and corrupt/newer-schema handling.
 - `engineering.alarms`, `monitoring.alarms`, read-only Alarm journal query and compact Operation Alarm summary in WPF.
@@ -181,7 +184,7 @@ n PLC
 - `dotnet restore Scada.sln --ignore-failed-sources` — PASS.
 - `dotnet build Scada.sln -c Release --no-restore` — PASS with 0 warnings and 0 errors.
 - M11 feature-branch restore and Release build — PASS with 0 warnings and 0 errors.
-- M11 full test suite — PASS; 382 tests, 0 failures (138 App, 114 Runtime, 36 Core, 3 Drivers, 64 Infrastructure, 27 Stress).
+- M11 full test suite — PASS; 390 tests, 0 failures (138 App, 119 Runtime, 38 Core, 3 Drivers, 65 Infrastructure, 27 Stress).
 - M11 vulnerability audit — PASS; no vulnerable direct or transitive package was reported.
 - M11 WPF startup smoke — PASS; the application remained running with Alarm resources, DI and routes loaded.
 - M11 fresh copy-folder restore/build and original-path scan — PASS; the verification folder was removed after the check.

@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Scada.Core.Alarms;
 using Scada.Core.Configuration;
@@ -113,6 +114,44 @@ public sealed class AlarmRuntimeServiceTests
         Assert.Equal(0, cache.ActiveSubscriptions);
         Assert.Empty(service.Snapshot.Alarms);
         Assert.Equal(1, store.BeginSessionAttempts);
+    }
+
+    [Fact]
+    public async Task NonCooperativePersistenceStartupFailsClosedWithinConfiguredBudget()
+    {
+        var options = CreateOptions(TimeSpan.Zero);
+        options.Alarms.PersistenceEnabled = true;
+        options.Alarms.StartupTimeoutMilliseconds = 25;
+        var cache = new TrackingTagCache { Seed = Good(90, 1) };
+        var store = new RecordingAlarmStore { BlockStartup = true };
+        await using var service = new AlarmRuntimeService(
+            options, cache, store, NullLogger<AlarmRuntimeService>.Instance, new ManualTimeProvider());
+
+        await service.StartAsync(CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(1));
+
+        Assert.Equal(AlarmRuntimeState.Faulted, service.Snapshot.State);
+        Assert.Equal("ALARM_RECOVERY_MARKER_TIMEOUT", service.Snapshot.LastErrorCode);
+        Assert.Equal(0, cache.ActiveSubscriptions);
+        Assert.Empty(service.Snapshot.Alarms);
+        store.ReleaseStartup.TrySetResult(true);
+    }
+
+    [Fact]
+    public async Task IndependentStartupCancellationFailsClosedWithoutEscapingToHost()
+    {
+        var options = CreateOptions(TimeSpan.Zero);
+        options.Alarms.PersistenceEnabled = true;
+        var cache = new TrackingTagCache();
+        var store = new RecordingAlarmStore { CancelStartupIndependently = true };
+        await using var service = new AlarmRuntimeService(
+            options, cache, store, NullLogger<AlarmRuntimeService>.Instance, new ManualTimeProvider());
+
+        var exception = await Record.ExceptionAsync(() => service.StartAsync(CancellationToken.None));
+
+        Assert.Null(exception);
+        Assert.Equal(AlarmRuntimeState.Faulted, service.Snapshot.State);
+        Assert.Equal("ALARM_RECOVERY_MARKER_FAILED", service.Snapshot.LastErrorCode);
+        Assert.Equal(0, cache.ActiveSubscriptions);
     }
 
     [Fact]
@@ -397,6 +436,68 @@ public sealed class AlarmRuntimeServiceTests
     }
 
     [Fact]
+    public async Task TimedOutPersistenceWorkerIsObservedWhenItFaultsAfterShutdownReturns()
+    {
+        var options = CreateOptions(TimeSpan.Zero);
+        options.Alarms.PersistenceEnabled = true;
+        options.Alarms.ShutdownDrainTimeoutMilliseconds = 25;
+        var cache = new TrackingTagCache();
+        var store = new RecordingAlarmStore { BlockPersist = true, FailPersist = true };
+        var logger = new RecordingLogger<AlarmRuntimeService>();
+        var service = new AlarmRuntimeService(options, cache, store, logger, new ManualTimeProvider());
+        await service.StartAsync(CancellationToken.None);
+        cache.Publish(Good(90, 1));
+        await store.PersistEntered.Task.WaitAsync(TimeSpan.FromSeconds(2));
+
+        await service.StopAsync(CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(1));
+        store.ReleasePersist.TrySetResult(true);
+        var observed = await logger.ObservedDetachedFailure.Task.WaitAsync(TimeSpan.FromSeconds(1));
+
+        Assert.IsType<IOException>(observed);
+        Assert.Equal(0, cache.ActiveSubscriptions);
+        await service.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task TrustedCheckpointTimeoutCancelsActualStoreOperationAndCannotCommitLate()
+    {
+        var options = CreateOptions(TimeSpan.Zero);
+        options.Alarms.PersistenceEnabled = true;
+        options.Alarms.ShutdownDrainTimeoutMilliseconds = 25;
+        var cache = new TrackingTagCache();
+        var store = new RecordingAlarmStore { BlockCheckpoint = true };
+        await using var service = new AlarmRuntimeService(
+            options, cache, store, NullLogger<AlarmRuntimeService>.Instance, new ManualTimeProvider());
+        await service.StartAsync(CancellationToken.None);
+
+        await service.StopAsync(CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(1));
+        store.ReleaseCheckpoint.TrySetResult(true);
+        await store.CheckpointFinished.Task.WaitAsync(TimeSpan.FromSeconds(1));
+
+        Assert.Null(store.TrustedCheckpoint);
+        Assert.Equal(AlarmRuntimeState.Degraded, service.Snapshot.State);
+        Assert.Equal("ALARM_CHECKPOINT_COMMIT_FAILED", service.Snapshot.LastErrorCode);
+    }
+
+    [Fact]
+    public async Task IndependentCheckpointCancellationIsIsolatedFromHostShutdown()
+    {
+        var options = CreateOptions(TimeSpan.Zero);
+        options.Alarms.PersistenceEnabled = true;
+        var store = new RecordingAlarmStore { CancelCheckpointIndependently = true };
+        await using var service = new AlarmRuntimeService(
+            options, new TrackingTagCache(), store, NullLogger<AlarmRuntimeService>.Instance, new ManualTimeProvider());
+        await service.StartAsync(CancellationToken.None);
+
+        var exception = await Record.ExceptionAsync(() => service.StopAsync(CancellationToken.None));
+
+        Assert.Null(exception);
+        Assert.Null(store.TrustedCheckpoint);
+        Assert.Equal(AlarmRuntimeState.Degraded, service.Snapshot.State);
+        Assert.Equal("ALARM_CHECKPOINT_COMMIT_FAILED", service.Snapshot.LastErrorCode);
+    }
+
+    [Fact]
     public async Task FullPersistenceQueueMarksGapAndDisqualifiesTrustedRecovery()
     {
         var options = CreateOptions(TimeSpan.Zero);
@@ -561,6 +662,10 @@ public sealed class AlarmRuntimeServiceTests
         public bool FailPersist { get; init; }
         public bool CancelPersistIndependently { get; init; }
         public bool BlockPersist { get; init; }
+        public bool BlockStartup { get; init; }
+        public bool CancelStartupIndependently { get; init; }
+        public bool BlockCheckpoint { get; init; }
+        public bool CancelCheckpointIndependently { get; init; }
         public int BeginSessionAttempts { get; private set; }
         public AlarmRecoveryResult Recovery { get; init; } = new(false, 0, []);
         public List<AlarmPersistenceBatch> PersistedBatches { get; } = [];
@@ -568,7 +673,16 @@ public sealed class AlarmRuntimeServiceTests
         public TaskCompletionSource<bool> Persisted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public TaskCompletionSource<bool> PersistEntered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public TaskCompletionSource<bool> ReleasePersist { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
-        public Task InitializeAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+        public TaskCompletionSource<bool> StartupEntered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource<bool> ReleaseStartup { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource<bool> ReleaseCheckpoint { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource<bool> CheckpointFinished { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public async Task InitializeAsync(CancellationToken cancellationToken)
+        {
+            StartupEntered.TrySetResult(true);
+            if (BlockStartup) await ReleaseStartup.Task.ConfigureAwait(false);
+            if (CancelStartupIndependently) throw new OperationCanceledException("startup cancelled independently");
+        }
         public Task<AlarmRecoveryResult> LoadRecoveryAsync(CancellationToken cancellationToken) =>
             Task.FromResult(Recovery);
         public Task BeginUntrustedSessionAsync(AlarmStoreSessionRequest request, CancellationToken cancellationToken)
@@ -585,13 +699,36 @@ public sealed class AlarmRuntimeServiceTests
             if (CancelPersistIndependently) throw new OperationCanceledException("store cancelled independently");
             if (FailPersist) throw new IOException("write failed");
         }
-        public Task CommitTrustedCheckpointAsync(AlarmStoreCheckpoint checkpoint, CancellationToken cancellationToken)
+        public async Task CommitTrustedCheckpointAsync(AlarmStoreCheckpoint checkpoint, CancellationToken cancellationToken)
         {
-            TrustedCheckpoint = checkpoint;
-            return Task.CompletedTask;
+            try
+            {
+                if (BlockCheckpoint) await ReleaseCheckpoint.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+                if (CancelCheckpointIndependently) throw new OperationCanceledException("checkpoint cancelled independently");
+                TrustedCheckpoint = checkpoint;
+            }
+            finally
+            {
+                CheckpointFinished.TrySetResult(true);
+            }
         }
         public Task<IReadOnlyList<AlarmEvent>> QueryAsync(AlarmEventQuery query, CancellationToken cancellationToken) =>
             Task.FromResult<IReadOnlyList<AlarmEvent>>([]);
+    }
+
+    private sealed class RecordingLogger<T> : ILogger<T>
+    {
+        public TaskCompletionSource<Exception> ObservedDetachedFailure { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+        public bool IsEnabled(LogLevel logLevel) => true;
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception,
+            Func<TState, Exception?, string> formatter)
+        {
+            if (exception is not null && formatter(state, exception).Contains("detached", StringComparison.OrdinalIgnoreCase))
+                ObservedDetachedFailure.TrySetResult(exception);
+        }
     }
 
     private sealed class ManualTimeProvider : TimeProvider

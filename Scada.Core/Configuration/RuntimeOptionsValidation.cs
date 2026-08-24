@@ -36,7 +36,19 @@ public static class RuntimeOptionsValidation
         issues.AddRange(HistoryProfileValidation.CollectIssues(historian));
         ValidateMqtt(mqtt, issues);
         issues.AddRange(MachineSettingsValidation.CollectIssues(options.MachineSettings, options.Tags ?? []));
-        issues.AddRange(AlarmDefinitionValidation.CollectIssues(options.Alarms, options.Tags ?? []));
+        if (options.Alarms is null)
+        {
+            issues.Add(Error(
+                "ALARM_OPTIONS_REQUIRED",
+                "Alarm",
+                null,
+                nameof(options.Alarms),
+                "Alarm options are required in the current project schema."));
+        }
+        else
+        {
+            issues.AddRange(AlarmDefinitionValidation.CollectIssues(options.Alarms, options.Tags ?? []));
+        }
 
         var historyRegistry = new HistoryProfileRegistry(historian.Profiles ?? []);
 

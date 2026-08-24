@@ -8,6 +8,7 @@ public sealed class AlarmOptions
     public int QueueCapacity { get; set; } = 16_384;
     public int BatchSize { get; set; } = 256;
     public int FlushIntervalMilliseconds { get; set; } = 500;
+    public int StartupTimeoutMilliseconds { get; set; } = 5_000;
     public int ShutdownDrainTimeoutMilliseconds { get; set; } = 5_000;
     public List<AlarmDefinition> Definitions { get; set; } = [];
 }

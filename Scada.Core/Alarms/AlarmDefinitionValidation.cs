@@ -32,10 +32,10 @@ public static class AlarmDefinitionValidation
     {
         if (options.QueueCapacity <= 0 || options.BatchSize <= 0 ||
             options.BatchSize > options.QueueCapacity || options.FlushIntervalMilliseconds <= 0 ||
-            options.ShutdownDrainTimeoutMilliseconds <= 0)
+            options.StartupTimeoutMilliseconds <= 0 || options.ShutdownDrainTimeoutMilliseconds <= 0)
         {
             issues.Add(Error("ALARM_OPTIONS_INVALID", null, null,
-                "Alarm queue, batch, flush and shutdown settings must be positive and batch size cannot exceed queue capacity."));
+                "Alarm queue, batch, flush, startup and shutdown settings must be positive and batch size cannot exceed queue capacity."));
         }
 
         if (options.PersistenceEnabled && IsInvalidRelativePath(options.DatabasePath))

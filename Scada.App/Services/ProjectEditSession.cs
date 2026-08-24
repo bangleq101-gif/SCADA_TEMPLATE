@@ -312,6 +312,7 @@ internal static class ProjectSnapshotCloner
         QueueCapacity = source.QueueCapacity,
         BatchSize = source.BatchSize,
         FlushIntervalMilliseconds = source.FlushIntervalMilliseconds,
+        StartupTimeoutMilliseconds = source.StartupTimeoutMilliseconds,
         ShutdownDrainTimeoutMilliseconds = source.ShutdownDrainTimeoutMilliseconds,
         Definitions = source.Definitions.Select(definition => new AlarmDefinition
         {
@@ -469,6 +470,7 @@ internal static class ProjectSnapshotComparer
         left.Enabled == right.Enabled && left.PersistenceEnabled == right.PersistenceEnabled &&
         left.DatabasePath == right.DatabasePath && left.QueueCapacity == right.QueueCapacity &&
         left.BatchSize == right.BatchSize && left.FlushIntervalMilliseconds == right.FlushIntervalMilliseconds &&
+        left.StartupTimeoutMilliseconds == right.StartupTimeoutMilliseconds &&
         left.ShutdownDrainTimeoutMilliseconds == right.ShutdownDrainTimeoutMilliseconds &&
         left.Definitions.Count == right.Definitions.Count &&
         left.Definitions.Zip(right.Definitions).All(pair =>
