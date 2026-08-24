@@ -1,6 +1,10 @@
 
 # Architecture Decisions
 
+## D58 — M11 PLC-read-only Alarm and trusted-checkpoint recovery
+
+Milestone 11 consumes central TagCache values through one subscription per distinct logical TagId and performs no additional PLC reads or PLC/MQTT writes. Exact-instance acknowledgement mutates SCADA Alarm state only. Activation delays use monotonic `TimeProvider` timestamps while observable transition and journal timestamps use UTC wall time. Alarm SQLite storage defaults to `Data/alarms.db` resolved beneath the canonical `ProjectPath.DirectoryPath`; absolute paths, missing project paths and traversal outside that directory are rejected. Project migration v5 → v6 defaults `AlarmOptions.Enabled` to `false`. Persisted open instances are authoritative only after a gap-free clean drain and atomic trusted checkpoint; every new session is durably marked recovery-untrusted before evaluation, and any queue gap, abandonment, write failure, crash or drain timeout prevents trusted restoration. Recovery additionally requires a compatible material Alarm-definition fingerprint. Untrusted, deleted, disabled or materially changed instances remain historical/orphaned and are never silently restored or given fabricated PLC Return/Closed events. Quality availability is exposed in snapshots and diagnostics without journaling every quality flap; automatic communication alarms remain deferred.
+
 ## D57 — M10 qualified baseline and no speculative optimization
 
 Milestone 10 Phase A is qualified at SHA `402ee9d46f41489fee8912bbed57dc1388550658` under measurement contract `m10-phase-a-v3`, with 15/15 compatible runs across the five approved profiles. The evidence found no justified optimization candidate: correctness gates passed, throughput was stable and no bounded production hotspot was established. No speculative optimization is permitted on this evidence. Future performance changes must compare against a compatible workload and environment using the recorded baseline contract.

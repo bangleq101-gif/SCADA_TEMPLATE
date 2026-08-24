@@ -66,6 +66,17 @@ The roadmap is ordered. Complete and review each milestone before moving to the 
 - Measure CPU, RAM, scan duration, scan jitter, missed cycles, updates/sec, UI responsiveness and historian queue performance.
 - Optimize only from measured results and record findings in the project documentation.
 
+## Milestone 11 — Alarm System
+
+- Implement a PLC-read-only Alarm System that evaluates central `TagCache` values without additional PLC reads or PLC/MQTT writes.
+- Support `DigitalEquals`, High, HighHigh, Low and LowLow rules with deterministic deadband, exact-instance acknowledgement and `ReturnedUnacknowledged` lifecycle semantics.
+- Use one TagCache subscription per distinct logical TagId and one shared monotonic activation-delay coordinator; do not create a timer or task per alarm.
+- Persist Alarm events and open-instance checkpoints in project-relative SQLite storage at `Data/alarms.db`, resolved under the canonical `ProjectPath.DirectoryPath`.
+- Introduce project schema v6 with `AlarmOptions.Enabled = false` for v5-to-v6 migration so existing projects do not gain Alarm runtime behavior automatically.
+- Restore live Alarm state only from an explicitly trusted, gap-free clean checkpoint with a compatible material definition fingerprint. Untrusted, missing, disabled or materially changed instances remain historical/orphaned and are not silently restored as authoritative.
+- Add `engineering.alarms`, `monitoring.alarms` and a compact Operation Alarm summary while retaining `ProjectEditSession` as the project-editing authority.
+- Keep communication alarms, PLC acknowledgement writes, MQTT Write, authentication/authorization, Trend and notification/escalation systems deferred.
+
 ## Explicitly deferred
 
 Do not implement without separate approval:

@@ -2,19 +2,13 @@
 
 Architecture V1 is approved.
 
-Post-M6 baseline stabilization: Influx durable outbox SQLite connection/WAL concurrency issue corrected.
-
 Current implementation milestone:
 
-Milestone 6 — InfluxDB Provider
+Milestone 11 — Alarm System
 
 Status:
 
-Completed and merged to `main` via PR #6.
-
-Merge commit:
-
-`4590577d5023f66556d89ba803360daca531c4cb`
+Architecture plan approved for roadmap/spec synchronization. Implementation has not started.
 
 Milestone 7:
 
@@ -37,6 +31,10 @@ Completed and merged to `main` via PR #12 at merge commit `c16d9fdb1f75cb05a74b2
 The authoritative qualified Phase A benchmark remains `402ee9d46f41489fee8912bbed57dc1388550658` under measurement contract `m10-phase-a-v3`.
 
 All 15 compatible qualification runs passed. No optimization was justified by measured evidence. The baseline is not a production SLA.
+
+Milestone 11:
+
+The Revision 1 Alarm architecture plan is approved. The approved scope is a PLC-read-only Alarm System using central TagCache values, exact-instance SCADA-state acknowledgement, monotonic activation delays, project-relative SQLite persistence and trusted-checkpoint recovery. Project schema v6 will default `AlarmOptions.Enabled` to `false`. Source implementation remains blocked pending a separate implementation authorization.
 
 ## Implemented in Milestone 1
 
@@ -179,8 +177,9 @@ n PLC
 ## Not implemented — later milestones
 
 - Real Siemens, Mitsubishi, Modbus or OPC UA drivers.
-- MQTT publisher or write support.
-- Complete Alarm and Trend systems.
+- MQTT Write and command-subscription support.
+- Milestone 11 Alarm implementation and the later Trend system.
+- Automatic PLC communication alarms, Alarm-to-PLC acknowledgement and Alarm notification/escalation.
 - PLC-backed Machine Settings Apply/Write, recipes, calibration workflow, audit trail and authorization.
 - Deployment tooling.
 - Deeper active-view subscription lifecycle optimization beyond the M3 activation/deactivation boundary.
@@ -190,7 +189,7 @@ n PLC
 
 - A per-device factory that creates a driver with a mismatched `DriverType` can leave that instance without lease ownership before `Acquire` throws. Correct `IDisposable`/`IAsyncDisposable` cleanup on this exceptional misconfiguration path is deferred until resolver acquisition/lifetime design is expanded.
 - A genuinely non-cooperative driver operation may remain in flight after the manager shutdown budget expires. M2 bounds manager return time and retains ownership rather than attempting to kill the task; deeper orphan-operation supervision is later work.
-- Project persistence supports sequential schema v1 → v2 → v3 migration; multi-process conflict handling and undo/redo are deferred.
+- Project persistence currently supports sequential schema v1 → v2 → v3 → v4 → v5 migration. The approved M11 specification plans an in-memory v5 → v6 migration with Alarm disabled by default; implementation has not started. Multi-process conflict handling and undo/redo remain deferred.
 - Project startup requires an explicit canonical `--project-file` path (the supplied launcher provides it); automatic project discovery and hot reload are intentionally not implemented.
 - Tag Manager validation is deterministic and synchronous; full UI automation, advanced tag scaling/offset semantics and runtime reconfiguration without restart remain later work.
 - Import conflict resolution currently offers explicit apply-all for conflict-free imports or append-non-conflicting/cancel for conflicted imports; identity regeneration after a conflict is deferred.
