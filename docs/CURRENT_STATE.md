@@ -32,7 +32,11 @@ Completed and merged to `main` via PR #11. PLC Write, MQTT Write, command/interl
 
 Milestone 10:
 
-Phase A implementation and qualified baseline are complete on `feature/milestone-10-stress-optimization` at qualified SHA `402ee9d46f41489fee8912bbed57dc1388550658`. All 15 v3 qualification runs passed and no optimization was justified by measured evidence. Pending PR review/merge; M10 is not yet merged to `main`.
+Completed and merged to `main` via PR #12 at merge commit `c16d9fdb1f75cb05a74b24143a330b5fc021ce82`.
+
+The authoritative qualified Phase A benchmark remains `402ee9d46f41489fee8912bbed57dc1388550658` under measurement contract `m10-phase-a-v3`.
+
+All 15 compatible qualification runs passed. No optimization was justified by measured evidence. The baseline is not a production SLA.
 
 ## Implemented in Milestone 1
 
