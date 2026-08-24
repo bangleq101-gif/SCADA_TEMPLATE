@@ -171,7 +171,7 @@ n PLC
 - InfluxDB package audit — PASS; no vulnerable packages reported.
 - WPF startup smoke test — PASS; `Scada.App` stayed running through the startup check and resolved `MainWindow` with resources/templates loaded without a startup DI/XAML exception.
 - Copy-folder portability verification — PASS on a fresh copy outside the repository; restore/build/startup do not depend on the original folder, and no original repository path was found in copied source/configuration files.
-- GitNexus post-change review — PASS; refreshed M9 index contains 2,919 nodes / 9,872 edges / 245 flows with 0 import cycles. Changed execution flows remain within Machine Settings/App and tests; `Scada.Runtime` still references only `Scada.Core`, and static boundary scans find no Machine Settings, WPF, App or concrete-driver dependency in Runtime.
+- GitNexus final M10 baseline review — PASS; the baseline index contains 3,248 nodes / 10,848 edges / 274 flows with 0 import cycles. `Scada.Runtime` still references only `Scada.Core`, and static boundary scans find no WPF, App or concrete-driver dependency in Runtime.
 - UI automation remains out of scope.
 
 ## Not implemented — later milestones
@@ -195,8 +195,8 @@ n PLC
 - Import conflict resolution currently offers explicit apply-all for conflict-free imports or append-non-conflicting/cancel for conflicted imports; identity regeneration after a conflict is deferred.
 - InfluxDB provider verification has not yet included a live remote InfluxDB server; transport error mapping, retention behavior and long-running replay remain subject to integration testing.
 - The official InfluxDB.Client exception model exposes HTTP status but does not provide reliable point-level rejection metadata; production therefore preserves generic 400 rows, while point-specific splitting remains available only to an explicitly confirming transport implementation.
-- The durable Influx outbox is single-process and SQLite-backed; multi-process writers, hot reload and full 50-PLC/10,000-tag stress testing remain deferred.
+- The durable Influx outbox is single-process and SQLite-backed; multi-process writers and hot reload remain deferred. M10 already completed the authoritative 50-PLC/~10,000-tag qualification at `402ee9d46f41489fee8912bbed57dc1388550658`; live remote Influx integration remains a separate deferred test boundary.
 - History Settings Test Connection performs a non-writing candidate probe only; it does not claim write permission until a live integration test is added. UI command behavior is unit-tested, not UI-automation-tested.
 - Historian configuration changes are persisted and marked restart-required; runtime hot reload is intentionally not implemented.
 
-Implementation must follow the ordered milestones in `docs/ROADMAP.md` and the constraints in `docs/SCADA_ARCHITECTURE_V1.md`. Do not jump ahead to MQTT or other later milestones without explicit approval.
+Implementation must follow the ordered milestones in `docs/ROADMAP.md` and the constraints in `docs/SCADA_ARCHITECTURE_V1.md`. M7 MQTT Publisher and M10 qualification are complete; only MQTT Write, command subscriptions and PLC-write paths remain deferred. M11 source implementation must not start without explicit implementation authorization.

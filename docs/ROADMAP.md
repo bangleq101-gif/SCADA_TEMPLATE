@@ -75,6 +75,7 @@ The roadmap is ordered. Complete and review each milestone before moving to the 
 - Introduce project schema v6 with `AlarmOptions.Enabled = false` for v5-to-v6 migration so existing projects do not gain Alarm runtime behavior automatically.
 - Restore live Alarm state only from an explicitly trusted, gap-free clean checkpoint with a compatible material definition fingerprint. Untrusted, missing, disabled or materially changed instances remain historical/orphaned and are not silently restored as authoritative.
 - Add `engineering.alarms`, `monitoring.alarms` and a compact Operation Alarm summary while retaining `ProjectEditSession` as the project-editing authority.
+- Verify M11 with controllable-time state/ACK/quality/recovery/path/lifecycle tests and a bounded Alarm-specific scale sanity. This does not replace or redefine the authoritative M10 benchmark at `402ee9d46f41489fee8912bbed57dc1388550658`.
 - Keep communication alarms, PLC acknowledgement writes, MQTT Write, authentication/authorization, Trend and notification/escalation systems deferred.
 
 ## Explicitly deferred

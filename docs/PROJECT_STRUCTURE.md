@@ -77,7 +77,9 @@ AlarmRuntimeService
                    ProjectPath.DirectoryPath/Data/alarms.db
 ```
 
-Alarm never rereads a PLC. ACK targets an exact Alarm instance and mutates only SCADA Alarm/journal state. Activation-delay scheduling uses monotonic `TimeProvider` elapsed time; UTC wall time is reserved for observable transition and journal timestamps. A new persistence session must be durably marked recovery-untrusted before evaluation begins. Only a gap-free clean drain plus atomic final checkpoint can become trusted for the next startup; incompatible or untrusted persisted instances remain historical/orphaned.
+Alarm never rereads a PLC. ACK targets an exact Alarm instance and mutates only SCADA Alarm/journal state. Activation-delay scheduling uses monotonic `TimeProvider` elapsed time; UTC wall time is reserved for observable transition and journal timestamps.
+
+When Alarm persistence is enabled, a new session must be durably and atomically marked recovery-untrusted before any TagCache subscription, seed reconciliation, activation deadline or live evaluation. This marker is a hard startup precondition. If it cannot be committed, Alarm enters Degraded/Faulted without subscribing, evaluating, creating or mutating live Alarm state, and without memory-only fallback; PLC polling may continue. Only a gap-free clean drain plus a complete open-instance checkpoint and atomic continuity/session metadata commit can become trusted for the next startup. Crash, queue gap/drop/rejection, abandonment, write failure or drain timeout permanently disqualifies the session. Incompatible or untrusted persisted instances remain historical/orphaned.
 
 ## Main folders
 
