@@ -1,3 +1,4 @@
+using Scada.Core.Alarms;
 using Scada.Core.Tags;
 using Scada.Core.History;
 using System.Globalization;
@@ -35,6 +36,7 @@ public static class RuntimeOptionsValidation
         issues.AddRange(HistoryProfileValidation.CollectIssues(historian));
         ValidateMqtt(mqtt, issues);
         issues.AddRange(MachineSettingsValidation.CollectIssues(options.MachineSettings, options.Tags ?? []));
+        issues.AddRange(AlarmDefinitionValidation.CollectIssues(options.Alarms, options.Tags ?? []));
 
         var historyRegistry = new HistoryProfileRegistry(historian.Profiles ?? []);
 

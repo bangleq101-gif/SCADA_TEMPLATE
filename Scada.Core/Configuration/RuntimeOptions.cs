@@ -1,3 +1,4 @@
+using Scada.Core.Alarms;
 using Scada.Core.Devices;
 using Scada.Core.History;
 using Scada.Core.Mqtt;
@@ -13,6 +14,7 @@ public sealed class RuntimeOptions
     public HistorianOptions Historian { get; set; } = new();
     public MqttOptions Mqtt { get; set; } = new();
     public MachineSettingsOptions MachineSettings { get; set; } = new();
+    public AlarmOptions Alarms { get; set; } = new();
     public List<ScanGroupDefinition> ScanGroups { get; set; } =
     [
         new() { Name = "Fast", IntervalMilliseconds = 100 },
