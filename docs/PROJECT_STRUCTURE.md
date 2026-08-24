@@ -31,10 +31,61 @@ Milestone 6 keeps the product-project dependency graph unchanged. Historian orch
 
 `Scada.Runtime` is driver-neutral. It consumes `IPlcDriver` from `Scada.Core` and owns only the runtime-local resolver, lease, manager and polling workers. Concrete drivers are composed by `Scada.App` from `Scada.Drivers`.
 
+## Milestone 11 Alarm ownership
+
+```text
+Scada.Core/Alarms
+├── Alarm configuration and lifecycle domain types
+├── Alarm event/checkpoint records
+├── deterministic definition fingerprint contract
+└── IAlarmEventStore
+
+Scada.Runtime/Alarms
+├── AlarmRuntimeService
+├── AlarmRuntimeState / AlarmRuntimeSnapshot / AlarmSnapshot
+├── AlarmEvaluator
+├── one shared monotonic deadline coordinator
+└── one bounded persistence coordinator
+
+Scada.Infrastructure/Alarms
+├── AlarmDatabasePathResolver
+└── SqliteAlarmEventStore
+
+Scada.App
+├── engineering.alarms
+├── monitoring.alarms
+└── Operation Alarm summary
+```
+
+Runtime-only snapshots, health state, evaluators and coordinators stay in `Scada.Runtime`; they are not duplicated in Core. Core contains only configuration, persisted/store-neutral domain records and the store abstraction needed by Runtime. Infrastructure implements SQLite behind that abstraction, and App composes the concrete store and WPF workspaces. No new product project or dependency direction is introduced.
+
+M11 flow:
+
+```text
+PLC / Simulator
+      ↓
+existing Driver and Polling
+      ↓
+central TagCache
+      ↓ one IDisposable subscription / distinct logical TagId
+AlarmRuntimeService
+├── immutable runtime snapshots → Operation / Monitoring
+└── bounded persistence coordinator → IAlarmEventStore
+                                      ↓
+                               SqliteAlarmEventStore
+                                      ↓
+                   ProjectPath.DirectoryPath/Data/alarms.db
+```
+
+Alarm never rereads a PLC. ACK targets an exact Alarm instance and mutates only SCADA Alarm/journal state. Activation-delay scheduling uses monotonic `TimeProvider` elapsed time; UTC wall time is reserved for observable transition and journal timestamps.
+
+When Alarm persistence is enabled, a new session must be durably and atomically marked recovery-untrusted before any TagCache subscription, seed reconciliation, activation deadline or live evaluation. This marker is a hard startup precondition. If it cannot be committed, Alarm enters Degraded/Faulted without subscribing, evaluating, creating or mutating live Alarm state, and without memory-only fallback; PLC polling may continue. Only a gap-free clean drain plus a complete open-instance checkpoint and atomic continuity/session metadata commit can become trusted for the next startup. Crash, queue gap/drop/rejection, abandonment, write failure or drain timeout permanently disqualifies the session. Incompatible or untrusted persisted instances remain historical/orphaned.
+
 ## Main folders
 
 ```text
 Scada.Core/
+├── Alarms
 ├── Common
 ├── Configuration
 ├── Devices
@@ -43,6 +94,7 @@ Scada.Core/
 └── Tags
 
 Scada.Runtime/
+├── Alarms
 ├── Devices
 ├── Drivers
 ├── Engine
@@ -54,6 +106,7 @@ Scada.Drivers/
 └── Simulator
 
 Scada.Infrastructure/
+├── Alarms
 ├── Configuration
 ├── History
 └── Persistence
@@ -196,3 +249,5 @@ The Tag Manager owns project editing in `Scada.App`; import data is prepared and
 ## Portable configuration
 
 `Scada.App/appsettings.json` is copied to application output. The application sets its content root to `AppContext.BaseDirectory`, while project persistence uses an explicit absolute `--project-file` path. Historian SQLite is resolved relative to that canonical project document directory and is never created when Historian is disabled. `scripts/run-scada.ps1` resolves its project path from `$PSScriptRoot`, so running a copied template folder does not depend on the original repository or current working directory. The Influx outbox is likewise resolved beneath the canonical project directory as `Data/influx-buffer.db`. Influx credentials are environment-variable references such as `env:SCADA_INFLUX_TOKEN`; the token value is not stored in project JSON, logged or shown in the UI.
+
+Milestone 11 Alarm persistence follows the same canonical project boundary: the default `Data/alarms.db` is resolved beneath `ProjectPath.DirectoryPath`, never beneath `AppContext.BaseDirectory`. Alarm persistence requires a canonical project path when enabled and rejects empty, rooted or out-of-project traversal paths. Schema v5 → v6 migration is in memory and defaults Alarm runtime enablement to false until an explicit project Save and later runtime restart.

@@ -182,7 +182,7 @@ DeviceConnectionState
 ScanGroupDefinition
 
 AlarmDefinition
-AlarmState
+AlarmLifecycleState
 
 RuntimeOptions
 ProjectDefinition
@@ -504,11 +504,159 @@ TagEngine
 TagCache
 TagSubscription
 TagWriteService
-AlarmEngine
+AlarmRuntimeService
 HistorianQueue
 ```
 
 Không cần tất cả tính năng nâng cao hoàn chỉnh ngay milestone đầu.
+
+## 14.1 Alarm System V1
+
+Alarm System là **PLC-read-only**: ACK được phép thay đổi trạng thái Alarm trong SCADA và event journal, nhưng Alarm không đọc lại PLC và không ghi PLC, Driver, TagCache hoặc MQTT.
+
+Luồng bắt buộc:
+
+```text
+PLC / Simulator
+ ↓
+Driver + Polling
+ ↓
+TagCache
+ ↓
+AlarmRuntimeService
+ ├── Alarm runtime snapshots → Operation / Monitoring
+ └── bounded persistence coordinator → IAlarmEventStore → SQLite
+```
+
+Runtime subscribe đúng một lần cho mỗi logical TagId khác nhau, sau đó fan-out tới các Alarm definition liên quan. Phải subscribe-before-seed. Không được tạo timer hoặc Task riêng cho từng Alarm/tag; toàn bộ activation delay dùng một monotonic deadline coordinator chung.
+
+Rule V1 của Alarm gồm:
+
+```text
+DigitalEquals
+High
+HighHigh
+Low
+LowLow
+```
+
+Digital rule chỉ dùng Boolean. Numeric rule dùng Int32, Int64 hoặc Double. High return khi giá trị `<= threshold - deadband`; Low return khi giá trị `>= threshold + deadband`.
+
+State machine chuẩn:
+
+| Current state | Trigger | Next state |
+|---|---|---|
+| Normal | Good value thỏa rule, delay chưa đủ | PendingActivation nội bộ |
+| PendingActivation | monotonic delay đủ và Good value vẫn thỏa rule | ActiveUnacknowledged hoặc ActiveAcknowledged |
+| PendingActivation | rule return hoặc quality unavailable trước deadline | Normal |
+| ActiveUnacknowledged | ACK đúng InstanceId | ActiveAcknowledged |
+| ActiveUnacknowledged | Good value return | ReturnedUnacknowledged |
+| ActiveAcknowledged | Good value return | Normal/closed |
+| ReturnedUnacknowledged | ACK đúng InstanceId | Normal/closed |
+| ReturnedUnacknowledged | condition active lại | ActiveUnacknowledged, giữ cùng InstanceId |
+
+ACK phải target exact `InstanceId`; stale ACK không mutate state và duplicate ACK phải idempotent. ACK-all snapshot danh sách InstanceId hợp lệ rồi dùng cùng per-instance path. M11 không implement authentication/authorization hoặc Alarm-to-PLC ACK.
+
+Chỉ `TagQuality.Good` được activate hoặc return Alarm. Bad, Uncertain, Disconnected và NotConfigured giữ nguyên lifecycle state và chỉ cập nhật evaluation availability/quality trong runtime snapshot và diagnostics. Không journal từng quality flap và không tự động tạo communication alarm trong M11.
+
+Clock contract bắt buộc tách riêng:
+
+```text
+observable transition / ACK / journal timestamp
+→ TimeProvider.GetUtcNow()
+
+activation deadline / elapsed time
+→ TimeProvider.GetTimestamp() + monotonic elapsed APIs
+```
+
+Wall-clock jump tới trước hoặc lùi không được làm Alarm activate sớm, trễ hoặc restart deadline.
+
+Project schema M11 là v6. Migration v5 → v6 tạo `AlarmOptions.Enabled = false`, vì project hiện có không được tự động phát sinh Alarm runtime behavior. Migration chỉ diễn ra in-memory; explicit Save mới rewrite project document.
+
+Alarm SQLite mặc định:
+
+```text
+Data/alarms.db
+```
+
+Path này resolve tương đối từ canonical `ProjectPath.DirectoryPath`. Khi Alarm persistence enabled, ProjectPath là bắt buộc; path rỗng, rooted/absolute hoặc traversal ra ngoài project directory phải bị reject. Không source-tree discovery và không fallback sang `AppContext.BaseDirectory`/output directory.
+
+Persisted Alarm state chỉ là authority khi checkpoint trước được đánh dấu trusted sau một session gap-free, queue drain thành công và final open-instance checkpoint được commit atomically.
+
+Khi Alarm persistence enabled, durable recovery-untrusted marker là **hard startup precondition**:
+
+1. Trước khi Alarm evaluation hoặc subscription active, session mới phải atomically và durably ghi `RecoveryTrusted = false` cùng continuity/session metadata.
+2. Chỉ sau khi commit marker thành công mới được acquire TagCache subscription, seed/reconcile TagCache, bắt đầu activation deadline và tạo/mutate live Alarm lifecycle state.
+3. Nếu marker không commit được, Alarm evaluation không được start; Alarm không được subscribe TagCache, không được tạo/mutate live Alarm state và tuyệt đối không được fallback sang memory-only Alarm session.
+4. Alarm subsystem phải vào explicit Degraded/Faulted startup state và expose persistence startup failure qua diagnostics/UI. PLC polling và các subsystem SCADA khác vẫn được phép tiếp tục.
+5. Không được fallback in-memory theo cách khiến trusted checkpoint cũ trong SQLite tiếp tục trông như authority ở process restart kế tiếp.
+
+Khi clean shutdown, `RecoveryTrusted` chỉ được set true nếu session không có queue gap/drop/rejection/abandonment/write loss, final queue drain thành công, complete open-instance checkpoint tồn tại, và checkpoint cùng continuity/session metadata được commit atomically. Crash, queue drop, rejected persistence item, abandoned write, unrecoverable write failure hoặc drain timeout vĩnh viễn loại session đó khỏi trusted recovery.
+
+Queue drop/reject, abandonment, write failure, crash hoặc drain timeout làm session không đủ điều kiện trusted recovery. Open instance chỉ restore khi checkpoint trusted và current Alarm definition có material fingerprint tương thích, bao gồm TagId, RuleType, expected value/threshold, deadband, delay, AckRequired và severity. Definition bị xóa, disable hoặc thay đổi material phải thành retired/orphaned history, không merge vào live state và không fabricate Return/Closed như dữ liệu PLC.
+
+Nếu trusted recovered instance có current Good seed thì reconcile theo state machine. Nếu current quality unavailable thì giữ trusted lifecycle state và đánh dấu evaluation unavailable, không tự clear. Nếu recovery untrusted thì không inject persisted instance vào live state; reevaluate từ current Good TagCache seed và hiển thị recovery-untrusted diagnostics.
+
+## 14.2 M11 verification contract
+
+M11 phải có deterministic test contract riêng. Không dùng sleep để chứng minh concurrency hoặc timing.
+
+### Clock và ActivationDelay
+
+- Dùng controllable/fake `TimeProvider`.
+- ActivationDelay dùng `TimeProvider.GetTimestamp()` và monotonic elapsed APIs.
+- `GetUtcNow()` chỉ tạo observable transition/ACK/recovery/journal timestamp.
+- Wall clock nhảy tới trước khi monotonic elapsed nhỏ hơn delay: không activate.
+- Wall clock nhảy lùi khi monotonic elapsed nhỏ hơn delay: không activate.
+- Monotonic elapsed nhỏ hơn delay: không activate.
+- Monotonic elapsed tới deadline: activate đúng một lần.
+
+### State machine và ACK
+
+- Cover toàn bộ transition của `AlarmLifecycleState`, bao gồm `ReturnedUnacknowledged` và same-instance reactivation.
+- ACK phải target exact `InstanceId`; stale ACK không mutate instance mới hơn và duplicate ACK phải idempotent.
+- ACK-all phải snapshot eligible InstanceId rồi gọi cùng per-instance ACK path.
+- Race giữa ACK và current-value transition phải deterministic và không tạo duplicate/missing transition.
+
+### TagCache và quality
+
+- Runtime chỉ có một subscription cho mỗi distinct valid TagId và phải subscribe-before-seed.
+- Alarm-created PLC reads phải bằng 0.
+- Stale/duplicate `TagValue.Sequence` không được evaluate lại state.
+- Bad, Uncertain, Disconnected và NotConfigured không được false activate, return hoặc clear.
+- Quality unavailable phải giữ lifecycle state ở nơi state machine yêu cầu.
+
+### Recovery và persistence
+
+- Trusted compatible checkpoint restore đúng state và ACK.
+- Untrusted checkpoint không được inject thành authoritative live state.
+- Durable startup recovery-untrusted marker failure phải fail/degrade closed: không subscription, không evaluation, không deadline, không live-state mutation và không memory-only fallback.
+- Queue drop/rejection, abandoned write, unrecoverable write failure hoặc drain timeout phải ngăn trusted checkpoint.
+- Crash phải để startup tiếp theo ở recovery-untrusted.
+- Cover Good-seed reconciliation và unavailable-quality reconciliation.
+- Cover definition bị delete, disable và thay đổi từng material field: RuleType, threshold, expected value, deadband, ActivationDelay, AcknowledgementRequired, TagId và severity.
+- Display-only fields phải giữ recovery compatibility.
+- Orphaned/retired history vẫn query được; configuration reconciliation không được fabricate PLC `Returned`/`Closed` transition.
+- Cover corrupt/newer SQLite schema, missing `ProjectPath`, rooted/absolute path và traversal ra ngoài canonical project directory.
+
+### Lifecycle và isolation
+
+- Alarm-owned subscriptions sau shutdown phải bằng 0.
+- Subscriber exception phải được isolate.
+- Faulty hoặc non-cooperative persistence store không được block PLC polling.
+- Shutdown phải bounded và observe/cancel remaining work theo contract.
+
+### M11 bounded scale sanity
+
+M11 chạy một Alarm-specific bounded sanity với khoảng 10.000 project tags, representative Alarm definitions và deterministic transition burst để phát hiện:
+
+- timer/Task theo từng Alarm;
+- subscription theo từng Alarm thay vì theo distinct TagId;
+- queue growth không bounded;
+- snapshot publication rõ ràng không bounded;
+- lock/contention regression nghiêm trọng.
+
+Sanity này không thay thế, redefine hoặc yêu cầu chạy lại M10 qualification. SHA `402ee9d46f41489fee8912bbed57dc1388550658` tiếp tục là authoritative M10 benchmark không thay đổi.
 
 ---
 
@@ -1795,32 +1943,29 @@ Specification này mô tả target architecture.
 
 Triển khai theo milestone.
 
-Đề xuất:
+Roadmap đã triển khai và tiếp tục theo thứ tự:
 
 ```text
 Milestone 1
 Foundation / solution / architecture
 
 Milestone 2
-Tag engine + TagCache + Simulator
+Runtime and device polling
 
 Milestone 3
-DeviceManager + ScanGroups + batch-read architecture
+WPF Shell + workspaces
 
 Milestone 4
-WPF Shell + Navigation + Online Monitor
-
-Milestone 5
 Tag Manager
 
-Milestone 6
+Milestone 5
 Historian foundation + SQLite
 
-Milestone 7
-InfluxDB + buffering
+Milestone 6
+InfluxDB provider + durable buffering
 
 Milestone 7
-MQTT
+MQTT Publisher
 
 Milestone 8
 Reusable Controls + Faceplates
@@ -1830,6 +1975,9 @@ Machine Settings reusable parameter UI
 
 Milestone 10
 Performance/stress hardening
+
+Milestone 11
+PLC-read-only Alarm System
 ```
 
 Có thể điều chỉnh milestone nếu dependency thực tế yêu cầu, nhưng không gom tất cả thành một lần.

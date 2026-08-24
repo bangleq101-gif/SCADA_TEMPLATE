@@ -5,6 +5,7 @@ using Scada.Core.Devices;
 using Scada.Core.Tags;
 using Scada.Core.MachineSettings;
 using Scada.Infrastructure.Persistence;
+using Scada.Core.Alarms;
 using Xunit;
 
 namespace Scada.App.Tests;
@@ -137,6 +138,58 @@ public sealed class ProjectEditSessionTests
             Assert.Equal("12", session.WorkingProject.MachineSettings.Pages[0].Parameters[0].Value);
         }
         finally { DeleteDirectory(directory); }
+    }
+
+    [Fact]
+    public void AlarmSettingsAreDeepClonedComparedSavedAndReverted()
+    {
+        var directory = CreateTempDirectory();
+        try
+        {
+            var options = CreateOptions();
+            options.Alarms.Enabled = true;
+            options.Alarms.StartupTimeoutMilliseconds = 1_234;
+            options.Alarms.Definitions =
+            [
+                new AlarmDefinition
+                {
+                    Id = "A1", Name = "High", TagId = "T1", RuleType = AlarmRuleType.High,
+                    Severity = AlarmSeverity.High, Threshold = 10, Deadband = 1,
+                    ActivationDelay = TimeSpan.FromMilliseconds(250)
+                }
+            ];
+            options.Tags[0].DataType = TagDataType.Double;
+            var session = CreateSession(options, directory);
+
+            session.WorkingProject.Alarms.StartupTimeoutMilliseconds = 2_345;
+            session.MarkChanged();
+            Assert.True(session.IsDirty);
+            Assert.Equal(1_234, session.StartupProject.Alarms.StartupTimeoutMilliseconds);
+            Assert.Equal(1_234, session.SavedProject.Alarms.StartupTimeoutMilliseconds);
+            session.Revert();
+            Assert.Equal(1_234, session.WorkingProject.Alarms.StartupTimeoutMilliseconds);
+
+            session.WorkingProject.Alarms.Definitions[0].Threshold = 12;
+            session.MarkChanged();
+
+            Assert.True(session.IsDirty);
+            Assert.True(session.RestartRequired);
+            Assert.Equal(10, session.StartupProject.Alarms.Definitions[0].Threshold);
+            Assert.Equal(10, session.SavedProject.Alarms.Definitions[0].Threshold);
+            Assert.True(session.TrySave());
+            Assert.Equal(12, session.SavedProject.Alarms.Definitions[0].Threshold);
+
+            session.WorkingProject.Alarms.Definitions[0].Message = "Unsaved";
+            session.MarkChanged();
+            session.Revert();
+
+            Assert.Equal(string.Empty, session.WorkingProject.Alarms.Definitions[0].Message);
+            Assert.Equal(6, new ProjectConfigurationStore(new ProjectPath(Path.Combine(directory, "project.json"))).Load()!.SchemaVersion);
+        }
+        finally
+        {
+            DeleteDirectory(directory);
+        }
     }
 
     private static ProjectEditSession CreateSession(RuntimeOptions options, string? directory = null)

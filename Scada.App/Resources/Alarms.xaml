@@ -1,0 +1,68 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:alarm="clr-namespace:Scada.Core.Alarms;assembly=Scada.Core"
+                    xmlns:tags="clr-namespace:Scada.Core.Tags;assembly=Scada.Core">
+    <ResourceDictionary.MergedDictionaries>
+        <ResourceDictionary Source="Colors.xaml" />
+    </ResourceDictionary.MergedDictionaries>
+
+    <DataTemplate x:Key="AlarmStateCellTemplate">
+        <Border x:Name="Badge" Background="{StaticResource DisconnectedBrush}" CornerRadius="3" Padding="5,2"
+                AutomationProperties.Name="{Binding State, StringFormat=Alarm state {0}}">
+            <StackPanel Orientation="Horizontal">
+                <TextBlock x:Name="Glyph" Text="?" Foreground="White" FontWeight="Bold" Margin="0,0,5,0" />
+                <TextBlock Text="{Binding State}" Foreground="White" />
+            </StackPanel>
+        </Border>
+        <DataTemplate.Triggers>
+            <DataTrigger Binding="{Binding State}" Value="{x:Static alarm:AlarmLifecycleState.ActiveUnacknowledged}">
+                <Setter TargetName="Badge" Property="Background" Value="{StaticResource BadBrush}" />
+                <Setter TargetName="Glyph" Property="Text" Value="!" />
+            </DataTrigger>
+            <DataTrigger Binding="{Binding State}" Value="{x:Static alarm:AlarmLifecycleState.ActiveAcknowledged}">
+                <Setter TargetName="Badge" Property="Background" Value="{StaticResource WarningBrush}" />
+                <Setter TargetName="Glyph" Property="Text" Value="✓" />
+            </DataTrigger>
+            <DataTrigger Binding="{Binding State}" Value="{x:Static alarm:AlarmLifecycleState.ReturnedUnacknowledged}">
+                <Setter TargetName="Badge" Property="Background" Value="{StaticResource AccentBrush}" />
+                <Setter TargetName="Glyph" Property="Text" Value="↩" />
+            </DataTrigger>
+        </DataTemplate.Triggers>
+    </DataTemplate>
+
+    <DataTemplate x:Key="AlarmSeverityCellTemplate">
+        <StackPanel Orientation="Horizontal" AutomationProperties.Name="{Binding Severity, StringFormat=Alarm severity {0}}">
+            <TextBlock x:Name="Glyph" Text="◆" Foreground="{StaticResource SecondaryTextBrush}" Margin="0,0,5,0" />
+            <TextBlock Text="{Binding Severity}" />
+        </StackPanel>
+        <DataTemplate.Triggers>
+            <DataTrigger Binding="{Binding Severity}" Value="{x:Static alarm:AlarmSeverity.High}">
+                <Setter TargetName="Glyph" Property="Foreground" Value="{StaticResource WarningBrush}" />
+            </DataTrigger>
+            <DataTrigger Binding="{Binding Severity}" Value="{x:Static alarm:AlarmSeverity.Critical}">
+                <Setter TargetName="Glyph" Property="Foreground" Value="{StaticResource BadBrush}" />
+            </DataTrigger>
+        </DataTemplate.Triggers>
+    </DataTemplate>
+
+    <DataTemplate x:Key="AlarmQualityCellTemplate">
+        <StackPanel Orientation="Horizontal" AutomationProperties.Name="{Binding Quality, StringFormat=Alarm evaluation quality {0}}">
+            <TextBlock x:Name="Glyph" Text="?" Foreground="{StaticResource DisconnectedBrush}" Margin="0,0,5,0" />
+            <TextBlock Text="{Binding Quality}" />
+        </StackPanel>
+        <DataTemplate.Triggers>
+            <DataTrigger Binding="{Binding Quality}" Value="{x:Static tags:TagQuality.Good}">
+                <Setter TargetName="Glyph" Property="Text" Value="✓" />
+                <Setter TargetName="Glyph" Property="Foreground" Value="{StaticResource GoodBrush}" />
+            </DataTrigger>
+            <DataTrigger Binding="{Binding Quality}" Value="{x:Static tags:TagQuality.Bad}">
+                <Setter TargetName="Glyph" Property="Text" Value="!" />
+                <Setter TargetName="Glyph" Property="Foreground" Value="{StaticResource BadBrush}" />
+            </DataTrigger>
+            <DataTrigger Binding="{Binding Quality}" Value="{x:Static tags:TagQuality.Uncertain}">
+                <Setter TargetName="Glyph" Property="Text" Value="!" />
+                <Setter TargetName="Glyph" Property="Foreground" Value="{StaticResource WarningBrush}" />
+            </DataTrigger>
+        </DataTemplate.Triggers>
+    </DataTemplate>
+</ResourceDictionary>

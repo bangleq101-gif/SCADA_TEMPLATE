@@ -20,6 +20,9 @@ using Scada.Runtime.Polling;
 using Scada.Runtime.Tags;
 using Scada.Runtime.Mqtt;
 using Scada.Core.Mqtt;
+using Scada.Core.Alarms;
+using Scada.Infrastructure.Alarms;
+using Scada.Runtime.Alarms;
 
 namespace Scada.App;
 
@@ -93,6 +96,12 @@ public partial class App : Application
             builder.Services.AddSingleton<MqttRuntimeService>();
             builder.Services.AddSingleton<IHostedService>(services =>
                 services.GetRequiredService<MqttRuntimeService>());
+            builder.Services.AddSingleton<IAlarmEventStore>(_ => new SqliteAlarmEventStore(
+                projectPath,
+                startupOptions.Alarms.DatabasePath));
+            builder.Services.AddSingleton<AlarmRuntimeService>();
+            builder.Services.AddSingleton<IHostedService>(services =>
+                services.GetRequiredService<AlarmRuntimeService>());
             builder.Services.AddSingleton<PollingRuntimeService>();
             builder.Services.AddSingleton<IHostedService>(services =>
                 services.GetRequiredService<PollingRuntimeService>());
@@ -113,6 +122,8 @@ public partial class App : Application
             builder.Services.AddSingleton<TagManagerViewModel>();
             builder.Services.AddSingleton<HistorySettingsViewModel>();
             builder.Services.AddSingleton<MqttSettingsViewModel>();
+            builder.Services.AddSingleton<AlarmMonitoringViewModel>();
+            builder.Services.AddSingleton<AlarmEngineeringViewModel>();
             builder.Services.AddSingleton<EngineeringViewModel>();
             builder.Services.AddSingleton<NavigationService>();
             builder.Services.AddSingleton<ShellViewModel>();

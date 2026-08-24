@@ -1,0 +1,63 @@
+<UserControl x:Class="Scada.App.Views.AlarmMonitoringView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controls="clr-namespace:Scada.App.Controls">
+    <controls:WorkspaceLayout Title="Alarms"
+                              Description="Active and returned-unacknowledged Alarm instances. Acknowledgement changes SCADA state only."
+                              Style="{StaticResource WorkspaceLayoutStyle}">
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="0.7*" />
+            </Grid.RowDefinitions>
+            <Border Style="{StaticResource CardBorderStyle}" Padding="12" Margin="0,0,0,10"
+                    AutomationProperties.Name="Alarm runtime health">
+                <TextBlock Text="{Binding HealthMessage}" TextWrapping="Wrap" />
+            </Border>
+            <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,0,0,10">
+                <Button Content="Acknowledge selected" Command="{Binding AcknowledgeSelectedCommand}"
+                        Style="{StaticResource PrimaryButtonStyle}" AutomationProperties.Name="Acknowledge selected Alarm" />
+                <Button Content="Acknowledge all" Command="{Binding AcknowledgeAllCommand}"
+                        Style="{StaticResource SecondaryButtonStyle}" Margin="8,0,0,0"
+                        AutomationProperties.Name="Acknowledge all eligible Alarms" />
+            </StackPanel>
+            <DataGrid Grid.Row="2" ItemsSource="{Binding Rows}" SelectedItem="{Binding SelectedAlarm}"
+                      Style="{StaticResource WorkspaceDataGridStyle}" SelectionMode="Single"
+                      AutomationProperties.Name="Active Alarm list">
+                <DataGrid.Columns>
+                    <DataGridTemplateColumn Header="State" CellTemplate="{StaticResource AlarmStateCellTemplate}" Width="1.2*" />
+                    <DataGridTemplateColumn Header="Severity" CellTemplate="{StaticResource AlarmSeverityCellTemplate}" Width="0.8*" />
+                    <DataGridTextColumn Header="Alarm" Binding="{Binding Name}" Width="1.3*" />
+                    <DataGridTextColumn Header="Message" Binding="{Binding Message}" Width="2*" />
+                    <DataGridTemplateColumn Header="Quality" CellTemplate="{StaticResource AlarmQualityCellTemplate}" Width="0.9*" />
+                    <DataGridTextColumn Header="Source timestamp" Binding="{Binding SourceTimestampUtc}" Width="1.5*" />
+                    <DataGridTextColumn Header="Transition timestamp" Binding="{Binding TransitionTimestampUtc}" Width="1.5*" />
+                    <DataGridTextColumn Header="Acknowledged by" Binding="{Binding AcknowledgedBy}" Width="1*" />
+                </DataGrid.Columns>
+            </DataGrid>
+            <StackPanel Grid.Row="3" Orientation="Horizontal" Margin="0,10,0,8">
+                <TextBlock Text="Alarm journal (last 24 hours)" FontWeight="SemiBold" VerticalAlignment="Center" />
+                <Button Content="Refresh journal" Command="{Binding LoadHistoryCommand}"
+                        Style="{StaticResource SecondaryButtonStyle}" Margin="12,0,0,0"
+                        AutomationProperties.Name="Refresh read-only Alarm journal" />
+                <TextBlock Text="{Binding HistoryErrorMessage}" Foreground="{StaticResource BadBrush}"
+                           Margin="12,4,0,0" TextWrapping="Wrap" />
+            </StackPanel>
+            <DataGrid Grid.Row="4" ItemsSource="{Binding History}"
+                      Style="{StaticResource WorkspaceDataGridStyle}" IsReadOnly="True"
+                      AutomationProperties.Name="Read-only Alarm event journal">
+                <DataGrid.Columns>
+                    <DataGridTextColumn Header="Sequence" Binding="{Binding Sequence}" Width="80" />
+                    <DataGridTextColumn Header="Timestamp" Binding="{Binding TimestampUtc}" Width="1.4*" />
+                    <DataGridTextColumn Header="Alarm" Binding="{Binding AlarmId}" Width="1*" />
+                    <DataGridTextColumn Header="Event" Binding="{Binding Type}" Width="1.2*" />
+                    <DataGridTextColumn Header="Severity" Binding="{Binding Severity}" Width="0.9*" />
+                    <DataGridTextColumn Header="Acknowledged by" Binding="{Binding AcknowledgedBy}" Width="1*" />
+                </DataGrid.Columns>
+            </DataGrid>
+        </Grid>
+    </controls:WorkspaceLayout>
+</UserControl>

@@ -2,6 +2,7 @@ using System.ComponentModel;
 using System.IO;
 using System.Runtime.CompilerServices;
 using Scada.Core.Configuration;
+using Scada.Core.Alarms;
 using Scada.Core.Devices;
 using Scada.Core.History;
 using Scada.Core.Mqtt;
@@ -210,6 +211,7 @@ internal static class ProjectSnapshotCloner
                 }).ToList()
             },
             Mqtt = CloneMqttOptions(source.Mqtt),
+            Alarms = CloneAlarmOptions(source.Alarms),
             MachineSettings = new MachineSettingsOptions
             {
                 Pages = source.MachineSettings.Pages.Select(page => new MachineSettingsPageDefinition
@@ -301,6 +303,34 @@ internal static class ProjectSnapshotCloner
             QualityOfService = profile.QualityOfService, Retain = profile.Retain
         }).ToList()
     };
+
+    private static AlarmOptions CloneAlarmOptions(AlarmOptions source) => new()
+    {
+        Enabled = source.Enabled,
+        PersistenceEnabled = source.PersistenceEnabled,
+        DatabasePath = source.DatabasePath,
+        QueueCapacity = source.QueueCapacity,
+        BatchSize = source.BatchSize,
+        FlushIntervalMilliseconds = source.FlushIntervalMilliseconds,
+        StartupTimeoutMilliseconds = source.StartupTimeoutMilliseconds,
+        ShutdownDrainTimeoutMilliseconds = source.ShutdownDrainTimeoutMilliseconds,
+        Definitions = source.Definitions.Select(definition => new AlarmDefinition
+        {
+            Id = definition.Id,
+            Name = definition.Name,
+            Message = definition.Message,
+            TagId = definition.TagId,
+            Enabled = definition.Enabled,
+            Order = definition.Order,
+            RuleType = definition.RuleType,
+            Severity = definition.Severity,
+            DigitalExpectedValue = definition.DigitalExpectedValue,
+            Threshold = definition.Threshold,
+            Deadband = definition.Deadband,
+            ActivationDelay = definition.ActivationDelay,
+            AcknowledgementRequired = definition.AcknowledgementRequired
+        }).ToList()
+    };
 }
 
 internal static class ProjectSnapshotComparer
@@ -319,6 +349,7 @@ internal static class ProjectSnapshotComparer
             !string.Equals(left.Historian.DatabasePath, right.Historian.DatabasePath, StringComparison.Ordinal) ||
             !InfluxOptionsEqual(left.Historian.Influx, right.Historian.Influx) ||
             !MqttOptionsEqual(left.Mqtt, right.Mqtt) ||
+            !AlarmOptionsEqual(left.Alarms, right.Alarms) ||
             left.Historian.QueueCapacity != right.Historian.QueueCapacity ||
             left.Historian.BatchSize != right.Historian.BatchSize ||
             left.Historian.FlushIntervalMilliseconds != right.Historian.FlushIntervalMilliseconds ||
@@ -434,6 +465,21 @@ internal static class ProjectSnapshotComparer
         left.ReconnectInitialDelayMilliseconds == right.ReconnectInitialDelayMilliseconds && left.ReconnectMaxDelayMilliseconds == right.ReconnectMaxDelayMilliseconds &&
         left.ShutdownTimeoutMilliseconds == right.ShutdownTimeoutMilliseconds && left.Profiles.Count == right.Profiles.Count &&
         left.Profiles.Zip(right.Profiles).All(pair => pair.First.Name == pair.Second.Name && pair.First.Mode == pair.Second.Mode && pair.First.Deadband == pair.Second.Deadband && pair.First.MinimumIntervalMilliseconds == pair.Second.MinimumIntervalMilliseconds && pair.First.MaximumIntervalMilliseconds == pair.Second.MaximumIntervalMilliseconds && pair.First.QualityOfService == pair.Second.QualityOfService && pair.First.Retain == pair.Second.Retain);
+
+    private static bool AlarmOptionsEqual(AlarmOptions left, AlarmOptions right) =>
+        left.Enabled == right.Enabled && left.PersistenceEnabled == right.PersistenceEnabled &&
+        left.DatabasePath == right.DatabasePath && left.QueueCapacity == right.QueueCapacity &&
+        left.BatchSize == right.BatchSize && left.FlushIntervalMilliseconds == right.FlushIntervalMilliseconds &&
+        left.StartupTimeoutMilliseconds == right.StartupTimeoutMilliseconds &&
+        left.ShutdownDrainTimeoutMilliseconds == right.ShutdownDrainTimeoutMilliseconds &&
+        left.Definitions.Count == right.Definitions.Count &&
+        left.Definitions.Zip(right.Definitions).All(pair =>
+            pair.First.Id == pair.Second.Id && pair.First.Name == pair.Second.Name && pair.First.Message == pair.Second.Message &&
+            pair.First.TagId == pair.Second.TagId && pair.First.Enabled == pair.Second.Enabled && pair.First.Order == pair.Second.Order &&
+            pair.First.RuleType == pair.Second.RuleType && pair.First.Severity == pair.Second.Severity &&
+            pair.First.DigitalExpectedValue == pair.Second.DigitalExpectedValue && pair.First.Threshold == pair.Second.Threshold &&
+            pair.First.Deadband == pair.Second.Deadband && pair.First.ActivationDelay == pair.Second.ActivationDelay &&
+            pair.First.AcknowledgementRequired == pair.Second.AcknowledgementRequired);
 
     private static bool MachineSettingsEqual(MachineSettingsOptions left, MachineSettingsOptions right) =>
         left.Pages.Count == right.Pages.Count && left.Pages.Zip(right.Pages).All(pair =>
