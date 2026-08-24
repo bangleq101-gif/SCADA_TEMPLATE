@@ -9,7 +9,7 @@ public sealed class TagCacheTests
     [Fact]
     public void UpsertPublishesAndIncrementsSequence()
     {
-        var cache = new TagCache();
+        var cache = new TagCache(metricsEnabled: true);
         var received = new List<TagValue>();
         using var subscription = cache.Subscribe("T1", received.Add);
 
@@ -38,7 +38,7 @@ public sealed class TagCacheTests
     [Fact]
     public void SubscriberExceptionDoesNotBlockOtherSubscribersOrUpsert()
     {
-        var cache = new TagCache();
+        var cache = new TagCache(metricsEnabled: true);
         var received = 0;
         using var throwingSubscription = cache.Subscribe("T1", _ => throw new InvalidOperationException("subscriber failure"));
         using var healthySubscription = cache.Subscribe("T1", _ => received++);
@@ -49,5 +49,8 @@ public sealed class TagCacheTests
         Assert.Equal(1, value.Sequence);
         Assert.True(cache.TryGet("T1", out var current));
         Assert.Equal(42, current!.Value);
+        Assert.Equal(1, cache.Snapshot.SubscriberExceptions);
+        Assert.Equal(2, cache.Snapshot.CallbackInvocations);
+        Assert.Equal(1, cache.Snapshot.Updates);
     }
 }

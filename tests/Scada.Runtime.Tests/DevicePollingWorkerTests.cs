@@ -87,6 +87,50 @@ public sealed class DevicePollingWorkerTests
     }
 
     [Fact]
+    public async Task PollingObserverReceivesBoundedScanGroupMeasurement()
+    {
+        var observation = new TaskCompletionSource<PollingObservation>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var observer = new DelegatePollingObserver(value => observation.TrySetResult(value));
+        var driver = new DelegateDriver((_, requests, _) =>
+            Task.FromResult<IReadOnlyList<DriverReadResult>>(GoodResults(requests)));
+        var options = CreateOptions(new DeviceDefinition { Id = "PLC-1", DriverType = "Test" });
+        options.Tags = [new() { Id = "T1", DeviceId = "PLC-1", Address = "T1", ScanGroup = "Normal" }];
+
+        await using var runtime = await TestRuntime.StartAsync(options, driver, observer);
+        var measured = await observation.Task.WaitAsync(TimeSpan.FromSeconds(1));
+
+        Assert.Equal("Normal", measured.ScanGroup);
+        Assert.Equal(1, measured.TagCount);
+        Assert.True(measured.Duration >= TimeSpan.Zero);
+        Assert.True(measured.StartJitter >= TimeSpan.Zero);
+        Assert.False(measured.Failed);
+    }
+
+    [Fact]
+    public async Task ThrowingPollingObserverCannotStopPolling()
+    {
+        var reads = 0;
+        var enoughReads = new TaskCompletionSource<object?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var driver = new DelegateDriver((_, requests, _) =>
+        {
+            if (Interlocked.Increment(ref reads) >= 2) enoughReads.TrySetResult(null);
+            return Task.FromResult<IReadOnlyList<DriverReadResult>>(GoodResults(requests));
+        });
+        var options = CreateOptions(new DeviceDefinition { Id = "PLC-1", DriverType = "Test" });
+        options.Tags = [new() { Id = "T1", DeviceId = "PLC-1", Address = "T1", ScanGroup = "Normal" }];
+
+        await using var runtime = await TestRuntime.StartAsync(options, driver, new DelegatePollingObserver(_ => throw new InvalidOperationException("metrics failure")));
+        await enoughReads.Task.WaitAsync(TimeSpan.FromSeconds(1));
+
+        Assert.True(reads >= 2);
+    }
+
+    private sealed class DelegatePollingObserver(Action<PollingObservation> callback) : IPollingObserver
+    {
+        public void Record(PollingObservation observation) => callback(observation);
+    }
+
+    [Fact]
     public async Task FasterScanGroupRunsMoreOftenThanSlowerGroup()
     {
         var fastReads = 0;

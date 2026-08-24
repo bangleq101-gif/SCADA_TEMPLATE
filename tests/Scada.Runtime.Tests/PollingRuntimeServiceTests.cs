@@ -114,14 +114,15 @@ internal sealed class TestRuntime : IAsyncDisposable
     public PollingRuntimeService Service { get; }
     public TagCache Cache { get; }
 
-    public static async Task<TestRuntime> StartAsync(RuntimeOptions options, IPlcDriver driver)
+    public static async Task<TestRuntime> StartAsync(RuntimeOptions options, IPlcDriver driver, IPollingObserver? observer = null)
     {
         return await StartAsync(
             options,
-            new DriverResolver([DriverRegistration.Shared(driver.DriverType, driver)]));
+            new DriverResolver([DriverRegistration.Shared(driver.DriverType, driver)]),
+            observer);
     }
 
-    public static async Task<TestRuntime> StartAsync(RuntimeOptions options, IPlcDriverResolver resolver)
+    public static async Task<TestRuntime> StartAsync(RuntimeOptions options, IPlcDriverResolver resolver, IPollingObserver? observer = null)
     {
         var cache = new TagCache();
         var tagEngine = new TagEngine(cache);
@@ -131,7 +132,8 @@ internal sealed class TestRuntime : IAsyncDisposable
             tagEngine,
             NullLogger<DeviceManager>.Instance,
             NullLogger<DevicePollingWorker>.Instance,
-            TimeProvider.System);
+            TimeProvider.System,
+            observer);
         var service = new PollingRuntimeService(manager);
         await service.StartAsync(CancellationToken.None);
         return new TestRuntime(service, cache);

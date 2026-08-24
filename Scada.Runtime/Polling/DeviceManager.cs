@@ -14,6 +14,7 @@ public sealed class DeviceManager
     private readonly ILogger<DeviceManager> _logger;
     private readonly ILogger<DevicePollingWorker> _workerLogger;
     private readonly TimeProvider _timeProvider;
+    private readonly IPollingObserver _pollingObserver;
     private readonly Dictionary<string, DevicePollingWorker> _workers = new(StringComparer.OrdinalIgnoreCase);
     private CancellationTokenSource? _lifetimeCts;
     private bool _started;
@@ -24,7 +25,8 @@ public sealed class DeviceManager
         TagEngine tagEngine,
         ILogger<DeviceManager> logger,
         ILogger<DevicePollingWorker> workerLogger,
-        TimeProvider timeProvider)
+        TimeProvider timeProvider,
+        IPollingObserver? pollingObserver = null)
     {
         _options = options;
         _driverResolver = driverResolver;
@@ -32,6 +34,7 @@ public sealed class DeviceManager
         _logger = logger;
         _workerLogger = workerLogger;
         _timeProvider = timeProvider;
+        _pollingObserver = pollingObserver ?? NullPollingObserver.Instance;
     }
 
     public IReadOnlyDictionary<string, DeviceRuntimeSnapshot> DeviceSnapshots =>
@@ -64,7 +67,8 @@ public sealed class DeviceManager
                     _tagEngine,
                     new DeviceRuntimeState(device.Id),
                     _workerLogger,
-                    _timeProvider);
+                    _timeProvider,
+                    _pollingObserver);
                 _workers.Add(device.Id, worker);
             }
 
