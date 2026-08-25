@@ -332,17 +332,24 @@ public sealed class AlarmRuntimeServiceTests
         using var subscription = service.Subscribe(_ => delivered++);
 
         await service.StartAsync(CancellationToken.None);
-        cache.Publish(new TagValue("T0", 90d, TagQuality.Good, DateTimeOffset.UtcNow, 1));
+        var firstTimestamp = new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
+        cache.Publish(new TagValue("T0", 90d, TagQuality.Good, firstTimestamp, 1));
 
         var beforeBurst = service.SnapshotPublicationCount;
         var beforeDelivered = delivered;
+        var beforeComparisons = service.FullSnapshotComparisonCount;
+        var beforeMaterializations = service.SnapshotMaterializationCount;
         for (var sequence = 2; sequence <= 101; sequence++)
-            cache.Publish(new TagValue("T0", 90d, TagQuality.Good, DateTimeOffset.UtcNow, sequence));
+            cache.Publish(new TagValue("T0", 90d, TagQuality.Good, firstTimestamp.AddSeconds(sequence), sequence));
 
         Assert.Equal(alarmCount / distinctAlarmTags, service.LastTagCandidateCount);
         Assert.Equal(alarmCount / distinctAlarmTags, service.LastTagEvaluationCount);
         Assert.Equal(beforeBurst, service.SnapshotPublicationCount);
         Assert.Equal(beforeDelivered, delivered);
+        Assert.Equal(beforeComparisons, service.FullSnapshotComparisonCount);
+        Assert.Equal(beforeMaterializations, service.SnapshotMaterializationCount);
+        Assert.Equal(1, service.Snapshot.Alarms.Single(alarm => alarm.AlarmId == "A0").LastSourceSequence);
+        Assert.Equal(firstTimestamp, service.Snapshot.Alarms.Single(alarm => alarm.AlarmId == "A0").LastSourceTimestampUtc);
         Assert.Equal(alarmCount / distinctAlarmTags, service.Snapshot.Alarms.Count(alarm => alarm.State == AlarmLifecycleState.ActiveUnacknowledged));
     }
 
@@ -351,16 +358,22 @@ public sealed class AlarmRuntimeServiceTests
     {
         var cache = new TrackingTagCache();
         await using var service = CreateService(cache, delay: TimeSpan.Zero);
+        var delivered = 0;
+        using var subscription = service.Subscribe(_ => delivered++);
         await service.StartAsync(CancellationToken.None);
 
         cache.Publish(Good(90, 5));
         var instance = service.Snapshot.Alarms.Single().InstanceId;
+        var beforeStalePublications = service.SnapshotPublicationCount;
+        var beforeStaleDeliveries = delivered;
         cache.Publish(Good(0, 5));
         cache.Publish(Good(0, 4));
 
         Assert.Equal(instance, service.Snapshot.Alarms.Single().InstanceId);
         Assert.Equal(AlarmLifecycleState.ActiveUnacknowledged, service.Snapshot.Alarms.Single().State);
         Assert.Equal(2, service.Snapshot.StaleTagUpdates);
+        Assert.Equal(beforeStalePublications + 2, service.SnapshotPublicationCount);
+        Assert.Equal(beforeStaleDeliveries + 2, delivered);
     }
 
     [Theory]

@@ -60,6 +60,8 @@ public sealed class AlarmRuntimeService : IHostedService, IAsyncDisposable
     private int _lastTagEvaluationCount;
     private int _lastTagCandidateCount;
     private long _snapshotPublicationCount;
+    private long _fullSnapshotComparisonCount;
+    private long _snapshotMaterializationCount;
     private string? _lastErrorCode;
     private string? _lastErrorMessage;
 
@@ -96,6 +98,16 @@ public sealed class AlarmRuntimeService : IHostedService, IAsyncDisposable
     internal long SnapshotPublicationCount
     {
         get { lock (_sync) return _snapshotPublicationCount; }
+    }
+
+    internal long FullSnapshotComparisonCount
+    {
+        get { lock (_sync) return _fullSnapshotComparisonCount; }
+    }
+
+    internal long SnapshotMaterializationCount
+    {
+        get { lock (_sync) return _snapshotMaterializationCount; }
     }
 
     public async Task StartAsync(CancellationToken cancellationToken)
@@ -465,7 +477,8 @@ public sealed class AlarmRuntimeService : IHostedService, IAsyncDisposable
             if (meaningfulChange || diagnosticChange)
                 changed = _snapshot = BuildSnapshotLocked(CurrentOperationalStateLocked());
         }
-        NotifySnapshotSubscribers(changed);
+        if (changed is not null)
+            NotifySnapshotSubscribers(changed);
     }
 
     private void ApplyEvaluationLocked(MutableAlarm alarm)
@@ -746,7 +759,10 @@ public sealed class AlarmRuntimeService : IHostedService, IAsyncDisposable
                 alarm.EvaluationQuality))
             .ToArray();
 
-    private AlarmRuntimeSnapshot BuildSnapshotLocked(AlarmRuntimeState state) => new(
+    private AlarmRuntimeSnapshot BuildSnapshotLocked(AlarmRuntimeState state)
+    {
+        _snapshotMaterializationCount++;
+        return new(
         state,
         _orderedAlarms
             .Select(alarm => new AlarmSnapshot(
@@ -764,6 +780,7 @@ public sealed class AlarmRuntimeService : IHostedService, IAsyncDisposable
         _rejectedPersistence, _droppedPersistence, _abandonedPersistence, _writeFailures,
         _recoveredFromTrustedCheckpoint, _recoveryUntrustedInstances, _orphanedInstances,
         _lastErrorCode, _lastErrorMessage);
+    }
 
     private void FailClosed(string code, string message)
     {
@@ -825,8 +842,9 @@ public sealed class AlarmRuntimeService : IHostedService, IAsyncDisposable
         }
     }
 
-    private static bool HasMeaningfulChange(AlarmRuntimeSnapshot previous, AlarmRuntimeSnapshot current)
+    private bool HasMeaningfulChange(AlarmRuntimeSnapshot previous, AlarmRuntimeSnapshot current)
     {
+        _fullSnapshotComparisonCount++;
         if (previous.State != current.State ||
             previous.ConfiguredDefinitions != current.ConfiguredDefinitions ||
             previous.DistinctTagSubscriptions != current.DistinctTagSubscriptions ||
@@ -838,6 +856,8 @@ public sealed class AlarmRuntimeService : IHostedService, IAsyncDisposable
             previous.ClosedTransitions != current.ClosedTransitions ||
             previous.ReactivatedTransitions != current.ReactivatedTransitions ||
             previous.RejectedEvaluations != current.RejectedEvaluations ||
+            previous.StaleTagUpdates != current.StaleTagUpdates ||
+            previous.SubscriberExceptions != current.SubscriberExceptions ||
             previous.PersistedEvents != current.PersistedEvents ||
             previous.RejectedPersistenceItems != current.RejectedPersistenceItems ||
             previous.DroppedPersistenceItems != current.DroppedPersistenceItems ||
@@ -859,8 +879,9 @@ public sealed class AlarmRuntimeService : IHostedService, IAsyncDisposable
                 return true;
         }
 
-        // Source sequence/timestamp are retained on Snapshot for diagnostics, but raw samples
-        // with unchanged lifecycle/quality do not fan out a public notification per sample.
+        // AlarmSnapshot source metadata is from the latest materialized public snapshot.
+        // Mutable runtime state may contain a newer accepted source sample when an unchanged
+        // raw update intentionally did not materialize or publish a new snapshot.
         return false;
     }
 

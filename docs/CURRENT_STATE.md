@@ -202,7 +202,7 @@ n PLC
 - M11 architecture-alignment vulnerability audit — PASS; no vulnerable direct or transitive package was reported.
 - M11 architecture-alignment WPF startup smoke — PASS; `Scada.App` remained running through the smoke window without a DI/XAML startup exception.
 - M11 architecture-alignment fresh copy-folder restore/build/startup and original-path scan — PASS; no original repository path was found and the verification folder was removed after the check.
-- M11 architecture-alignment GitNexus index — 3,803 nodes / 13,040 edges / 300 flows with 0 import cycles; changed-flow review covers TagCache → AlarmRuntimeService and AlarmEvent → SQLite paths.
+- M11 architecture-alignment GitNexus index — 3,806 nodes / 13,067 edges / 300 flows with 0 import cycles; changed-flow review covers TagCache → AlarmRuntimeService and AlarmEvent → SQLite paths. The unchanged-raw-sample structural test also confirms no full snapshot comparison or snapshot materialization is performed in that burst.
 - M11 architecture-alignment Runtime boundary — PASS; `Scada.Runtime` references only `Scada.Core`, with no WPF, App, Infrastructure or concrete-driver dependency.
 - `dotnet list Scada.sln package --include-transitive --vulnerable` — PASS; no vulnerable packages reported. `SQLitePCLRaw.bundle_e_sqlite3`, `core`, `lib.e_sqlite3` and `provider.e_sqlite3` resolve to 2.1.12 through `Microsoft.Data.Sqlite` 10.0.11.
 - `git diff --check` — PASS.
