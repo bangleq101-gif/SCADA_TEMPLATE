@@ -102,22 +102,20 @@ Status: COMPLETE — merged and verified on canonical `main` at `25ec87e91eba0be
 
 ## Remaining Architecture V1 Coverage After M11
 
-The complete requirement-by-requirement matrix is maintained in `docs/V1_COVERAGE.md`. It records 44 audited areas: 24 `COMPLETE`, 8 `PARTIAL`, 6 `NOT STARTED` and 6 `EXPLICITLY DEFERRED`.
+The complete requirement-by-requirement matrix is maintained in `docs/V1_COVERAGE.md`. It records 50 audited areas: 26 `COMPLETE`, 13 `PARTIAL`, 5 `NOT STARTED` and 6 `EXPLICITLY DEFERRED`.
 
 The remaining work is intentionally described as coverage, not as an authorization to start a new milestone:
 
-1. `PARTIAL` — complete operational surface coverage: device engineering UI, system/diagnostics pages, unified overview health and compact status indicators; complete module/line/machine screen organization and screen metadata where needed.
-2. `PARTIAL` — decide the next reusable HMI catalog additions and external-asset packaging boundary without introducing vendor or license dependencies.
-3. `PARTIAL` — add a simulator fault-state mode and complete the device Address Browser only when their requirements are separately approved.
-4. `NOT STARTED` — Engineering Devices, Engineering System, Engineering Diagnostics, generic screen metadata, deployment tooling and offline package/installation strategy.
-5. `EXPLICITLY DEFERRED` — production Siemens/Mitsubishi/Modbus/OPC UA drivers, MQTT Write/command subscriptions, Trend, Recipes/Calibration, Reports, and distributed/Web/cloud/HA/scripting/plugin systems.
+1. `PARTIAL` — Scale/Offset domain and runtime transformation semantics; active-view subscription scope and bounded WPF Dispatcher delivery; Address Browser/device-selection extension; module/line/machine organization; broader HMI catalog; external asset packaging; route coverage; unified System Services; overview health; status bar; screen metadata; Simulator fault mode; and consistent RuntimeId logging context.
+2. `NOT STARTED` — Engineering Devices, Engineering System, Engineering Diagnostics, deployment tooling and offline package/installation strategy.
+3. `EXPLICITLY DEFERRED` — production Siemens/Mitsubishi/Modbus/OPC UA drivers, MQTT Write/command subscriptions, Trend, Recipes/Calibration, Reports, and distributed/Web/cloud/HA/scripting/plugin systems.
 
 ### Candidate ordering for a future milestone (proposal only)
 
 If a future planning gate is opened, a dependency-aware review could consider:
 
-1. operational engineering and health surfaces (Devices, System, Diagnostics, Overview/Status Bar);
-2. screen metadata and module/line/machine organization;
+1. operational engineering and health surfaces (Devices, System Services, Diagnostics, Overview/Status Bar);
+2. bounded active-view delivery, Scale/Offset semantics, screen metadata and module/line/machine organization;
 3. deployment/offline portability tooling;
 4. separately approved monitoring or HMI extensions such as Trend or additional asset support.
 
