@@ -31,6 +31,8 @@ public sealed class SqliteAlarmEventStore : IAlarmEventStore
             if (version > SqliteAlarmSchema.CurrentVersion)
                 throw new AlarmStoreException("ALARM_SQLITE_SCHEMA_TOO_NEW", $"Alarm SQLite schema {version} is newer than supported version {SqliteAlarmSchema.CurrentVersion}.");
             await ExecuteAsync(connection, SqliteAlarmSchema.CreateSql, cancellationToken).ConfigureAwait(false);
+            if (version < SqliteAlarmSchema.CurrentVersion && !await HasColumnAsync(connection, "AlarmEvents", "SourceQuality", cancellationToken).ConfigureAwait(false))
+                await ExecuteAsync(connection, "ALTER TABLE AlarmEvents ADD COLUMN SourceQuality TEXT NULL;", cancellationToken).ConfigureAwait(false);
             await ExecuteAsync(connection, "INSERT OR IGNORE INTO AlarmMetadata (Id) VALUES (1);", cancellationToken).ConfigureAwait(false);
             await ExecuteAsync(connection, $"PRAGMA user_version={SqliteAlarmSchema.CurrentVersion};", cancellationToken).ConfigureAwait(false);
         }
@@ -142,7 +144,7 @@ public sealed class SqliteAlarmEventStore : IAlarmEventStore
         await using var command = connection.CreateCommand();
         command.CommandText = """
             SELECT EventSequence, AlarmId, InstanceId, EventType, Severity, TimestampUtcTicks,
-                   DefinitionFingerprint, SourceSequence, SourceTimestampUtcTicks, AcknowledgedBy
+                   DefinitionFingerprint, SourceSequence, SourceTimestampUtcTicks, SourceQuality, AcknowledgedBy
             FROM AlarmEvents
             WHERE TimestampUtcTicks >= $from AND TimestampUtcTicks < $to
               AND ($alarmId IS NULL OR AlarmId = $alarmId)
@@ -163,7 +165,8 @@ public sealed class SqliteAlarmEventStore : IAlarmEventStore
                 new DateTimeOffset(reader.GetInt64(5), TimeSpan.Zero), reader.GetString(6),
                 reader.IsDBNull(7) ? null : reader.GetInt64(7),
                 reader.IsDBNull(8) ? null : new DateTimeOffset(reader.GetInt64(8), TimeSpan.Zero),
-                reader.IsDBNull(9) ? null : reader.GetString(9)));
+                reader.IsDBNull(10) ? null : reader.GetString(10),
+                reader.IsDBNull(9) ? null : Enum.Parse<TagQuality>(reader.GetString(9))));
         }
         return events;
     }
@@ -200,8 +203,8 @@ public sealed class SqliteAlarmEventStore : IAlarmEventStore
         command.CommandText = """
             INSERT INTO AlarmEvents
             (SessionId, EventSequence, AlarmId, InstanceId, EventType, Severity, TimestampUtcTicks,
-             DefinitionFingerprint, SourceSequence, SourceTimestampUtcTicks, AcknowledgedBy)
-            VALUES ($session,$sequence,$alarm,$instance,$type,$severity,$timestamp,$fingerprint,$sourceSequence,$sourceTimestamp,$acknowledgedBy);
+             DefinitionFingerprint, SourceSequence, SourceTimestampUtcTicks, SourceQuality, AcknowledgedBy)
+            VALUES ($session,$sequence,$alarm,$instance,$type,$severity,$timestamp,$fingerprint,$sourceSequence,$sourceTimestamp,$sourceQuality,$acknowledgedBy);
             """;
         command.Parameters.AddWithValue("$session", sessionId.ToString("D"));
         command.Parameters.AddWithValue("$sequence", alarmEvent.Sequence);
@@ -213,6 +216,7 @@ public sealed class SqliteAlarmEventStore : IAlarmEventStore
         command.Parameters.AddWithValue("$fingerprint", alarmEvent.DefinitionFingerprint);
         command.Parameters.AddWithValue("$sourceSequence", alarmEvent.SourceSequence is null ? DBNull.Value : alarmEvent.SourceSequence);
         command.Parameters.AddWithValue("$sourceTimestamp", alarmEvent.SourceTimestampUtc is null ? DBNull.Value : alarmEvent.SourceTimestampUtc.Value.UtcDateTime.Ticks);
+        command.Parameters.AddWithValue("$sourceQuality", alarmEvent.SourceQuality is null ? DBNull.Value : alarmEvent.SourceQuality.Value.ToString());
         command.Parameters.AddWithValue("$acknowledgedBy", alarmEvent.AcknowledgedBy is null ? DBNull.Value : alarmEvent.AcknowledgedBy);
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
@@ -290,6 +294,22 @@ public sealed class SqliteAlarmEventStore : IAlarmEventStore
         await using var command = connection.CreateCommand();
         command.CommandText = "PRAGMA user_version;";
         return Convert.ToInt64(await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false));
+    }
+
+    private static async Task<bool> HasColumnAsync(
+        SqliteConnection connection,
+        string table,
+        string column,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = $"PRAGMA table_info({table});";
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            if (string.Equals(reader.GetString(1), column, StringComparison.OrdinalIgnoreCase)) return true;
+        }
+        return false;
     }
 
     private static bool IsCorrupt(SqliteException exception) => exception.SqliteErrorCode is 11 or 26;

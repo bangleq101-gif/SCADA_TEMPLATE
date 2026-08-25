@@ -530,6 +530,8 @@ AlarmRuntimeService
 
 Runtime subscribe đúng một lần cho mỗi logical TagId khác nhau, sau đó fan-out tới các Alarm definition liên quan. Phải subscribe-before-seed. Không được tạo timer hoặc Task riêng cho từng Alarm/tag; toàn bộ activation delay dùng một monotonic deadline coordinator chung.
 
+Implementation boundary: Runtime giữ một index case-insensitive từ logical `TagId` tới các Alarm definition liên quan và thứ tự Alarm đã precompute. Mỗi callback chỉ fan-out tới nhóm khớp; raw source sequence/timestamp vẫn được giữ trong runtime state nhưng nếu lifecycle/quality/availability/diagnostic không thay đổi thì không rebuild toàn bộ snapshot và không phát một notification cho từng raw sample. Snapshot thay đổi có ý nghĩa được App-layer Operation/Monitoring giao theo latest-state coalescing, tối đa một Dispatcher item cho mỗi active generation; stale callback sau deactivate/dispose phải bị bỏ qua.
+
 Rule V1 của Alarm gồm:
 
 ```text
@@ -580,6 +582,8 @@ Data/alarms.db
 ```
 
 Path này resolve tương đối từ canonical `ProjectPath.DirectoryPath`. Khi Alarm persistence enabled, ProjectPath là bắt buộc; path rỗng, rooted/absolute hoặc traversal ra ngoài project directory phải bị reject. Không source-tree discovery và không fallback sang `AppContext.BaseDirectory`/output directory.
+
+AlarmEvents persistence schema hiện tại là v2: `SourceQuality` là nullable để phân biệt quality đã biết với legacy event không có quality. Khởi tạo database fresh tạo v2; database v1 được nâng cấp bằng migration explicit và các row cũ giữ `NULL`, không được fabricate quality.
 
 Persisted Alarm state chỉ là authority khi checkpoint trước được đánh dấu trusted sau một session gap-free, queue drain thành công và final open-instance checkpoint được commit atomically.
 

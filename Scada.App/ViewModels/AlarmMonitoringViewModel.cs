@@ -16,7 +16,10 @@ public sealed class AlarmMonitoringViewModel : INotifyPropertyChanged, IWorkspac
     private readonly AlarmRuntimeService _runtime;
     private readonly IAlarmEventStore? _eventStore;
     private readonly TimeProvider _timeProvider;
+    private readonly IAlarmSnapshotDispatcher _dispatcher;
     private IDisposable? _subscription;
+    private AlarmRuntimeSnapshot? _pendingSnapshot;
+    private bool _dispatcherUpdatePending;
     private long _generation;
     private bool _active;
     private bool _disposed;
@@ -30,10 +33,20 @@ public sealed class AlarmMonitoringViewModel : INotifyPropertyChanged, IWorkspac
         AlarmRuntimeService runtime,
         IAlarmEventStore? eventStore = null,
         TimeProvider? timeProvider = null)
+        : this(runtime, eventStore, timeProvider, null)
+    {
+    }
+
+    internal AlarmMonitoringViewModel(
+        AlarmRuntimeService runtime,
+        IAlarmEventStore? eventStore,
+        TimeProvider? timeProvider,
+        IAlarmSnapshotDispatcher? dispatcher)
     {
         _runtime = runtime ?? throw new ArgumentNullException(nameof(runtime));
         _eventStore = eventStore;
         _timeProvider = timeProvider ?? TimeProvider.System;
+        _dispatcher = dispatcher ?? new WpfAlarmSnapshotDispatcher();
         Rows = [];
         History = [];
         AcknowledgeSelectedCommand = new RelayCommand(_ => AcknowledgeSelected(), _ => SelectedAlarm?.CanAcknowledge == true);
@@ -53,6 +66,7 @@ public sealed class AlarmMonitoringViewModel : INotifyPropertyChanged, IWorkspac
     public string HealthMessage => LastErrorCode is null ? RuntimeState.ToString() : $"{RuntimeState}: {LastErrorCode} — {LastErrorMessage}";
     public string? HistoryErrorMessage { get => _historyErrorMessage; private set { _historyErrorMessage = value; OnPropertyChanged(); } }
     public int OwnedSubscriptionCount { get { lock (_sync) return _subscription is null ? 0 : 1; } }
+    internal int PendingDispatcherUpdateCount { get { lock (_sync) return _dispatcherUpdatePending ? 1 : 0; } }
 
     public AlarmRowViewModel? SelectedAlarm
     {
@@ -97,6 +111,8 @@ public sealed class AlarmMonitoringViewModel : INotifyPropertyChanged, IWorkspac
             _generation++;
             subscription = _subscription;
             _subscription = null;
+            _pendingSnapshot = null;
+            _dispatcherUpdatePending = false;
         }
         subscription?.Dispose();
     }
@@ -162,9 +178,34 @@ public sealed class AlarmMonitoringViewModel : INotifyPropertyChanged, IWorkspac
     private void ApplySnapshot(AlarmRuntimeSnapshot snapshot, long generation)
     {
         if (!IsCurrent(generation)) return;
-        void Update()
+        lock (_sync)
         {
-            if (!IsCurrent(generation)) return;
+            if (!IsCurrentLocked(generation)) return;
+            _pendingSnapshot = snapshot;
+            if (_dispatcherUpdatePending) return;
+            _dispatcherUpdatePending = true;
+        }
+        _dispatcher.Post(() => DrainSnapshot(generation));
+    }
+
+    private void DrainSnapshot(long generation)
+    {
+        AlarmRuntimeSnapshot? snapshot;
+        lock (_sync)
+        {
+            // A queued callback from a previous activation must not touch the new generation's state.
+            if (!IsCurrentLocked(generation)) return;
+            snapshot = _pendingSnapshot;
+            _pendingSnapshot = null;
+            if (snapshot is null)
+            {
+                _dispatcherUpdatePending = false;
+                return;
+            }
+        }
+
+        if (IsCurrent(generation))
+        {
             var selectedId = SelectedAlarm?.InstanceId;
             Rows.Clear();
             foreach (var alarm in snapshot.Alarms.Where(item => item.State != AlarmLifecycleState.Normal))
@@ -174,15 +215,27 @@ public sealed class AlarmMonitoringViewModel : INotifyPropertyChanged, IWorkspac
             LastErrorCode = snapshot.LastErrorCode;
             LastErrorMessage = snapshot.LastErrorMessage;
         }
-        var dispatcher = Application.Current?.Dispatcher;
-        if (dispatcher is null || dispatcher.CheckAccess()) Update();
-        else dispatcher.BeginInvoke(DispatcherPriority.DataBind, new Action(Update));
+
+        lock (_sync)
+        {
+            if (!IsCurrentLocked(generation)) return;
+            if (_pendingSnapshot is null)
+            {
+                _dispatcherUpdatePending = false;
+                return;
+            }
+        }
+
+        // At most one new dispatcher item is created for a newer snapshot.
+        _dispatcher.Post(() => DrainSnapshot(generation));
     }
 
     private bool IsCurrent(long generation)
     {
         lock (_sync) return _active && !_disposed && generation == _generation;
     }
+
+    private bool IsCurrentLocked(long generation) => _active && !_disposed && generation == _generation;
 
     private void OnPropertyChanged([CallerMemberName] string? propertyName = null) =>
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));

@@ -40,7 +40,8 @@ public sealed record AlarmEvent(
     string DefinitionFingerprint,
     long? SourceSequence = null,
     DateTimeOffset? SourceTimestampUtc = null,
-    string? AcknowledgedBy = null);
+    string? AcknowledgedBy = null,
+    TagQuality? SourceQuality = null);
 
 public sealed record AlarmInstanceRecord(
     string AlarmId,

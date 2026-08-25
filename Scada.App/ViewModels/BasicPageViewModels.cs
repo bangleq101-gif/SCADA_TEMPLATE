@@ -1,8 +1,6 @@
 using Scada.Core.Configuration;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
-using System.Windows;
-using System.Windows.Threading;
 using Scada.Core.Alarms;
 using Scada.Runtime.Alarms;
 
@@ -13,7 +11,10 @@ public sealed class OperationViewModel : IWorkspaceLifecycle, INotifyPropertyCha
     private readonly object _sync = new();
     private readonly RuntimeOptions _options;
     private readonly AlarmRuntimeService? _alarmRuntime;
+    private readonly IAlarmSnapshotDispatcher _dispatcher;
     private IDisposable? _alarmSubscription;
+    private AlarmRuntimeSnapshot? _pendingAlarmSnapshot;
+    private bool _dispatcherUpdatePending;
     private long _activationGeneration;
     private int _activeAlarmCount;
     private int _unacknowledgedAlarmCount;
@@ -21,9 +22,15 @@ public sealed class OperationViewModel : IWorkspaceLifecycle, INotifyPropertyCha
     private bool _disposed;
 
     public OperationViewModel(RuntimeOptions options, AlarmRuntimeService? alarmRuntime = null)
+        : this(options, alarmRuntime, null)
+    {
+    }
+
+    internal OperationViewModel(RuntimeOptions options, AlarmRuntimeService? alarmRuntime, IAlarmSnapshotDispatcher? dispatcher)
     {
         _options = options;
         _alarmRuntime = alarmRuntime;
+        _dispatcher = dispatcher ?? new WpfAlarmSnapshotDispatcher();
         _alarmRuntimeState = alarmRuntime?.Snapshot.State ?? AlarmRuntimeState.Disabled;
     }
 
@@ -34,6 +41,7 @@ public sealed class OperationViewModel : IWorkspaceLifecycle, INotifyPropertyCha
     public AlarmRuntimeState AlarmRuntimeState { get => _alarmRuntimeState; private set { _alarmRuntimeState = value; OnPropertyChanged(); OnPropertyChanged(nameof(AlarmSummary)); } }
     public string AlarmSummary => $"{ActiveAlarmCount} active • {UnacknowledgedAlarmCount} unacknowledged • {AlarmRuntimeState}";
     public int OwnedAlarmSubscriptionCount { get { lock (_sync) return _alarmSubscription is null ? 0 : 1; } }
+    internal int PendingAlarmDispatcherUpdateCount { get { lock (_sync) return _dispatcherUpdatePending ? 1 : 0; } }
 
     public string RuntimeSummary
     {
@@ -81,6 +89,8 @@ public sealed class OperationViewModel : IWorkspaceLifecycle, INotifyPropertyCha
             _activationGeneration++;
             subscription = _alarmSubscription;
             _alarmSubscription = null;
+            _pendingAlarmSnapshot = null;
+            _dispatcherUpdatePending = false;
         }
         subscription?.Dispose();
     }
@@ -98,22 +108,57 @@ public sealed class OperationViewModel : IWorkspaceLifecycle, INotifyPropertyCha
     private void ApplyAlarmSnapshot(AlarmRuntimeSnapshot snapshot, long generation)
     {
         if (!IsCurrent(generation)) return;
-        void Update()
+        lock (_sync)
         {
-            if (!IsCurrent(generation)) return;
+            if (!IsCurrentLocked(generation)) return;
+            _pendingAlarmSnapshot = snapshot;
+            if (_dispatcherUpdatePending) return;
+            _dispatcherUpdatePending = true;
+        }
+        _dispatcher.Post(() => DrainAlarmSnapshot(generation));
+    }
+
+    private void DrainAlarmSnapshot(long generation)
+    {
+        AlarmRuntimeSnapshot? snapshot;
+        lock (_sync)
+        {
+            if (!IsCurrentLocked(generation)) return;
+            snapshot = _pendingAlarmSnapshot;
+            _pendingAlarmSnapshot = null;
+            if (snapshot is null)
+            {
+                _dispatcherUpdatePending = false;
+                return;
+            }
+        }
+
+        if (IsCurrent(generation))
+        {
             ActiveAlarmCount = snapshot.Alarms.Count(alarm => alarm.State != AlarmLifecycleState.Normal);
             UnacknowledgedAlarmCount = snapshot.Alarms.Count(alarm => alarm.State is AlarmLifecycleState.ActiveUnacknowledged or AlarmLifecycleState.ReturnedUnacknowledged);
             AlarmRuntimeState = snapshot.State;
         }
-        var dispatcher = Application.Current?.Dispatcher;
-        if (dispatcher is null || dispatcher.CheckAccess()) Update();
-        else dispatcher.BeginInvoke(DispatcherPriority.DataBind, new Action(Update));
+
+        lock (_sync)
+        {
+            if (!IsCurrentLocked(generation)) return;
+            if (_pendingAlarmSnapshot is null)
+            {
+                _dispatcherUpdatePending = false;
+                return;
+            }
+        }
+
+        _dispatcher.Post(() => DrainAlarmSnapshot(generation));
     }
 
     private bool IsCurrent(long generation)
     {
         lock (_sync) return IsActive && !_disposed && generation == _activationGeneration;
     }
+
+    private bool IsCurrentLocked(long generation) => IsActive && !_disposed && generation == _activationGeneration;
 
     private void OnPropertyChanged([CallerMemberName] string? propertyName = null) =>
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));

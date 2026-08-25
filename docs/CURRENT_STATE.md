@@ -8,7 +8,7 @@ Milestone 11 — Alarm System
 
 Status:
 
-Implemented and fully verified on `feature/milestone-11-alarm-system`; pending PR review and merge.
+M11 base implementation is merged to `main` via PR #15 at `4b903723ed94d846420c2bf3867eec18a395d1c4`. The architecture-alignment hotfix is implemented on `fix/m11-architecture-alignment` and is pending its follow-up review/PR; M11 is not closed until that alignment is merged and re-verified.
 
 Milestone 7:
 
@@ -34,7 +34,7 @@ All 15 compatible qualification runs passed. No optimization was justified by me
 
 Milestone 11:
 
-The approved Revision 1 Alarm architecture is implemented on the feature branch. The implementation is PLC-read-only, consumes central TagCache values, uses exact-instance SCADA-state acknowledgement, monotonic activation delays, bounded persistence coordination, project-relative SQLite storage and trusted-checkpoint recovery. Project schema v6 migrates existing v5 projects in memory with `AlarmOptions.Enabled = false`. M11 is not yet merged to `main`.
+The approved Revision 1 Alarm architecture is merged to `main` via PR #15, and the follow-up alignment is isolated on `fix/m11-architecture-alignment`. The alignment retains an immutable case-insensitive `TagId` fan-out index and stable alarm order, avoids full snapshot materialization for raw samples with unchanged lifecycle/quality, and delivers latest-state snapshots to WPF through one coalesced Dispatcher item per active generation. Alarm events carry nullable source quality, and SQLite AlarmEvents uses explicit schema v2 migration; legacy rows remain quality-null. The implementation remains PLC-read-only, consumes central TagCache values, uses exact-instance SCADA-state acknowledgement, monotonic activation delays, bounded persistence coordination, project-relative SQLite storage and trusted-checkpoint recovery. Project schema v6 migrates existing v5 projects in memory with `AlarmOptions.Enabled = false`. M11 remains open pending the follow-up alignment review and merge.
 
 ## Implemented in Milestone 1
 
@@ -179,17 +179,31 @@ n PLC
 - `engineering.alarms`, `monitoring.alarms`, read-only Alarm journal query and compact Operation Alarm summary in WPF.
 - Deterministic clock/state/ACK/quality/sequence/recovery/persistence/lifecycle/UI tests and a bounded sanity using 10,000 project tags, 2,000 Alarm definitions and 500 distinct Alarm TagIds.
 
+## M11 architecture alignment in progress
+
+- Runtime retains one case-insensitive `TagId → MutableAlarm[]` index and precomputed definition order; a TagCache callback evaluates only matching definitions.
+- Runtime snapshot publication is meaningful-change/diagnostic based: unchanged raw source samples update runtime state but do not rebuild and fan out a full snapshot per sample.
+- Operation and Alarm Monitoring use generation-guarded latest-state Dispatcher coalescing with at most one pending UI update per active generation; deactivation/disposal invalidates stale queued callbacks.
+- `AlarmEvent.SourceQuality` is nullable and store-neutral. Fresh Alarm SQLite databases use schema v2; v1 rows migrate deterministically and retain `NULL` quality when the old schema had no source-quality value.
+
 ## Verified
 
 - `dotnet restore Scada.sln --ignore-failed-sources` — PASS.
 - `dotnet build Scada.sln -c Release --no-restore` — PASS with 0 warnings and 0 errors.
-- M11 feature-branch restore and Release build — PASS with 0 warnings and 0 errors.
-- M11 full test suite — PASS; 390 tests, 0 failures (138 App, 119 Runtime, 38 Core, 3 Drivers, 65 Infrastructure, 27 Stress).
-- M11 vulnerability audit — PASS; no vulnerable direct or transitive package was reported.
-- M11 WPF startup smoke — PASS; the application remained running with Alarm resources, DI and routes loaded.
-- M11 fresh copy-folder restore/build and original-path scan — PASS; the verification folder was removed after the check.
-- M11 GitNexus post-change index — 3,731 nodes / 12,681 edges / 300 flows with 0 import cycles.
-- M11 Runtime boundary — PASS; `Scada.Runtime` references only `Scada.Core`, with no WPF, App, Infrastructure or concrete-driver dependency.
+- M11 merged-main base restore and Release build — PASS with 0 warnings and 0 errors.
+- M11 merged-main base full test suite — PASS; 390 tests, 0 failures (138 App, 119 Runtime, 38 Core, 3 Drivers, 65 Infrastructure, 27 Stress).
+- M11 merged-main base vulnerability audit — PASS; no vulnerable direct or transitive package was reported.
+- M11 merged-main base WPF startup smoke — PASS; the application remained running with Alarm resources, DI and routes loaded.
+- M11 merged-main base fresh copy-folder restore/build and original-path scan — PASS; the verification folder was removed after the check.
+- M11 merged-main base GitNexus post-change index — 3,731 nodes / 12,681 edges / 300 flows with 0 import cycles.
+- M11 merged-main base Runtime boundary — PASS; `Scada.Runtime` references only `Scada.Core`, with no WPF, App, Infrastructure or concrete-driver dependency.
+- M11 architecture-alignment worktree restore and Release build — PASS with 0 warnings and 0 errors.
+- M11 architecture-alignment worktree full test suite — PASS; 397 tests, 0 failures (141 App, 121 Runtime, 38 Core, 3 Drivers, 67 Infrastructure, 27 Stress).
+- M11 architecture-alignment vulnerability audit — PASS; no vulnerable direct or transitive package was reported.
+- M11 architecture-alignment WPF startup smoke — PASS; `Scada.App` remained running through the smoke window without a DI/XAML startup exception.
+- M11 architecture-alignment fresh copy-folder restore/build/startup and original-path scan — PASS; no original repository path was found and the verification folder was removed after the check.
+- M11 architecture-alignment GitNexus index — 3,803 nodes / 13,040 edges / 300 flows with 0 import cycles; changed-flow review covers TagCache → AlarmRuntimeService and AlarmEvent → SQLite paths.
+- M11 architecture-alignment Runtime boundary — PASS; `Scada.Runtime` references only `Scada.Core`, with no WPF, App, Infrastructure or concrete-driver dependency.
 - `dotnet list Scada.sln package --include-transitive --vulnerable` — PASS; no vulnerable packages reported. `SQLitePCLRaw.bundle_e_sqlite3`, `core`, `lib.e_sqlite3` and `provider.e_sqlite3` resolve to 2.1.12 through `Microsoft.Data.Sqlite` 10.0.11.
 - `git diff --check` — PASS.
 - InfluxDB package audit — PASS; no vulnerable packages reported.
@@ -223,5 +237,6 @@ n PLC
 - History Settings Test Connection performs a non-writing candidate probe only; it does not claim write permission until a live integration test is added. UI command behavior is unit-tested, not UI-automation-tested.
 - Historian configuration changes are persisted and marked restart-required; runtime hot reload is intentionally not implemented.
 - Alarm configuration changes are persisted and marked restart-required; runtime hot reload, automatic communication alarms, notification/escalation and multi-process Alarm SQLite writers remain deferred.
+- Alarm SQLite connection configuration is still shared from the Infrastructure History namespace; moving this generic helper to a neutral Persistence namespace is deferred to avoid unrelated churn in the alignment hotfix.
 
-Implementation must follow the ordered milestones in `docs/ROADMAP.md` and the constraints in `docs/SCADA_ARCHITECTURE_V1.md`. M7 MQTT Publisher and M10 qualification are complete; MQTT Write, command subscriptions and PLC-write paths remain deferred. M11 is implemented on its feature branch and remains pending independent PR review and merge.
+Implementation must follow the ordered milestones in `docs/ROADMAP.md` and the constraints in `docs/SCADA_ARCHITECTURE_V1.md`. M7 MQTT Publisher and M10 qualification are complete; MQTT Write, command subscriptions and PLC-write paths remain deferred. M11 base is merged, while the architecture-alignment follow-up remains pending independent PR review and merge.

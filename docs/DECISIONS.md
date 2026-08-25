@@ -1,6 +1,14 @@
 
 # Architecture Decisions
 
+## D60 — M11 Alarm fan-out and snapshot/UI publication boundaries
+
+AlarmRuntimeService retains a case-insensitive `TagId → matching MutableAlarm[]` index and a precomputed definition order after startup. TagCache callbacks evaluate only the matching array; they do not scan all configured definitions or sort/materialize the complete alarm list for an unchanged raw sample. Runtime-owned source sequence/timestamp state is updated for diagnostics, while public snapshot publication is driven by lifecycle, pending, availability/quality and diagnostic changes rather than one notification per raw sample. WPF Operation and Monitoring replace a pending snapshot with the latest snapshot and keep at most one Dispatcher work item per active generation; deactivation/disposal invalidates stale queued callbacks. This is a bounded implementation of the existing central-TagCache/snapshot invariant and does not add a Runtime→WPF dependency.
+
+## D61 — M11 Alarm event source quality and SQLite schema v2
+
+Alarm event quality is store-neutral nullable `TagQuality? SourceQuality`. Live transition and acknowledgement events carry the current known source/evaluation quality; an event with no known source sample remains null rather than fabricating `Good`. AlarmEvents schema v2 adds nullable `SourceQuality`; initialization performs an explicit v1-to-v2 column migration, preserves old rows as null, rejects newer schemas and keeps the project-relative SQLite boundary. The project schema v5-to-v6 migration remains separate and in-memory until explicit project Save.
+
 ## D59 — M11 deterministic verification is separate from the M10 benchmark
 
 M11 acceptance requires controllable-TimeProvider tests for monotonic activation deadlines and wall-clock jumps; complete Alarm lifecycle and exact-instance ACK coverage; one-subscription-per-distinct-TagId, subscribe-before-seed, quality/sequence and zero-PLC-read checks; fail-closed startup-marker, trusted/untrusted recovery, definition-fingerprint reconciliation and SQLite path/schema coverage; and bounded lifecycle/shutdown isolation. An M11-specific bounded Alarm scale sanity may detect per-Alarm tasks/timers, per-definition subscriptions, unbounded queues/snapshot publication and severe contention, but it does not replace or redefine M10 qualification. SHA `402ee9d46f41489fee8912bbed57dc1388550658` remains the authoritative M10 benchmark.

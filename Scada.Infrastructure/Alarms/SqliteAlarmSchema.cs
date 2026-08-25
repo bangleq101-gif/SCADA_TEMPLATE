@@ -2,7 +2,7 @@ namespace Scada.Infrastructure.Alarms;
 
 internal static class SqliteAlarmSchema
 {
-    public const int CurrentVersion = 1;
+    public const int CurrentVersion = 2;
 
     public const string CreateSql = """
         CREATE TABLE IF NOT EXISTS AlarmMetadata
@@ -29,6 +29,7 @@ internal static class SqliteAlarmSchema
             DefinitionFingerprint TEXT NOT NULL,
             SourceSequence INTEGER NULL,
             SourceTimestampUtcTicks INTEGER NULL,
+            SourceQuality TEXT NULL,
             AcknowledgedBy TEXT NULL,
             UNIQUE(SessionId, EventSequence)
         );
