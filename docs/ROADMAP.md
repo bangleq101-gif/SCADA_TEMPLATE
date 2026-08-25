@@ -102,13 +102,14 @@ Status: COMPLETE — merged and verified on canonical `main` at `25ec87e91eba0be
 
 ## Milestone 12 — Read-only Operational Health and Engineering Diagnostics
 
-Status: IMPLEMENTED on `feature/milestone-12-operational-health`; pending independent source review, PR and merge.
+Status: IMPLEMENTED on `feature/milestone-12-operational-health`; PR #19 is open and pending independent re-review and merge.
 
 - Add one Runtime-owned health sampler/coordinator at a production 1-second cadence with one immutable snapshot publication per tick.
 - Aggregate existing DeviceManager, Historian, optional Influx store, MQTT, Alarm, TagCache and process telemetry snapshots without changing PLC polling or provider contracts.
 - Keep TagCache as the sole live-value source; production TagCache hot-path metrics remain disabled unless explicitly enabled by an existing diagnostic seam.
 - Sanitize health/error data before the App boundary and expose unavailable metrics explicitly rather than fabricating zeroes.
-- Add read-only Operation/Shell health summaries, compact PLC/History/MQTT/Runtime status indicators, `engineering.system` service health and virtualized `engineering.diagnostics` device diagnostics with active-only lifecycle/coalescing.
+- Add read-only Operation/Shell health summaries, compact PLC/History/MQTT/Runtime status indicators, provider-aware read-only Local Buffer status in `engineering.system` and virtualized `engineering.diagnostics` device diagnostics with active-only lifecycle/coalescing.
+- Prove the health aggregation boundary with 50 synthetic runtime device snapshots and separately prove the sampler boundary with 50 configured device identities, 10,000 TagCache values and 100 raw updates without raw-update-driven publication.
 - Verify one sampler/timer, bounded Dispatcher delivery, WPF resources, Runtime boundaries, copy-folder portability and no command/PLC/MQTT writes.
 - M12 does not include thresholds, notifications, event persistence, device editing, reconnect/command actions, runtime configuration mutation or any M13 scope.
 

@@ -31,6 +31,42 @@ public sealed class RuntimeHealthAggregatorTests
     }
 
     [Fact]
+    public void FiftyRuntimeDeviceSnapshotsAreProjectedDeterministically()
+    {
+        var options = new RuntimeOptions
+        {
+            Devices = Enumerable.Range(1, 50)
+                .Select(index => new DeviceDefinition { Id = $"PLC-{index:00}", Enabled = true })
+                .ToList()
+        };
+        var successfulRead = DateTimeOffset.UnixEpoch.AddSeconds(1);
+        var devices = Enumerable.Range(1, 50)
+            .Select(index => new DeviceRuntimeSnapshot(
+                $"PLC-{index:00}",
+                DeviceConnectionState.Connected,
+                null,
+                successfulRead,
+                null,
+                1,
+                0,
+                successfulRead,
+                successfulRead,
+                TimeSpan.FromMilliseconds(1),
+                0))
+            .ToDictionary(device => device.DeviceId, StringComparer.OrdinalIgnoreCase);
+
+        var snapshot = Aggregate(options, devices, historian: Historian(HistorianRuntimeState.Healthy));
+
+        Assert.Equal(50, snapshot.Devices.Count);
+        Assert.Equal(50, snapshot.Plc.EnabledDeviceCount);
+        Assert.Equal(50, snapshot.Plc.HealthyDeviceCount);
+        Assert.Equal(RuntimeHealthState.Healthy, snapshot.Plc.State);
+        Assert.Equal(
+            Enumerable.Range(1, 50).Select(index => $"PLC-{index:00}"),
+            snapshot.Devices.Select(device => device.DeviceId));
+    }
+
+    [Fact]
     public void FaultedPrecedesDegradedAndStarting()
     {
         var options = Options(

@@ -1,4 +1,5 @@
 using Scada.App.Services;
+using Scada.Core.History;
 using Scada.Runtime.Health;
 
 namespace Scada.App.ViewModels;
@@ -24,6 +25,7 @@ public sealed class SystemServicesViewModel : RuntimeHealthWorkspaceViewModel
         Card("TagCache", Snapshot.TagCache.MetricsAvailable ? RuntimeHealthState.Healthy : RuntimeHealthState.Unknown, $"{Snapshot.TagCache.ValueCount} values • {Snapshot.TagCache.MetricsText}"),
         Card("Historian", Map(Snapshot.Historian.State), Snapshot.Database.ProviderText),
         Card("Database", Snapshot.Database.State, Snapshot.Database.ProviderText),
+        LocalBufferCard(Snapshot),
         Card("MQTT", Map(Snapshot.Mqtt.State), Snapshot.Mqtt.State.ToString()),
         Card("Alarm", Map(Snapshot.Alarm.State), Snapshot.Alarm.State.ToString()),
         Card("Process", ProcessState(Snapshot.Process), $"CPU {FormatCpu(Snapshot.Process.CpuPercent)} • Working Set {FormatBytes(Snapshot.Process.WorkingSetBytes)}")
@@ -38,6 +40,34 @@ public sealed class SystemServicesViewModel : RuntimeHealthWorkspaceViewModel
 
     private static HealthServiceCard Card(string name, RuntimeHealthState state, string detail) =>
         new(name, state, detail, $"{name}: {state}. {detail}");
+
+    private static HealthServiceCard LocalBufferCard(RuntimeHealthSnapshot snapshot)
+    {
+        if (snapshot.Database.Provider != HistoryStorageProvider.InfluxDb2)
+        {
+            return Card("Local Buffer", RuntimeHealthState.Disabled, "Not applicable for SQLite");
+        }
+
+        if (!snapshot.Database.DiagnosticsAvailable || snapshot.Database.Diagnostics is null)
+        {
+            return Card("Local Buffer", RuntimeHealthState.Unknown, "Diagnostics unavailable");
+        }
+
+        var diagnostics = snapshot.Database.Diagnostics;
+        var detail = $"{diagnostics.State} • {diagnostics.PendingSamples:n0} pending • {diagnostics.OrphanedDestinationSamples:n0} orphaned";
+        return Card("Local Buffer", Map(diagnostics.State), detail);
+    }
+
+    private static RuntimeHealthState Map(HistoryStoreState state) => state switch
+    {
+        HistoryStoreState.Disabled => RuntimeHealthState.Disabled,
+        HistoryStoreState.Starting or HistoryStoreState.Connecting => RuntimeHealthState.Starting,
+        HistoryStoreState.Online => RuntimeHealthState.Healthy,
+        HistoryStoreState.Offline or HistoryStoreState.Buffering or HistoryStoreState.Resynchronizing or HistoryStoreState.ConfigurationRequired => RuntimeHealthState.Degraded,
+        HistoryStoreState.Faulted => RuntimeHealthState.Faulted,
+        HistoryStoreState.Stopping => RuntimeHealthState.Stopping,
+        _ => RuntimeHealthState.Unknown
+    };
 
     private static RuntimeHealthState Map(Scada.Runtime.Historian.HistorianRuntimeState state) => state switch
     {
