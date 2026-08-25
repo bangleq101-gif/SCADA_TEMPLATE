@@ -18,6 +18,8 @@ public sealed class AlarmRuntimeService : IHostedService, IAsyncDisposable
     private readonly ILogger<AlarmRuntimeService> _logger;
     private readonly TimeProvider _timeProvider;
     private readonly Dictionary<string, MutableAlarm> _alarms = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, MutableAlarm[]> _alarmsByTagId = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, int> _alarmIndexById = new(StringComparer.OrdinalIgnoreCase);
     private readonly List<IDisposable> _tagSubscriptions = [];
     private readonly List<Action<AlarmRuntimeSnapshot>> _snapshotSubscribers = [];
     private readonly Channel<bool> _deadlineSignals = Channel.CreateBounded<bool>(new BoundedChannelOptions(1)
@@ -32,6 +34,8 @@ public sealed class AlarmRuntimeService : IHostedService, IAsyncDisposable
     private Task? _deadlineTask;
     private Task? _persistenceTask;
     private AlarmRuntimeSnapshot _snapshot = AlarmRuntimeSnapshot.Disabled;
+    private AlarmRuntimeSnapshot? _lastPublishedSnapshot;
+    private MutableAlarm[] _orderedAlarms = [];
     private Guid _sessionId;
     private long _eventSequence;
     private bool _accepting;
@@ -53,6 +57,11 @@ public sealed class AlarmRuntimeService : IHostedService, IAsyncDisposable
     private bool _recoveredFromTrustedCheckpoint;
     private int _recoveryUntrustedInstances;
     private int _orphanedInstances;
+    private int _lastTagEvaluationCount;
+    private int _lastTagCandidateCount;
+    private long _snapshotPublicationCount;
+    private long _fullSnapshotComparisonCount;
+    private long _snapshotMaterializationCount;
     private string? _lastErrorCode;
     private string? _lastErrorMessage;
 
@@ -74,6 +83,31 @@ public sealed class AlarmRuntimeService : IHostedService, IAsyncDisposable
     public AlarmRuntimeSnapshot Snapshot
     {
         get { lock (_sync) return _snapshot; }
+    }
+
+    internal int LastTagEvaluationCount
+    {
+        get { lock (_sync) return _lastTagEvaluationCount; }
+    }
+
+    internal int LastTagCandidateCount
+    {
+        get { lock (_sync) return _lastTagCandidateCount; }
+    }
+
+    internal long SnapshotPublicationCount
+    {
+        get { lock (_sync) return _snapshotPublicationCount; }
+    }
+
+    internal long FullSnapshotComparisonCount
+    {
+        get { lock (_sync) return _fullSnapshotComparisonCount; }
+    }
+
+    internal long SnapshotMaterializationCount
+    {
+        get { lock (_sync) return _snapshotMaterializationCount; }
     }
 
     public async Task StartAsync(CancellationToken cancellationToken)
@@ -154,6 +188,13 @@ public sealed class AlarmRuntimeService : IHostedService, IAsyncDisposable
             _alarms.Clear();
             foreach (var definition in enabledDefinitions)
                 _alarms[definition.Id] = new MutableAlarm(definition);
+            _orderedAlarms = enabledDefinitions.Select(definition => _alarms[definition.Id]).ToArray();
+            _alarmIndexById.Clear();
+            for (var index = 0; index < _orderedAlarms.Length; index++)
+                _alarmIndexById[_orderedAlarms[index].Definition.Id] = index;
+            _alarmsByTagId.Clear();
+            foreach (var group in _orderedAlarms.GroupBy(alarm => alarm.Definition.TagId, StringComparer.OrdinalIgnoreCase))
+                _alarmsByTagId[group.Key] = group.ToArray();
             ApplyRecoveryLocked(recovery);
             _accepting = true;
             _deadlineCts = new CancellationTokenSource();
@@ -387,33 +428,57 @@ public sealed class AlarmRuntimeService : IHostedService, IAsyncDisposable
         lock (_sync)
         {
             if (!_accepting) return;
-            foreach (var alarm in _alarms.Values.Where(item => item.Definition.TagId.Equals(tagId, StringComparison.OrdinalIgnoreCase)))
+            if (!_alarmsByTagId.TryGetValue(tagId, out var matchingAlarms))
             {
+                _lastTagEvaluationCount = 0;
+                _lastTagCandidateCount = 0;
+                return;
+            }
+
+            _lastTagCandidateCount = matchingAlarms.Length;
+            var evaluationCount = 0;
+            var meaningfulChange = false;
+            var diagnosticChange = false;
+            foreach (var alarm in matchingAlarms)
+            {
+                var previous = _snapshot.Alarms[_alarmIndexById[alarm.Definition.Id]];
+                evaluationCount++;
                 if (value.Sequence <= alarm.LastEvaluatedSequence)
                 {
                     _staleUpdates++;
+                    diagnosticChange = true;
                     continue;
                 }
                 alarm.LastEvaluatedSequence = value.Sequence;
                 alarm.LastSourceSequence = value.Sequence;
                 alarm.LastSourceTimestampUtc = value.Timestamp;
                 alarm.EvaluationQuality = value.Quality;
+                alarm.HasSourceValue = true;
 
                 var wasConditionActive = alarm.Pending || alarm.State is AlarmLifecycleState.ActiveUnacknowledged or AlarmLifecycleState.ActiveAcknowledged;
                 var evaluation = AlarmEvaluator.Evaluate(alarm.Definition, value, wasConditionActive);
                 alarm.IsEvaluationAvailable = evaluation.IsAvailable;
                 if (!evaluation.IsAvailable)
                 {
-                    if (value.Quality == TagQuality.Good) _rejectedEvaluations++;
+                    if (value.Quality == TagQuality.Good)
+                    {
+                        _rejectedEvaluations++;
+                        diagnosticChange = true;
+                    }
                     if (alarm.Pending) alarm.Pending = false;
+                    meaningfulChange |= HasMeaningfulAlarmChange(previous, alarm);
                     continue;
                 }
                 alarm.ConditionActive = evaluation.ConditionActive;
                 ApplyEvaluationLocked(alarm);
+                meaningfulChange |= HasMeaningfulAlarmChange(previous, alarm);
             }
-            changed = _snapshot = BuildSnapshotLocked(CurrentOperationalStateLocked());
+            _lastTagEvaluationCount = evaluationCount;
+            if (meaningfulChange || diagnosticChange)
+                changed = _snapshot = BuildSnapshotLocked(CurrentOperationalStateLocked());
         }
-        NotifySnapshotSubscribers(changed);
+        if (changed is not null)
+            NotifySnapshotSubscribers(changed);
     }
 
     private void ApplyEvaluationLocked(MutableAlarm alarm)
@@ -488,7 +553,9 @@ public sealed class AlarmRuntimeService : IHostedService, IAsyncDisposable
         if (alarm.InstanceId is not Guid instanceId) return;
         var alarmEvent = new AlarmEvent(
             ++_eventSequence, alarm.Definition.Id, instanceId, type, alarm.Definition.Severity, timestamp,
-            alarm.Fingerprint, alarm.LastSourceSequence, alarm.LastSourceTimestampUtc, acknowledgedBy);
+            alarm.Fingerprint, alarm.HasSourceValue ? alarm.LastSourceSequence : null,
+            alarm.HasSourceValue ? alarm.LastSourceTimestampUtc : null, acknowledgedBy,
+            alarm.HasSourceValue ? alarm.EvaluationQuality : null);
         if (!_options.PersistenceEnabled) return;
         if (_persistenceChannel is null)
         {
@@ -672,6 +739,7 @@ public sealed class AlarmRuntimeService : IHostedService, IAsyncDisposable
             alarm.LastSourceSequence = record.LastSourceSequence;
             alarm.LastSourceTimestampUtc = record.LastSourceTimestampUtc;
             alarm.EvaluationQuality = record.EvaluationQuality;
+            alarm.HasSourceValue = true;
             alarm.IsEvaluationAvailable = record.EvaluationQuality == TagQuality.Good;
         }
     }
@@ -691,9 +759,12 @@ public sealed class AlarmRuntimeService : IHostedService, IAsyncDisposable
                 alarm.EvaluationQuality))
             .ToArray();
 
-    private AlarmRuntimeSnapshot BuildSnapshotLocked(AlarmRuntimeState state) => new(
+    private AlarmRuntimeSnapshot BuildSnapshotLocked(AlarmRuntimeState state)
+    {
+        _snapshotMaterializationCount++;
+        return new(
         state,
-        _alarms.Values.OrderBy(alarm => alarm.Definition.Order).ThenBy(alarm => alarm.Definition.Id, StringComparer.OrdinalIgnoreCase)
+        _orderedAlarms
             .Select(alarm => new AlarmSnapshot(
                 alarm.Definition.Id, alarm.Definition.Name, alarm.Definition.Message, alarm.InstanceId,
                 alarm.State, alarm.Definition.Severity, alarm.Pending, alarm.IsEvaluationAvailable,
@@ -709,6 +780,7 @@ public sealed class AlarmRuntimeService : IHostedService, IAsyncDisposable
         _rejectedPersistence, _droppedPersistence, _abandonedPersistence, _writeFailures,
         _recoveredFromTrustedCheckpoint, _recoveryUntrustedInstances, _orphanedInstances,
         _lastErrorCode, _lastErrorMessage);
+    }
 
     private void FailClosed(string code, string message)
     {
@@ -718,6 +790,9 @@ public sealed class AlarmRuntimeService : IHostedService, IAsyncDisposable
             _lastErrorCode = code;
             _lastErrorMessage = message;
             _alarms.Clear();
+            _alarmsByTagId.Clear();
+            _alarmIndexById.Clear();
+            _orderedAlarms = [];
             _snapshot = BuildSnapshotLocked(AlarmRuntimeState.Faulted);
         }
         NotifySnapshotSubscribers();
@@ -750,6 +825,10 @@ public sealed class AlarmRuntimeService : IHostedService, IAsyncDisposable
         lock (_sync)
         {
             snapshot ??= _snapshot;
+            if (_lastPublishedSnapshot is not null && !HasMeaningfulChange(_lastPublishedSnapshot, snapshot))
+                return;
+            _lastPublishedSnapshot = snapshot;
+            _snapshotPublicationCount++;
             subscribers = _snapshotSubscribers.ToArray();
         }
         foreach (var subscriber in subscribers)
@@ -762,6 +841,73 @@ public sealed class AlarmRuntimeService : IHostedService, IAsyncDisposable
             }
         }
     }
+
+    private bool HasMeaningfulChange(AlarmRuntimeSnapshot previous, AlarmRuntimeSnapshot current)
+    {
+        _fullSnapshotComparisonCount++;
+        if (previous.State != current.State ||
+            previous.ConfiguredDefinitions != current.ConfiguredDefinitions ||
+            previous.DistinctTagSubscriptions != current.DistinctTagSubscriptions ||
+            previous.PendingDeadlines != current.PendingDeadlines ||
+            previous.PersistenceQueueDepth != current.PersistenceQueueDepth ||
+            previous.ActivatedTransitions != current.ActivatedTransitions ||
+            previous.AcknowledgedTransitions != current.AcknowledgedTransitions ||
+            previous.ReturnedTransitions != current.ReturnedTransitions ||
+            previous.ClosedTransitions != current.ClosedTransitions ||
+            previous.ReactivatedTransitions != current.ReactivatedTransitions ||
+            previous.RejectedEvaluations != current.RejectedEvaluations ||
+            previous.StaleTagUpdates != current.StaleTagUpdates ||
+            previous.SubscriberExceptions != current.SubscriberExceptions ||
+            previous.PersistedEvents != current.PersistedEvents ||
+            previous.RejectedPersistenceItems != current.RejectedPersistenceItems ||
+            previous.DroppedPersistenceItems != current.DroppedPersistenceItems ||
+            previous.AbandonedPersistenceItems != current.AbandonedPersistenceItems ||
+            previous.PersistenceWriteFailures != current.PersistenceWriteFailures ||
+            previous.RecoveryTrusted != current.RecoveryTrusted ||
+            previous.RecoveryUntrustedInstances != current.RecoveryUntrustedInstances ||
+            previous.OrphanedInstances != current.OrphanedInstances ||
+            !string.Equals(previous.LastErrorCode, current.LastErrorCode, StringComparison.Ordinal) ||
+            !string.Equals(previous.LastErrorMessage, current.LastErrorMessage, StringComparison.Ordinal) ||
+            previous.Alarms.Count != current.Alarms.Count)
+            return true;
+
+        for (var index = 0; index < previous.Alarms.Count; index++)
+        {
+            var before = previous.Alarms[index];
+            var after = current.Alarms[index];
+            if (HasMeaningfulAlarmChange(before, after))
+                return true;
+        }
+
+        // AlarmSnapshot source metadata is from the latest materialized public snapshot.
+        // Mutable runtime state may contain a newer accepted source sample when an unchanged
+        // raw update intentionally did not materialize or publish a new snapshot.
+        return false;
+    }
+
+    private static bool HasMeaningfulAlarmChange(AlarmSnapshot previous, MutableAlarm current) =>
+        !string.Equals(previous.AlarmId, current.Definition.Id, StringComparison.Ordinal) ||
+        previous.InstanceId != current.InstanceId ||
+        previous.State != current.State ||
+        previous.IsPendingActivation != current.Pending ||
+        previous.IsEvaluationAvailable != current.IsEvaluationAvailable ||
+        previous.EvaluationQuality != current.EvaluationQuality ||
+        previous.TransitionTimestampUtc != current.TransitionTimestampUtc ||
+        previous.ActivatedAtUtc != current.ActivatedAtUtc ||
+        previous.AcknowledgedAtUtc != current.AcknowledgedAtUtc ||
+        !string.Equals(previous.AcknowledgedBy, current.AcknowledgedBy, StringComparison.Ordinal);
+
+    private static bool HasMeaningfulAlarmChange(AlarmSnapshot previous, AlarmSnapshot current) =>
+        !string.Equals(previous.AlarmId, current.AlarmId, StringComparison.Ordinal) ||
+        previous.InstanceId != current.InstanceId ||
+        previous.State != current.State ||
+        previous.IsPendingActivation != current.IsPendingActivation ||
+        previous.IsEvaluationAvailable != current.IsEvaluationAvailable ||
+        previous.EvaluationQuality != current.EvaluationQuality ||
+        previous.TransitionTimestampUtc != current.TransitionTimestampUtc ||
+        previous.ActivatedAtUtc != current.ActivatedAtUtc ||
+        previous.AcknowledgedAtUtc != current.AcknowledgedAtUtc ||
+        !string.Equals(previous.AcknowledgedBy, current.AcknowledgedBy, StringComparison.Ordinal);
 
     private static async Task ObserveAsync(Task task)
     {
@@ -821,6 +967,7 @@ public sealed class AlarmRuntimeService : IHostedService, IAsyncDisposable
         public long LastSourceSequence { get; set; }
         public long LastEvaluatedSequence { get; set; }
         public DateTimeOffset? LastSourceTimestampUtc { get; set; }
+        public bool HasSourceValue { get; set; }
         public DateTimeOffset? TransitionTimestampUtc { get; set; }
         public DateTimeOffset? ActivatedAtUtc { get; set; }
         public DateTimeOffset? AcknowledgedAtUtc { get; set; }

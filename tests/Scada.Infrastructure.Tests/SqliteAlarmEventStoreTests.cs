@@ -86,6 +86,65 @@ public sealed class SqliteAlarmEventStoreTests
     }
 
     [Fact]
+    public async Task AlarmEventSourceQualityRoundTripsInSchemaV2()
+    {
+        var directory = CreateTempDirectory();
+        try
+        {
+            var store = CreateStore(directory);
+            await store.InitializeAsync(CancellationToken.None);
+            var session = Guid.NewGuid();
+            await store.BeginUntrustedSessionAsync(new(session, "Runtime01", Utc(0)), CancellationToken.None);
+            var expected = new AlarmEvent(
+                1, "A1", Guid.NewGuid(), AlarmEventType.Activated, AlarmSeverity.High,
+                Utc(1), "FP", 7, Utc(1), null, TagQuality.Disconnected);
+
+            await store.PersistBatchAsync(new AlarmPersistenceBatch(session, [expected], [], 1), CancellationToken.None);
+
+            var actual = Assert.Single(await store.QueryAsync(new AlarmEventQuery(Utc(0), Utc(2)), CancellationToken.None));
+            Assert.Equal(expected, actual);
+            Assert.Equal(SqliteAlarmSchema.CurrentVersion, await ReadSchemaVersionAsync(directory));
+        }
+        finally { DeleteDirectory(directory); }
+    }
+
+    [Fact]
+    public async Task SchemaV1MigratesAlarmEventsAndLeavesLegacySourceQualityNull()
+    {
+        var directory = CreateTempDirectory();
+        try
+        {
+            var path = Path.Combine(directory, "Data", "alarms.db");
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            var instanceId = Guid.NewGuid();
+            await using (var connection = new SqliteConnection($"Data Source={path}"))
+            {
+                await connection.OpenAsync();
+                await using var command = connection.CreateCommand();
+                command.CommandText = """
+                    CREATE TABLE AlarmMetadata (Id INTEGER PRIMARY KEY, CurrentSessionId TEXT NULL, CheckpointSessionId TEXT NULL, RuntimeId TEXT NULL, RecoveryTrusted INTEGER NOT NULL DEFAULT 0, ContinuitySequence INTEGER NOT NULL DEFAULT 0, UpdatedAtUtcTicks INTEGER NOT NULL DEFAULT 0);
+                    CREATE TABLE AlarmEvents (Id INTEGER PRIMARY KEY, SessionId TEXT NOT NULL, EventSequence INTEGER NOT NULL, AlarmId TEXT NOT NULL, InstanceId TEXT NOT NULL, EventType TEXT NOT NULL, Severity TEXT NOT NULL, TimestampUtcTicks INTEGER NOT NULL, DefinitionFingerprint TEXT NOT NULL, SourceSequence INTEGER NULL, SourceTimestampUtcTicks INTEGER NULL, AcknowledgedBy TEXT NULL, UNIQUE(SessionId, EventSequence));
+                    CREATE TABLE AlarmInstances (SessionId TEXT NOT NULL, AlarmId TEXT NOT NULL, InstanceId TEXT NOT NULL, LifecycleState TEXT NOT NULL, Severity TEXT NOT NULL, DefinitionFingerprint TEXT NOT NULL, ActivatedAtUtcTicks INTEGER NOT NULL, AcknowledgedAtUtcTicks INTEGER NULL, AcknowledgedBy TEXT NULL, LastSourceSequence INTEGER NOT NULL, LastSourceTimestampUtcTicks INTEGER NOT NULL, EvaluationQuality TEXT NOT NULL, PRIMARY KEY(SessionId, AlarmId));
+                    INSERT INTO AlarmMetadata (Id) VALUES (1);
+                    INSERT INTO AlarmEvents (Id,SessionId,EventSequence,AlarmId,InstanceId,EventType,Severity,TimestampUtcTicks,DefinitionFingerprint,SourceSequence,SourceTimestampUtcTicks,AcknowledgedBy)
+                    VALUES (1,'session',1,'A1', '$instance', 'Activated','High',$timestamp,'FP',7,$timestamp,'operator');
+                    PRAGMA user_version=1;
+                    """.Replace("$instance", instanceId.ToString("D"), StringComparison.Ordinal)
+                    .Replace("$timestamp", Utc(1).UtcDateTime.Ticks.ToString(), StringComparison.Ordinal);
+                await command.ExecuteNonQueryAsync();
+            }
+
+            var store = CreateStore(directory);
+            await store.InitializeAsync(CancellationToken.None);
+            var migrated = Assert.Single(await store.QueryAsync(new AlarmEventQuery(Utc(0), Utc(2)), CancellationToken.None));
+            Assert.Null(migrated.SourceQuality);
+            Assert.Equal(2, await ReadSchemaVersionAsync(directory));
+            await store.InitializeAsync(CancellationToken.None);
+        }
+        finally { DeleteDirectory(directory); }
+    }
+
+    [Fact]
     public async Task NewerOrCorruptSchemaIsRejected()
     {
         var newerDirectory = CreateTempDirectory();
@@ -130,6 +189,16 @@ public sealed class SqliteAlarmEventStoreTests
 
     private static DateTimeOffset Utc(int seconds) =>
         new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero).AddSeconds(seconds);
+
+    private static async Task<long> ReadSchemaVersionAsync(string directory)
+    {
+        var path = Path.Combine(directory, "Data", "alarms.db");
+        await using var connection = new SqliteConnection($"Data Source={path};Mode=ReadOnly");
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = "PRAGMA user_version;";
+        return Convert.ToInt64(await command.ExecuteScalarAsync());
+    }
 
     private static string CreateTempDirectory()
     {
