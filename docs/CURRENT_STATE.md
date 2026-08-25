@@ -4,11 +4,11 @@ Architecture V1 is approved.
 
 Current implementation milestone:
 
-Milestone 11 — Alarm System
+Architecture V1 baseline — M11 complete
 
 Status:
 
-M11 base implementation is merged to `main` via PR #15 at `4b903723ed94d846420c2bf3867eec18a395d1c4`. The architecture-alignment hotfix is implemented on `fix/m11-architecture-alignment` and is pending its follow-up review/PR; M11 is not closed until that alignment is merged and re-verified.
+M11 — Alarm System — COMPLETE. The base implementation was merged via PR #15 at `4b903723ed94d846420c2bf3867eec18a395d1c4`; the approved architecture-alignment revision was merged via PR #16 with approved head `636e8fb16080f29e98d3ea976e5e584e1abe7887`, producing final canonical `main` at `25ec87e91eba0be268384c7b941c63cb8bb0f6d9`.
 
 Milestone 7:
 
@@ -34,7 +34,7 @@ All 15 compatible qualification runs passed. No optimization was justified by me
 
 Milestone 11:
 
-The approved Revision 1 Alarm architecture is merged to `main` via PR #15, and the follow-up alignment is isolated on `fix/m11-architecture-alignment`. The alignment retains an immutable case-insensitive `TagId` fan-out index and stable alarm order, avoids full snapshot materialization for raw samples with unchanged lifecycle/quality, and delivers latest-state snapshots to WPF through one coalesced Dispatcher item per active generation. Alarm events carry nullable source quality, and SQLite AlarmEvents uses explicit schema v2 migration; legacy rows remain quality-null. The implementation remains PLC-read-only, consumes central TagCache values, uses exact-instance SCADA-state acknowledgement, monotonic activation delays, bounded persistence coordination, project-relative SQLite storage and trusted-checkpoint recovery. Project schema v6 migrates existing v5 projects in memory with `AlarmOptions.Enabled = false`. M11 remains open pending the follow-up alignment review and merge.
+The approved Revision 1 Alarm architecture and its alignment are merged to canonical `main`. The implementation retains an immutable case-insensitive `TagId` fan-out index and stable alarm order, avoids full snapshot materialization for raw samples with unchanged lifecycle/quality, and delivers latest-state snapshots to WPF through one coalesced Dispatcher item per active generation. Alarm events carry nullable source quality, and SQLite AlarmEvents uses explicit schema v2 migration; legacy rows remain quality-null. The implementation remains PLC-read-only, consumes central TagCache values, uses exact-instance SCADA-state acknowledgement, monotonic activation delays, bounded persistence coordination, project-relative SQLite storage and trusted-checkpoint recovery. Project schema v6 migrates existing v5 projects in memory with `AlarmOptions.Enabled = false`.
 
 ## Implemented in Milestone 1
 
@@ -179,12 +179,19 @@ n PLC
 - `engineering.alarms`, `monitoring.alarms`, read-only Alarm journal query and compact Operation Alarm summary in WPF.
 - Deterministic clock/state/ACK/quality/sequence/recovery/persistence/lifecycle/UI tests and a bounded sanity using 10,000 project tags, 2,000 Alarm definitions and 500 distinct Alarm TagIds.
 
-## M11 architecture alignment in progress
+## M11 final merged-main alignment
 
 - Runtime retains one case-insensitive `TagId → MutableAlarm[]` index and precomputed definition order; a TagCache callback evaluates only matching definitions.
 - Runtime snapshot publication is meaningful-change/diagnostic based: unchanged raw source samples update runtime state but do not rebuild and fan out a full snapshot per sample.
 - Operation and Alarm Monitoring use generation-guarded latest-state Dispatcher coalescing with at most one pending UI update per active generation; deactivation/disposal invalidates stale queued callbacks.
 - `AlarmEvent.SourceQuality` is nullable and store-neutral. Fresh Alarm SQLite databases use schema v2; v1 rows migrate deterministically and retain `NULL` quality when the old schema had no source-quality value.
+
+M11 merged-main evidence on `25ec87e91eba0be268384c7b941c63cb8bb0f6d9`:
+
+- Full verification — PASS; 397/397 tests, 0 failures.
+- GitNexus — 3,806 nodes / 13,067 edges / 150 clusters / 300 flows / 0 cycles.
+- Runtime boundary — PASS; `Scada.Runtime` references `Scada.Core` only.
+- Alarm hot-path structural evidence — 10,000 tags, 2,000 Alarm definitions and 500 distinct Alarm TagIds; T0=4 matching definitions, followed by 100 unchanged samples with 0 additional full comparisons, snapshot materializations, publications or subscriber deliveries.
 
 ## Verified
 
@@ -229,7 +236,8 @@ n PLC
 - A genuinely non-cooperative driver operation may remain in flight after the manager shutdown budget expires. M2 bounds manager return time and retains ownership rather than attempting to kill the task; deeper orphan-operation supervision is later work.
 - Project persistence supports sequential schema v1 → v2 → v3 → v4 → v5 → v6 migration. Migration remains in memory until explicit Save; multi-process conflict handling and undo/redo remain deferred.
 - Project startup requires an explicit canonical `--project-file` path (the supplied launcher provides it); automatic project discovery and hot reload are intentionally not implemented.
-- Tag Manager validation is deterministic and synchronous; full UI automation, advanced tag scaling/offset semantics and runtime reconfiguration without restart remain later work.
+- Tag Manager validation is deterministic and synchronous; full UI automation, `TagDefinition` Scale/Offset fields and runtime scaling/offset transformation semantics remain later work (see `docs/V1_COVERAGE.md` row 16). Runtime reconfiguration without restart also remains later work.
+- The general Online Tag Monitor activates one TagCache subscription per configured row and can enqueue one Dispatcher callback per off-thread update; generation-safe activation/deactivation is implemented, while deeper visible-tag scoping and bounded/latest-state coalescing remain later work (see `docs/V1_COVERAGE.md` row 11).
 - Import conflict resolution currently offers explicit apply-all for conflict-free imports or append-non-conflicting/cancel for conflicted imports; identity regeneration after a conflict is deferred.
 - InfluxDB provider verification has not yet included a live remote InfluxDB server; transport error mapping, retention behavior and long-running replay remain subject to integration testing.
 - The official InfluxDB.Client exception model exposes HTTP status but does not provide reliable point-level rejection metadata; production therefore preserves generic 400 rows, while point-specific splitting remains available only to an explicitly confirming transport implementation.
@@ -238,5 +246,7 @@ n PLC
 - Historian configuration changes are persisted and marked restart-required; runtime hot reload is intentionally not implemented.
 - Alarm configuration changes are persisted and marked restart-required; runtime hot reload, automatic communication alarms, notification/escalation and multi-process Alarm SQLite writers remain deferred.
 - Alarm SQLite connection configuration is still shared from the Infrastructure History namespace; moving this generic helper to a neutral Persistence namespace is deferred to avoid unrelated churn in the alignment hotfix.
+- Centralized logging uses `ILogger<T>`, the Microsoft.Extensions.Logging pipeline, the Debug provider and structured `DeviceId` fields on polling paths; consistent `RuntimeId` contextual enrichment across Runtime subsystems is not yet standardized (see `docs/V1_COVERAGE.md` row 48).
+- Remaining Architecture V1 partial/not-started coverage, including the unified System Services surface, screen metadata, Engineering Devices/System/Diagnostics, deployment/offline strategy and Simulator fault mode, is tracked in `docs/V1_COVERAGE.md`; this is documentation traceability, not M12 authorization.
 
-Implementation must follow the ordered milestones in `docs/ROADMAP.md` and the constraints in `docs/SCADA_ARCHITECTURE_V1.md`. M7 MQTT Publisher and M10 qualification are complete; MQTT Write, command subscriptions and PLC-write paths remain deferred. M11 base is merged, while the architecture-alignment follow-up remains pending independent PR review and merge.
+Implementation must follow the ordered milestones in `docs/ROADMAP.md` and the constraints in `docs/SCADA_ARCHITECTURE_V1.md`. M7 MQTT Publisher, M10 qualification and M11 Alarm System are complete on canonical `main`; MQTT Write, command subscriptions and PLC-write paths remain deferred. Current activity is reconciliation of remaining Architecture V1 coverage and planning the next separately approved milestone. M12 is not started.
