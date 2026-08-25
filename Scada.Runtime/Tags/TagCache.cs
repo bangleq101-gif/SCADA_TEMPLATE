@@ -31,7 +31,10 @@ public sealed class TagCache : ITagCache
                     Interlocked.Read(ref _callbackInvocations),
                     Interlocked.Read(ref _subscriberExceptions),
                     _values.Count,
-                    _subscriptions.Values.Sum(callbacks => callbacks.Count));
+                    _subscriptions.Values.Sum(callbacks => callbacks.Count))
+                {
+                    MetricsAvailable = _metricsEnabled
+                };
             }
         }
     }

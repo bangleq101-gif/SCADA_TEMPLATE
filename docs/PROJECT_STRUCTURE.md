@@ -85,6 +85,42 @@ The Runtime alarm hot path resolves the callback TagId through the retained case
 
 When Alarm persistence is enabled, a new session must be durably and atomically marked recovery-untrusted before any TagCache subscription, seed reconciliation, activation deadline or live evaluation. This marker is a hard startup precondition. If it cannot be committed, Alarm enters Degraded/Faulted without subscribing, evaluating, creating or mutating live Alarm state, and without memory-only fallback; PLC polling may continue. Only a gap-free clean drain plus a complete open-instance checkpoint and atomic continuity/session metadata commit can become trusted for the next startup. Crash, queue gap/drop/rejection, abandonment, write failure or drain timeout permanently disqualifies the session. Incompatible or untrusted persisted instances remain historical/orphaned.
 
+## Milestone 12 operational health ownership
+
+```text
+Scada.Runtime/Health
+├── RuntimeHealthService (one sampler/timer and immutable snapshot publication)
+├── RuntimeHealthAggregator (PLC, TagCache, Historian, provider, MQTT, Alarm and process mapping)
+├── RuntimeHealthSnapshot / RuntimeHealthState
+├── ProcessTelemetry (CPU, working set and monotonic uptime)
+└── RuntimeHealthSanitizer
+
+Scada.App
+├── RuntimeHealthPresentationService (one shared Runtime subscription)
+├── SystemServicesViewModel / SystemServicesView
+├── EngineeringDiagnosticsViewModel / EngineeringDiagnosticsView
+├── Operation and Shell read-only health summaries
+└── generation-guarded latest-state Dispatcher projection
+```
+
+M12 health is observational and read-only. It consumes existing immutable runtime/store snapshots and TagCache counts, never reads a PLC, changes polling, writes project/runtime configuration or issues PLC/MQTT commands. Normal state precedence is `Faulted` > `Degraded` > `Starting` > `Unknown` > `Healthy`; `Stopping` is a shutdown override. The App status bar renders compact PLC/History/MQTT/Runtime glyph-and-text indicators with accessibility names. `Scada.Runtime` has no WPF or App dependency; Infrastructure remains the owner of concrete storage diagnostics.
+
+M12 flow:
+
+```text
+DeviceManager.DeviceSnapshots ─┐
+Historian/MQTT/Alarm snapshots ├─→ RuntimeHealthService (one 1-second sampler)
+optional store diagnostics ────┤             ↓
+TagCache counts ───────────────┤       RuntimeHealthSnapshot
+process telemetry ─────────────┘             ↓
+                                  App shared presentation source
+                                  ├─→ Operation / Shell status bar
+                                  ├─→ engineering.system
+                                  └─→ engineering.diagnostics
+```
+
+Only one health snapshot is materialized and published per sampler tick. TagCache callbacks and raw PLC scans do not publish health directly. Active App workspaces own at most one subscription and coalesce the latest snapshot through one Dispatcher work item per active generation.
+
 ## Main folders
 
 ```text
@@ -99,6 +135,7 @@ Scada.Core/
 
 Scada.Runtime/
 ├── Alarms
+├── Health
 ├── Devices
 ├── Drivers
 ├── Engine
@@ -154,7 +191,7 @@ tests/Scada.Infrastructure.Tests
 tests/Scada.App.Tests
 ```
 
-`Scada.App.Tests` contains deterministic ViewModel/navigation/lifecycle and History Settings tests. There is no UI automation test in this milestone.
+`Scada.App.Tests` contains deterministic ViewModel/navigation/lifecycle, WPF resource/render, History Settings and Runtime Health workspace tests. Full UI automation remains out of scope.
 
 ## Runtime data flow
 
@@ -176,6 +213,18 @@ TagEngine
 TagCache
       ↓
 WPF subscriptions / Online Tag Monitor
+```
+
+Runtime health is a separate read-only observation flow from existing snapshots:
+
+```text
+DeviceManager / Historian / Influx diagnostics / MQTT / Alarm / TagCache counts / Process
+                                      ↓
+                         RuntimeHealthService (one sampler)
+                                      ↓
+                         immutable RuntimeHealthSnapshot
+                                      ↓
+                      App projection → WPF health surfaces
 ```
 
 ## Milestone 5 historian flow

@@ -14,6 +14,8 @@
         <DataTemplate DataType="{x:Type vm:MqttSettingsViewModel}"><views:MqttSettingsView /></DataTemplate>
         <DataTemplate DataType="{x:Type vm:AlarmMonitoringViewModel}"><views:AlarmMonitoringView /></DataTemplate>
         <DataTemplate DataType="{x:Type vm:AlarmEngineeringViewModel}"><views:AlarmEngineeringView /></DataTemplate>
+        <DataTemplate DataType="{x:Type vm:SystemServicesViewModel}"><views:SystemServicesView /></DataTemplate>
+        <DataTemplate DataType="{x:Type vm:EngineeringDiagnosticsViewModel}"><views:EngineeringDiagnosticsView /></DataTemplate>
         <HierarchicalDataTemplate x:Key="NavigationItemTemplate"
                                   ItemsSource="{Binding Children}"
                                   ItemContainerStyle="{StaticResource NavigationTreeViewItemStyle}">
@@ -63,10 +65,31 @@
             </Border>
         </Grid>
         <Border Grid.Row="2" Background="{StaticResource StatusBrush}" Padding="12,0">
-            <TextBlock Text="{Binding RuntimeStatusText}"
-                       VerticalAlignment="Center"
-                       Foreground="{StaticResource HeaderMutedBrush}"
-                       FontSize="11" />
+            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                <TextBlock Text="{Binding RuntimeStatusText}"
+                           Foreground="{StaticResource HeaderMutedBrush}"
+                           FontSize="11" />
+                <TextBlock Text="  •  " Foreground="{StaticResource HeaderMutedBrush}" FontSize="11" />
+                <TextBlock Text="{Binding PlcHealthIndicatorText}"
+                           AutomationProperties.Name="{Binding PlcHealthAutomationName}"
+                           Foreground="{StaticResource HeaderMutedBrush}"
+                           FontSize="11" />
+                <TextBlock Text="  •  " Foreground="{StaticResource HeaderMutedBrush}" FontSize="11" />
+                <TextBlock Text="{Binding HistoryHealthIndicatorText}"
+                           AutomationProperties.Name="{Binding HistoryHealthAutomationName}"
+                           Foreground="{StaticResource HeaderMutedBrush}"
+                           FontSize="11" />
+                <TextBlock Text="  •  " Foreground="{StaticResource HeaderMutedBrush}" FontSize="11" />
+                <TextBlock Text="{Binding MqttHealthIndicatorText}"
+                           AutomationProperties.Name="{Binding MqttHealthAutomationName}"
+                           Foreground="{StaticResource HeaderMutedBrush}"
+                           FontSize="11" />
+                <TextBlock Text="  •  " Foreground="{StaticResource HeaderMutedBrush}" FontSize="11" />
+                <TextBlock Text="{Binding RuntimeHealthIndicatorText}"
+                           AutomationProperties.Name="{Binding RuntimeHealthAutomationName}"
+                           Foreground="{StaticResource HeaderMutedBrush}"
+                           FontSize="11" />
+            </StackPanel>
         </Border>
     </Grid>
 </Window>

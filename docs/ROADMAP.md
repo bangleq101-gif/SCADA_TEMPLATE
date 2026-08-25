@@ -100,26 +100,39 @@ Status: COMPLETE — merged and verified on canonical `main` at `25ec87e91eba0be
 - Verify M11 with controllable-time state/ACK/quality/recovery/path/lifecycle tests and a bounded Alarm-specific scale sanity. This does not replace or redefine the authoritative M10 benchmark at `402ee9d46f41489fee8912bbed57dc1388550658`.
 - Keep communication alarms, PLC acknowledgement writes, MQTT Write, authentication/authorization, Trend and notification/escalation systems deferred.
 
-## Remaining Architecture V1 Coverage After M11
+## Milestone 12 — Read-only Operational Health and Engineering Diagnostics
 
-The complete requirement-by-requirement matrix is maintained in `docs/V1_COVERAGE.md`. It records 50 audited areas: 26 `COMPLETE`, 13 `PARTIAL`, 5 `NOT STARTED` and 6 `EXPLICITLY DEFERRED`.
+Status: IMPLEMENTED on `feature/milestone-12-operational-health`; PR #19 is open and pending independent re-review and merge.
+
+- Add one Runtime-owned health sampler/coordinator at a production 1-second cadence with one immutable snapshot publication per tick.
+- Aggregate existing DeviceManager, Historian, optional Influx store, MQTT, Alarm, TagCache and process telemetry snapshots without changing PLC polling or provider contracts.
+- Keep TagCache as the sole live-value source; production TagCache hot-path metrics remain disabled unless explicitly enabled by an existing diagnostic seam.
+- Sanitize health/error data before the App boundary and expose unavailable metrics explicitly rather than fabricating zeroes.
+- Add read-only Operation/Shell health summaries, compact PLC/History/MQTT/Runtime status indicators, provider-aware read-only Local Buffer status in `engineering.system` and virtualized `engineering.diagnostics` device diagnostics with active-only lifecycle/coalescing.
+- Prove the health aggregation boundary with 50 synthetic runtime device snapshots and separately prove the sampler boundary with 50 configured device identities, 10,000 TagCache values and 100 raw updates without raw-update-driven publication.
+- Verify one sampler/timer, bounded Dispatcher delivery, WPF resources, Runtime boundaries, copy-folder portability and no command/PLC/MQTT writes.
+- M12 does not include thresholds, notifications, event persistence, device editing, reconnect/command actions, runtime configuration mutation or any M13 scope.
+
+## Remaining Architecture V1 Coverage After M12 implementation (pending merge)
+
+The complete requirement-by-requirement matrix is maintained in `docs/V1_COVERAGE.md`. It records 50 audited areas: 29 `COMPLETE`, 12 `PARTIAL`, 3 `NOT STARTED` and 6 `EXPLICITLY DEFERRED`.
 
 The remaining work is intentionally described as coverage, not as an authorization to start a new milestone:
 
-1. `PARTIAL` — Scale/Offset domain and runtime transformation semantics; active-view subscription scope and bounded WPF Dispatcher delivery; Address Browser/device-selection extension; module/line/machine organization; broader HMI catalog; external asset packaging; route coverage; unified System Services; overview health; status bar; screen metadata; Simulator fault mode; and consistent RuntimeId logging context.
-2. `NOT STARTED` — Engineering Devices, Engineering System, Engineering Diagnostics, deployment tooling and offline package/installation strategy.
+1. `PARTIAL` — Scale/Offset domain and runtime transformation semantics; active-view subscription scope beyond the M12 health/workspace boundary; Address Browser/device-selection extension; module/line/machine organization; broader HMI catalog; external asset packaging; Engineering Devices/Trend route coverage; screen metadata; Simulator fault mode; and consistent RuntimeId logging context.
+2. `NOT STARTED` — Engineering Devices, deployment tooling and offline package/installation strategy.
 3. `EXPLICITLY DEFERRED` — production Siemens/Mitsubishi/Modbus/OPC UA drivers, MQTT Write/command subscriptions, Trend, Recipes/Calibration, Reports, and distributed/Web/cloud/HA/scripting/plugin systems.
 
 ### Candidate ordering for a future milestone (proposal only)
 
 If a future planning gate is opened, a dependency-aware review could consider:
 
-1. operational engineering and health surfaces (Devices, System Services, Diagnostics, Overview/Status Bar);
+1. remaining operational engineering coverage (Engineering Devices, screen metadata and Overview/Status Bar extensions);
 2. bounded active-view delivery, Scale/Offset semantics, screen metadata and module/line/machine organization;
 3. deployment/offline portability tooling;
 4. separately approved monitoring or HMI extensions such as Trend or additional asset support.
 
-This is sequencing guidance only. It does not select or authorize M12 implementation scope.
+This is sequencing guidance only. It does not select or authorize M13 implementation scope.
 
 ## Explicitly deferred
 

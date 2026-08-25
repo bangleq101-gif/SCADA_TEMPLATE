@@ -19,6 +19,7 @@ using Scada.Runtime.Historian;
 using Scada.Runtime.Polling;
 using Scada.Runtime.Tags;
 using Scada.Runtime.Mqtt;
+using Scada.Runtime.Health;
 using Scada.Core.Mqtt;
 using Scada.Core.Alarms;
 using Scada.Infrastructure.Alarms;
@@ -105,6 +106,11 @@ public partial class App : Application
             builder.Services.AddSingleton<PollingRuntimeService>();
             builder.Services.AddSingleton<IHostedService>(services =>
                 services.GetRequiredService<PollingRuntimeService>());
+            builder.Services.AddSingleton<IRuntimeHealthDispatcher, WpfRuntimeHealthDispatcher>();
+            builder.Services.AddSingleton<RuntimeHealthService>();
+            builder.Services.AddSingleton<IHostedService>(services =>
+                services.GetRequiredService<RuntimeHealthService>());
+            builder.Services.AddSingleton<RuntimeHealthPresentationService>();
             builder.Services.AddSingleton<ProjectEditSession>(_ => new ProjectEditSession(
                 startupOptions,
                 projectPath,
@@ -124,6 +130,8 @@ public partial class App : Application
             builder.Services.AddSingleton<MqttSettingsViewModel>();
             builder.Services.AddSingleton<AlarmMonitoringViewModel>();
             builder.Services.AddSingleton<AlarmEngineeringViewModel>();
+            builder.Services.AddSingleton<SystemServicesViewModel>();
+            builder.Services.AddSingleton<EngineeringDiagnosticsViewModel>();
             builder.Services.AddSingleton<EngineeringViewModel>();
             builder.Services.AddSingleton<NavigationService>();
             builder.Services.AddSingleton<ShellViewModel>();
