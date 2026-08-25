@@ -70,8 +70,23 @@
                            Foreground="{StaticResource HeaderMutedBrush}"
                            FontSize="11" />
                 <TextBlock Text="  •  " Foreground="{StaticResource HeaderMutedBrush}" FontSize="11" />
-                <TextBlock Text="{Binding HealthStatusText}"
-                           AutomationProperties.Name="Runtime health status"
+                <TextBlock Text="{Binding PlcHealthIndicatorText}"
+                           AutomationProperties.Name="{Binding PlcHealthAutomationName}"
+                           Foreground="{StaticResource HeaderMutedBrush}"
+                           FontSize="11" />
+                <TextBlock Text="  •  " Foreground="{StaticResource HeaderMutedBrush}" FontSize="11" />
+                <TextBlock Text="{Binding HistoryHealthIndicatorText}"
+                           AutomationProperties.Name="{Binding HistoryHealthAutomationName}"
+                           Foreground="{StaticResource HeaderMutedBrush}"
+                           FontSize="11" />
+                <TextBlock Text="  •  " Foreground="{StaticResource HeaderMutedBrush}" FontSize="11" />
+                <TextBlock Text="{Binding MqttHealthIndicatorText}"
+                           AutomationProperties.Name="{Binding MqttHealthAutomationName}"
+                           Foreground="{StaticResource HeaderMutedBrush}"
+                           FontSize="11" />
+                <TextBlock Text="  •  " Foreground="{StaticResource HeaderMutedBrush}" FontSize="11" />
+                <TextBlock Text="{Binding RuntimeHealthIndicatorText}"
+                           AutomationProperties.Name="{Binding RuntimeHealthAutomationName}"
                            Foreground="{StaticResource HeaderMutedBrush}"
                            FontSize="11" />
             </StackPanel>

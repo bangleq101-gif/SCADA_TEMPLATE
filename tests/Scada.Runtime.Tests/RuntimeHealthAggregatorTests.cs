@@ -71,6 +71,103 @@ public sealed class RuntimeHealthAggregatorTests
     }
 
     [Fact]
+    public void UnknownPlcAndHealthyHistorianRemainUnknownWithDisabledOptionalServices()
+    {
+        var options = new RuntimeOptions();
+        var historian = Historian(HistorianRuntimeState.Healthy);
+
+        var snapshot = Aggregate(options, new Dictionary<string, DeviceRuntimeSnapshot>(), historian: historian);
+
+        Assert.Equal(RuntimeHealthState.Unknown, snapshot.Plc.State);
+        Assert.Equal(RuntimeHealthState.Healthy, snapshot.Database.State);
+        Assert.Equal(RuntimeHealthState.Unknown, snapshot.OverallState);
+    }
+
+    [Fact]
+    public void HistorianDegradedAndInfluxDiagnosticsOnlineRemainAsymmetric()
+    {
+        var options = new RuntimeOptions
+        {
+            Devices = [new DeviceDefinition
+            {
+                Id = "PLC-1",
+                Enabled = true
+            }],
+            Historian = { StorageProvider = HistoryStorageProvider.InfluxDb2 }
+        };
+        var device = new DeviceRuntimeSnapshot(
+            "PLC-1", DeviceConnectionState.Connected, null, DateTimeOffset.UtcNow, null,
+            1, 0, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow, TimeSpan.FromMilliseconds(1), 0);
+        var diagnostics = new HistoryStoreDiagnosticsSnapshot(
+            HistoryStoreState.Online, 0, 0, 0, 0, 0, 0, 0, 0, DateTimeOffset.UtcNow, null, null);
+
+        var snapshot = Aggregate(
+            options,
+            new Dictionary<string, DeviceRuntimeSnapshot> { [device.DeviceId] = device },
+            historian: Historian(HistorianRuntimeState.Degraded),
+            databaseDiagnostics: diagnostics);
+
+        Assert.Equal(HistorianRuntimeState.Degraded, snapshot.Historian.State);
+        Assert.Equal(RuntimeHealthState.Healthy, snapshot.Database.State);
+        Assert.Equal(RuntimeHealthState.Degraded, snapshot.OverallState);
+    }
+
+    [Fact]
+    public void DatabaseFaultedOverridesHealthyHistorian()
+    {
+        var options = Options(new DeviceDefinition { Id = "PLC-1", Enabled = true });
+        var device = new DeviceRuntimeSnapshot(
+            "PLC-1", DeviceConnectionState.Connected, null, DateTimeOffset.UtcNow, null,
+            1, 0, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow, TimeSpan.FromMilliseconds(1), 0);
+        var diagnostics = new HistoryStoreDiagnosticsSnapshot(
+            HistoryStoreState.Faulted, 0, 0, 0, 0, 0, 0, 0, 1, DateTimeOffset.UtcNow, "STORE", "offline");
+
+        var snapshot = Aggregate(
+            options,
+            new Dictionary<string, DeviceRuntimeSnapshot> { [device.DeviceId] = device },
+            historian: Historian(HistorianRuntimeState.Healthy),
+            databaseDiagnostics: diagnostics);
+
+        Assert.Equal(HistorianRuntimeState.Healthy, snapshot.Historian.State);
+        Assert.Equal(RuntimeHealthState.Faulted, snapshot.Database.State);
+        Assert.Equal(RuntimeHealthState.Faulted, snapshot.OverallState);
+    }
+
+    [Fact]
+    public void SQLiteWithoutDiagnosticsUsesHistorianStateAndDoesNotClaimDiagnostics()
+    {
+        var snapshot = Aggregate(
+            new RuntimeOptions(),
+            new Dictionary<string, DeviceRuntimeSnapshot>(),
+            historian: Historian(HistorianRuntimeState.Healthy));
+
+        Assert.Equal(HistoryStorageProvider.SQLite, snapshot.Database.Provider);
+        Assert.False(snapshot.Database.DiagnosticsAvailable);
+        Assert.Null(snapshot.Database.Diagnostics);
+        Assert.Equal(RuntimeHealthState.Healthy, snapshot.Database.State);
+    }
+
+    [Theory]
+    [InlineData(HistorianRuntimeState.Disabled, RuntimeHealthState.Disabled)]
+    [InlineData(HistorianRuntimeState.Starting, RuntimeHealthState.Starting)]
+    [InlineData(HistorianRuntimeState.Healthy, RuntimeHealthState.Healthy)]
+    [InlineData(HistorianRuntimeState.Degraded, RuntimeHealthState.Degraded)]
+    [InlineData(HistorianRuntimeState.Faulted, RuntimeHealthState.Faulted)]
+    [InlineData(HistorianRuntimeState.Stopping, RuntimeHealthState.Stopping)]
+    public void HistorianStateMappingPreservesOptionalStateSemantics(
+        HistorianRuntimeState state,
+        RuntimeHealthState expected)
+    {
+        var snapshot = Aggregate(new RuntimeOptions(), new Dictionary<string, DeviceRuntimeSnapshot>(), historian: Historian(state));
+
+        Assert.Equal(expected, snapshot.Database.State);
+        var expectedOverall = expected is RuntimeHealthState.Healthy or RuntimeHealthState.Disabled
+            ? RuntimeHealthState.Unknown
+            : expected;
+        Assert.Equal(expectedOverall, snapshot.OverallState);
+    }
+
+    [Fact]
     public void DisabledTagCacheMetricsAreExplicitlyUnavailable()
     {
         var options = new RuntimeOptions();
@@ -146,6 +243,42 @@ public sealed class RuntimeHealthAggregatorTests
     }
 
     [Fact]
+    public void SanitizerCoversQuotedSecretsUrlsNewlinesAndWindowsPathsDeterministically()
+    {
+        var messages = new[]
+        {
+            "Password=secret",
+            "Password=\"secret phrase\"",
+            "Password='secret phrase'",
+            "Token=abc123",
+            "ApiKey=\"abc def\"",
+            "mqtt://user:password@broker",
+            "https://host/path?token=abc123",
+            "Server=x;Username=user;Password=\"secret phrase\";",
+            "first\r\nsecond",
+            "C:\\Secrets\\file.db",
+            "C:\\Program Files\\SCADA\\secret.db"
+        };
+
+        foreach (var message in messages)
+        {
+            var sanitized = RuntimeHealthSanitizer.Sanitize(message);
+
+            Assert.NotNull(sanitized);
+            Assert.True(sanitized!.Length <= 256);
+            Assert.DoesNotContain("secret", sanitized, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain("abc123", sanitized, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain("C:\\", sanitized, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain('\r', sanitized);
+            Assert.DoesNotContain('\n', sanitized);
+            if (message.Contains("mqtt://", StringComparison.OrdinalIgnoreCase))
+            {
+                Assert.DoesNotContain("user:password@", sanitized, StringComparison.OrdinalIgnoreCase);
+            }
+        }
+    }
+
+    [Fact]
     public void AggregatedHistorianAndStoreDiagnosticsAreSanitizedBeforePublication()
     {
         var options = new RuntimeOptions();
@@ -181,11 +314,14 @@ public sealed class RuntimeHealthAggregatorTests
         RuntimeOptions options,
         IReadOnlyDictionary<string, DeviceRuntimeSnapshot> devices,
         TagCacheRuntimeSnapshot? cache = null,
-        HistoryStoreDiagnosticsSnapshot? databaseDiagnostics = null)
+        HistoryStoreDiagnosticsSnapshot? databaseDiagnostics = null,
+        HistorianRuntimeSnapshot? historian = null,
+        MqttRuntimeSnapshot? mqtt = null,
+        AlarmRuntimeSnapshot? alarm = null)
     {
-        var historian = new HistorianRuntimeSnapshot(HistorianRuntimeState.Disabled, 0, 0, 0, 0, 0, 0, 0, 0, null, null, null);
-        var mqtt = new MqttRuntimeSnapshot(MqttRuntimeState.Disabled, 0, 0, 0, 0, 0, 0, 0, null, null, null, null);
-        var alarm = AlarmRuntimeSnapshot.Disabled;
+        historian ??= Historian(HistorianRuntimeState.Disabled);
+        mqtt ??= new MqttRuntimeSnapshot(MqttRuntimeState.Disabled, 0, 0, 0, 0, 0, 0, 0, null, null, null, null);
+        alarm ??= AlarmRuntimeSnapshot.Disabled;
         return new RuntimeHealthAggregator(options).Aggregate(
             DateTimeOffset.UtcNow,
             TimeSpan.FromSeconds(5),
@@ -197,6 +333,9 @@ public sealed class RuntimeHealthAggregatorTests
             databaseDiagnostics,
             new ProcessTelemetrySnapshot(12.5, 1_024, true));
     }
+
+    private static HistorianRuntimeSnapshot Historian(HistorianRuntimeState state) =>
+        new(state, 100, 0, 0, 0, 0, 0, 0, 0, DateTimeOffset.UtcNow, null, null);
 
     private static RuntimeOptions Options(params DeviceDefinition[] devices) => new() { Devices = [.. devices] };
 }

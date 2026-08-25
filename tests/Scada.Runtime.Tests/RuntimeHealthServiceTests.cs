@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Logging.Abstractions;
 using Scada.Core.Configuration;
+using Scada.Core.Devices;
 using Scada.Core.Drivers;
 using Scada.Core.History;
 using Scada.Core.Mqtt;
@@ -79,6 +80,140 @@ public sealed class RuntimeHealthServiceTests
         Assert.Equal(20, second.Process.WorkingSetBytes);
     }
 
+    [Fact]
+    public async Task PeriodicSamplerPublishesOnlyAtBoundedCadence()
+    {
+        var clock = new ManualTimeProvider();
+        using var fixture = HealthFixture.Create(clock);
+        var publications = 0;
+        using var subscription = fixture.Service.Subscribe(_ => publications++);
+
+        await fixture.Service.StartAsync(CancellationToken.None);
+        Assert.Equal(0, fixture.Service.MaterializationCount);
+
+        clock.Advance(TimeSpan.FromMilliseconds(999));
+        await DrainAsync();
+        Assert.Equal(0, fixture.Service.MaterializationCount);
+        Assert.Equal(1, publications);
+
+        fixture.Cache.Upsert(new TagUpdate("T1", 1d, TagQuality.Good, clock.GetUtcNow()));
+        await DrainAsync();
+        Assert.Equal(0, fixture.Service.MaterializationCount);
+
+        clock.Advance(TimeSpan.FromMilliseconds(1));
+        await DrainAsync();
+        Assert.Equal(1, fixture.Service.MaterializationCount);
+        Assert.Equal(2, publications);
+
+        clock.Advance(TimeSpan.FromSeconds(5));
+        await DrainAsync();
+        Assert.InRange(fixture.Service.MaterializationCount, 2, 6);
+
+        await fixture.Service.StopAsync(CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task UptimeUsesMonotonicTimeWhenUtcMoves()
+    {
+        var clock = new ManualTimeProvider();
+        using var fixture = HealthFixture.Create(clock);
+
+        await fixture.Service.StartAsync(CancellationToken.None);
+        clock.Advance(TimeSpan.FromSeconds(10));
+        var beforeUtcJump = fixture.Service.SampleOnceForTests();
+
+        clock.SetUtcNow(beforeUtcJump.CapturedAtUtc.AddDays(-2));
+        var afterBackwardJump = fixture.Service.SampleOnceForTests();
+        clock.SetUtcNow(beforeUtcJump.CapturedAtUtc.AddDays(4));
+        var afterForwardJump = fixture.Service.SampleOnceForTests();
+
+        Assert.Equal(TimeSpan.FromSeconds(10), beforeUtcJump.Uptime);
+        Assert.Equal(TimeSpan.FromSeconds(10), afterBackwardJump.Uptime);
+        Assert.Equal(TimeSpan.FromSeconds(10), afterForwardJump.Uptime);
+    }
+
+    [Fact]
+    public async Task LargeConfiguredTopologyUsesOneHealthCoordinatorWithoutTagSubscriptions()
+    {
+        var clock = new ManualTimeProvider();
+        var options = new RuntimeOptions
+        {
+            Devices = Enumerable.Range(1, 50)
+                .Select(index => new DeviceDefinition { Id = $"PLC-{index:00}", Enabled = true })
+                .ToList(),
+            Tags = Enumerable.Range(1, 10_000)
+                .Select(index => new TagDefinition
+                {
+                    Id = $"T-{index:00000}",
+                    Name = $"Tag {index}",
+                    DeviceId = $"PLC-{((index - 1) % 50) + 1:00}",
+                    Address = $"DB1.DBD{index}"
+                })
+                .ToList()
+        };
+        using var fixture = HealthFixture.Create(clock, options: options);
+
+        await fixture.Service.StartAsync(CancellationToken.None);
+        foreach (var tag in options.Tags)
+        {
+            fixture.Cache.Upsert(new TagUpdate(tag.Id, 1d, TagQuality.Good, clock.GetUtcNow()));
+        }
+
+        Assert.Equal(0, fixture.Service.MaterializationCount);
+        Assert.Equal(0, fixture.Cache.Snapshot.SubscriptionCount);
+
+        clock.Advance(TimeSpan.FromSeconds(1));
+        await DrainAsync();
+        var snapshot = fixture.Service.Snapshot;
+
+        Assert.Equal(1, fixture.Service.SamplerTaskCount);
+        Assert.Equal(1, fixture.Service.TimerCount);
+        Assert.Equal(10_000, snapshot.TagCache.ValueCount);
+        Assert.Equal(50, snapshot.Plc.EnabledDeviceCount);
+        Assert.InRange(snapshot.Devices.Count, 0, 50);
+        Assert.Equal(0, fixture.Cache.Snapshot.SubscriptionCount);
+        Assert.InRange(fixture.Service.MaterializationCount, 1, 1);
+
+        await fixture.Service.StopAsync(CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task CancelledShutdownKeepsSamplerOwnershipUntilInFlightSampleCompletes()
+    {
+        var clock = new ManualTimeProvider();
+        var process = new BlockingProcessSource();
+        using var fixture = HealthFixture.Create(clock, process);
+
+        await fixture.Service.StartAsync(CancellationToken.None);
+        var advance = Task.Run(() => clock.Advance(TimeSpan.FromSeconds(1)));
+        await process.Entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        using var cancelled = new CancellationTokenSource();
+        cancelled.Cancel();
+        await fixture.Service.StopAsync(cancelled.Token);
+
+        Assert.Equal(1, fixture.Service.SamplerTaskCount);
+        Assert.Equal(1, fixture.Service.TimerCount);
+
+        process.Release.Set();
+        await advance;
+        for (var index = 0; index < 20 && (fixture.Service.SamplerTaskCount != 0 || fixture.Service.TimerCount != 0); index++)
+        {
+            await Task.Yield();
+        }
+
+        Assert.Equal(0, fixture.Service.SamplerTaskCount);
+        Assert.Equal(0, fixture.Service.TimerCount);
+    }
+
+    private static async Task DrainAsync()
+    {
+        for (var index = 0; index < 8; index++)
+        {
+            await Task.Yield();
+        }
+    }
+
     private sealed class HealthFixture : IDisposable
     {
         private HealthFixture(
@@ -104,10 +239,13 @@ public sealed class RuntimeHealthServiceTests
         public AlarmRuntimeService Alarm { get; }
         public DeviceManager DeviceManager { get; }
 
-        public static HealthFixture Create(TimeProvider? clock = null, IProcessTelemetrySource? process = null)
+        public static HealthFixture Create(
+            TimeProvider? clock = null,
+            IProcessTelemetrySource? process = null,
+            RuntimeOptions? options = null)
         {
             clock ??= TimeProvider.System;
-            var options = new RuntimeOptions
+            options ??= new RuntimeOptions
             {
                 Tags = [new TagDefinition { Id = "T1", Name = "T1", DeviceId = "D1", Address = "T1" }]
             };
@@ -164,6 +302,19 @@ public sealed class RuntimeHealthServiceTests
     {
         private int _index;
         public ProcessTelemetryReading Read() => readings[Math.Min(_index++, readings.Length - 1)];
+    }
+
+    private sealed class BlockingProcessSource : IProcessTelemetrySource
+    {
+        public TaskCompletionSource Entered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public ManualResetEventSlim Release { get; } = new(false);
+
+        public ProcessTelemetryReading Read()
+        {
+            Entered.TrySetResult();
+            Release.Wait();
+            return new ProcessTelemetryReading(TimeSpan.FromSeconds(1), 1_024);
+        }
     }
 
     private sealed class NoOpHistoryStore : IHistoryStore

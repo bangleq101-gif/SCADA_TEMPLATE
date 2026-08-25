@@ -108,13 +108,13 @@ Status: IMPLEMENTED on `feature/milestone-12-operational-health`; pending indepe
 - Aggregate existing DeviceManager, Historian, optional Influx store, MQTT, Alarm, TagCache and process telemetry snapshots without changing PLC polling or provider contracts.
 - Keep TagCache as the sole live-value source; production TagCache hot-path metrics remain disabled unless explicitly enabled by an existing diagnostic seam.
 - Sanitize health/error data before the App boundary and expose unavailable metrics explicitly rather than fabricating zeroes.
-- Add read-only Operation/Shell health summaries, `engineering.system` service health and virtualized `engineering.diagnostics` device diagnostics with active-only lifecycle/coalescing.
+- Add read-only Operation/Shell health summaries, compact PLC/History/MQTT/Runtime status indicators, `engineering.system` service health and virtualized `engineering.diagnostics` device diagnostics with active-only lifecycle/coalescing.
 - Verify one sampler/timer, bounded Dispatcher delivery, WPF resources, Runtime boundaries, copy-folder portability and no command/PLC/MQTT writes.
 - M12 does not include thresholds, notifications, event persistence, device editing, reconnect/command actions, runtime configuration mutation or any M13 scope.
 
 ## Remaining Architecture V1 Coverage After M12 implementation (pending merge)
 
-The complete requirement-by-requirement matrix is maintained in `docs/V1_COVERAGE.md`. It records 50 audited areas: 31 `COMPLETE`, 10 `PARTIAL`, 3 `NOT STARTED` and 6 `EXPLICITLY DEFERRED`.
+The complete requirement-by-requirement matrix is maintained in `docs/V1_COVERAGE.md`. It records 50 audited areas: 29 `COMPLETE`, 12 `PARTIAL`, 3 `NOT STARTED` and 6 `EXPLICITLY DEFERRED`.
 
 The remaining work is intentionally described as coverage, not as an authorization to start a new milestone:
 

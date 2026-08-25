@@ -108,7 +108,23 @@ public sealed class ShellViewModel : INotifyPropertyChanged, IDisposable
     public string RuntimeStatusText => $"{_options.RuntimeId}  •  {CurrentWorkspaceTitle}";
     public string HealthStatusText => _healthSnapshot is null
         ? "PLC: Unknown  •  History: Unknown  •  MQTT: Unknown  •  Runtime: Starting"
-        : $"PLC: {_healthSnapshot.Plc.State}  •  History: {_healthSnapshot.Database.State}  •  MQTT: {_healthSnapshot.Mqtt.State}  •  Runtime: {_healthSnapshot.OverallState}";
+        : $"PLC: {PlcHealthState}  •  History: {HistoryHealthState}  •  MQTT: {MqttHealthState}  •  Runtime: {RuntimeHealthState}";
+    public RuntimeHealthState PlcHealthState => _healthSnapshot?.Plc.State ?? RuntimeHealthState.Unknown;
+    public RuntimeHealthState HistoryHealthState => _healthSnapshot is null
+        ? RuntimeHealthState.Unknown
+        : MapHistorian(_healthSnapshot.Historian.State);
+    public RuntimeHealthState MqttHealthState => _healthSnapshot is null
+        ? RuntimeHealthState.Unknown
+        : MapMqtt(_healthSnapshot.Mqtt.State);
+    public RuntimeHealthState RuntimeHealthState => _healthSnapshot?.OverallState ?? Scada.Runtime.Health.RuntimeHealthState.Starting;
+    public string PlcHealthIndicatorText => FormatIndicator("PLC", PlcHealthState);
+    public string HistoryHealthIndicatorText => FormatIndicator("History", HistoryHealthState);
+    public string MqttHealthIndicatorText => FormatIndicator("MQTT", MqttHealthState);
+    public string RuntimeHealthIndicatorText => FormatIndicator("Runtime", RuntimeHealthState);
+    public string PlcHealthAutomationName => FormatAutomationName("PLC", PlcHealthState);
+    public string HistoryHealthAutomationName => FormatAutomationName("History", HistoryHealthState);
+    public string MqttHealthAutomationName => FormatAutomationName("MQTT", MqttHealthState);
+    public string RuntimeHealthAutomationName => FormatAutomationName("Runtime", RuntimeHealthState);
 
     private void OnNavigationPropertyChanged(object? sender, PropertyChangedEventArgs args)
     {
@@ -229,5 +245,56 @@ public sealed class ShellViewModel : INotifyPropertyChanged, IDisposable
         }
 
         OnPropertyChanged(nameof(HealthStatusText));
+        OnPropertyChanged(nameof(PlcHealthState));
+        OnPropertyChanged(nameof(HistoryHealthState));
+        OnPropertyChanged(nameof(MqttHealthState));
+        OnPropertyChanged(nameof(RuntimeHealthState));
+        OnPropertyChanged(nameof(PlcHealthIndicatorText));
+        OnPropertyChanged(nameof(HistoryHealthIndicatorText));
+        OnPropertyChanged(nameof(MqttHealthIndicatorText));
+        OnPropertyChanged(nameof(RuntimeHealthIndicatorText));
+        OnPropertyChanged(nameof(PlcHealthAutomationName));
+        OnPropertyChanged(nameof(HistoryHealthAutomationName));
+        OnPropertyChanged(nameof(MqttHealthAutomationName));
+        OnPropertyChanged(nameof(RuntimeHealthAutomationName));
     }
+
+    private static string FormatIndicator(string name, RuntimeHealthState state) =>
+        $"{Glyph(state)} {name}: {state}";
+
+    private static string FormatAutomationName(string name, RuntimeHealthState state) =>
+        $"{name} health: {state}";
+
+    private static string Glyph(RuntimeHealthState state) => state switch
+    {
+        RuntimeHealthState.Healthy => "●",
+        RuntimeHealthState.Degraded => "▲",
+        RuntimeHealthState.Faulted => "■",
+        RuntimeHealthState.Starting => "◌",
+        RuntimeHealthState.Stopping => "■",
+        RuntimeHealthState.Disabled => "—",
+        _ => "?"
+    };
+
+    private static RuntimeHealthState MapHistorian(Scada.Runtime.Historian.HistorianRuntimeState state) => state switch
+    {
+        Scada.Runtime.Historian.HistorianRuntimeState.Disabled => RuntimeHealthState.Disabled,
+        Scada.Runtime.Historian.HistorianRuntimeState.Starting => RuntimeHealthState.Starting,
+        Scada.Runtime.Historian.HistorianRuntimeState.Healthy => RuntimeHealthState.Healthy,
+        Scada.Runtime.Historian.HistorianRuntimeState.Degraded => RuntimeHealthState.Degraded,
+        Scada.Runtime.Historian.HistorianRuntimeState.Faulted => RuntimeHealthState.Faulted,
+        Scada.Runtime.Historian.HistorianRuntimeState.Stopping => RuntimeHealthState.Stopping,
+        _ => RuntimeHealthState.Unknown
+    };
+
+    private static RuntimeHealthState MapMqtt(Scada.Core.Mqtt.MqttRuntimeState state) => state switch
+    {
+        Scada.Core.Mqtt.MqttRuntimeState.Disabled => RuntimeHealthState.Disabled,
+        Scada.Core.Mqtt.MqttRuntimeState.Starting or Scada.Core.Mqtt.MqttRuntimeState.Connecting => RuntimeHealthState.Starting,
+        Scada.Core.Mqtt.MqttRuntimeState.Online => RuntimeHealthState.Healthy,
+        Scada.Core.Mqtt.MqttRuntimeState.Offline or Scada.Core.Mqtt.MqttRuntimeState.ConfigurationRequired => RuntimeHealthState.Degraded,
+        Scada.Core.Mqtt.MqttRuntimeState.Faulted => RuntimeHealthState.Faulted,
+        Scada.Core.Mqtt.MqttRuntimeState.Stopping => RuntimeHealthState.Stopping,
+        _ => RuntimeHealthState.Unknown
+    };
 }

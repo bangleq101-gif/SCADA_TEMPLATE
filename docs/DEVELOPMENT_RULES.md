@@ -96,7 +96,7 @@
 - Publish at most one immutable `RuntimeHealthSnapshot` per sampler tick. Raw PLC scans, TagCache callbacks and individual service callbacks must not publish health directly.
 - Read health from existing `DeviceManager.DeviceSnapshots`, Historian/MQTT/Alarm snapshots, optional Infrastructure diagnostics, TagCache counts and process telemetry. Do not add a second runtime data path or change provider/polling contracts for health.
 - Keep CPU, working set and monotonic uptime observational. The first CPU sample is unavailable; unavailable counters must remain unavailable rather than being fabricated as zero.
-- Health precedence is deterministic: `Stopping` > `Faulted` > `Degraded` > `Starting` > `Healthy` > `Unknown`. Missing enabled-device snapshots are not Healthy.
+- Health precedence is deterministic during normal operation: `Faulted` > `Degraded` > `Starting` > `Unknown` > `Healthy`. `Stopping` is a separate shutdown override. Missing enabled-device snapshots are not Healthy.
 - Sanitize credentials, tokens, connection strings, secret query parameters and inappropriate local paths before any Runtime health object crosses into App. Do not rely on WPF text truncation for redaction.
 - WPF health surfaces are read-only. They may consume TagCache-derived snapshots but must not read PLCs, write project/runtime configuration, reconnect services or issue PLC/MQTT commands.
 - Keep one shared App health presentation subscription. Active workspaces own at most one subscription, use generation guards and coalesce the latest snapshot through one Dispatcher item per active generation; deactivation/disposal leaves zero owned subscriptions.

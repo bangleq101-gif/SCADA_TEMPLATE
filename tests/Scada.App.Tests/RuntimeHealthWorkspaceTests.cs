@@ -93,6 +93,7 @@ public sealed class RuntimeHealthWorkspaceTests
         Assert.Contains(system.Services, card => card.Name == "PLC");
         Assert.Contains(system.Services, card => card.Name == "Historian");
         Assert.Contains(system.Services, card => card.Detail.Contains("Unavailable", StringComparison.OrdinalIgnoreCase));
+        Assert.Equal(RuntimeHealthState.Unknown, system.Services.Single(card => card.Name == "Process").State);
         Assert.All(system.Services, card => Assert.False(string.IsNullOrWhiteSpace(card.AutomationName)));
     }
 

@@ -125,40 +125,50 @@ public sealed class RuntimeHealthService : IHostedService, IAsyncDisposable
         PeriodicTimer? timer;
         lock (_sync)
         {
-            if (!_started)
+            samplerTask = _samplerTask;
+            lifetime = _lifetime;
+            timer = _timer;
+            if (!_started && samplerTask is null)
             {
                 return;
             }
 
-            _snapshot = Snapshot with
+            if (_started)
             {
-                OverallState = RuntimeHealthState.Stopping,
-                CapturedAtUtc = _timeProvider.GetUtcNow()
-            };
+                _snapshot = Snapshot with
+                {
+                    OverallState = RuntimeHealthState.Stopping,
+                    CapturedAtUtc = _timeProvider.GetUtcNow()
+                };
+            }
+
             _started = false;
-            samplerTask = _samplerTask;
-            lifetime = _lifetime;
-            timer = _timer;
-            _samplerTask = null;
-            _lifetime = null;
-            _timer = null;
         }
 
         lifetime?.Cancel();
         timer?.Dispose();
-        if (samplerTask is not null)
+        try
         {
-            try
+            if (samplerTask is not null)
             {
                 await samplerTask.WaitAsync(cancellationToken).ConfigureAwait(false);
             }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            _logger.LogWarning("Runtime health sampler did not stop within the host shutdown budget.");
+        }
+        finally
+        {
+            if (samplerTask is null || samplerTask.IsCompleted)
             {
-                _logger.LogWarning("Runtime health sampler did not stop within the host shutdown budget.");
+                ReleaseOwnedResources(samplerTask, lifetime, timer);
+            }
+            else
+            {
+                _ = ObserveSamplerCompletionAsync(samplerTask, lifetime, timer);
             }
         }
-
-        lifetime?.Dispose();
     }
 
     public async ValueTask DisposeAsync()
@@ -250,6 +260,56 @@ public sealed class RuntimeHealthService : IHostedService, IAsyncDisposable
             _alarm.Snapshot,
             _historyDiagnostics?.Snapshot,
             process);
+
+    private async Task ObserveSamplerCompletionAsync(
+        Task samplerTask,
+        CancellationTokenSource? lifetime,
+        PeriodicTimer? timer)
+    {
+        try
+        {
+            await samplerTask.ConfigureAwait(false);
+        }
+        catch (Exception exception)
+        {
+            _logger.LogWarning(exception, "Runtime health sampler completed after shutdown with an error.");
+        }
+        finally
+        {
+            ReleaseOwnedResources(samplerTask, lifetime, timer);
+        }
+    }
+
+    private void ReleaseOwnedResources(
+        Task? samplerTask,
+        CancellationTokenSource? lifetime,
+        PeriodicTimer? timer)
+    {
+        lock (_sync)
+        {
+            if (samplerTask is not null && !samplerTask.IsCompleted)
+            {
+                return;
+            }
+
+            if (ReferenceEquals(_samplerTask, samplerTask))
+            {
+                _samplerTask = null;
+            }
+
+            if (ReferenceEquals(_lifetime, lifetime))
+            {
+                _lifetime = null;
+            }
+
+            if (ReferenceEquals(_timer, timer))
+            {
+                _timer = null;
+            }
+        }
+
+        lifetime?.Dispose();
+    }
 
     private void Publish(RuntimeHealthSnapshot snapshot)
     {

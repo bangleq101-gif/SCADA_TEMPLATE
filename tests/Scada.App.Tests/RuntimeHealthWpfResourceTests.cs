@@ -1,4 +1,5 @@
 using System.Reflection;
+using System.IO;
 using System.Threading;
 using System.Windows;
 using System.Windows.Automation;
@@ -42,6 +43,60 @@ public sealed class RuntimeHealthWpfResourceTests
             Assert.Equal(VirtualizationMode.Recycling, VirtualizingPanel.GetVirtualizationMode(dataGrid));
             Assert.False(string.IsNullOrWhiteSpace(AutomationProperties.GetName(dataGrid)));
         });
+    }
+
+    [Fact]
+    public void MainWindowStatusBarExposesVisibleGlyphTextAndAccessibleHealthIndicators()
+    {
+        RunInSta(() =>
+        {
+            var root = new StackPanel
+            {
+                DataContext = new StatusBarProbe(),
+                Orientation = Orientation.Horizontal
+            };
+            AddIndicator(root, nameof(StatusBarProbe.PlcHealthIndicatorText), nameof(StatusBarProbe.PlcHealthAutomationName));
+            AddIndicator(root, nameof(StatusBarProbe.HistoryHealthIndicatorText), nameof(StatusBarProbe.HistoryHealthAutomationName));
+            AddIndicator(root, nameof(StatusBarProbe.MqttHealthIndicatorText), nameof(StatusBarProbe.MqttHealthAutomationName));
+            AddIndicator(root, nameof(StatusBarProbe.RuntimeHealthIndicatorText), nameof(StatusBarProbe.RuntimeHealthAutomationName));
+            Render(root);
+
+            var indicators = FindDescendants<TextBlock>(root).ToArray();
+            Assert.Equal(4, indicators.Length);
+            Assert.Contains(indicators, item => item.Text.Contains("●", StringComparison.Ordinal));
+            Assert.All(indicators, item =>
+            {
+                Assert.False(string.IsNullOrWhiteSpace(item.Text));
+                Assert.False(string.IsNullOrWhiteSpace(AutomationProperties.GetName(item)));
+            });
+
+            var mainWindowXaml = File.ReadAllText(
+                Path.Combine(FindRepositoryRoot(), "Scada.App", "MainWindow.xaml"));
+            Assert.Contains("PlcHealthIndicatorText", mainWindowXaml, StringComparison.Ordinal);
+            Assert.Contains("HistoryHealthIndicatorText", mainWindowXaml, StringComparison.Ordinal);
+            Assert.Contains("MqttHealthIndicatorText", mainWindowXaml, StringComparison.Ordinal);
+            Assert.Contains("RuntimeHealthIndicatorText", mainWindowXaml, StringComparison.Ordinal);
+            Assert.Contains("AutomationProperties.Name", mainWindowXaml, StringComparison.Ordinal);
+        });
+    }
+
+    private static void AddIndicator(StackPanel root, string textProperty, string automationProperty)
+    {
+        var text = new TextBlock();
+        text.SetBinding(TextBlock.TextProperty, new System.Windows.Data.Binding(textProperty));
+        text.SetBinding(AutomationProperties.NameProperty, new System.Windows.Data.Binding(automationProperty));
+        root.Children.Add(text);
+    }
+
+    private static string FindRepositoryRoot()
+    {
+        var directory = new DirectoryInfo(AppContext.BaseDirectory);
+        while (directory is not null && !File.Exists(Path.Combine(directory.FullName, "Scada.sln")))
+        {
+            directory = directory.Parent;
+        }
+
+        return directory?.FullName ?? throw new InvalidOperationException("Repository root not found.");
     }
 
     private static ResourceDictionary Load(string path) =>
@@ -118,5 +173,21 @@ public sealed class RuntimeHealthWpfResourceTests
         {
             throw new Xunit.Sdk.XunitException(failure.ToString());
         }
+    }
+
+    private sealed class StatusBarProbe
+    {
+        public string RuntimeStatusText => "Runtime01  •  Operation";
+        public string CurrentWorkspaceTitle => "Operation";
+        public string PlcHealthIndicatorText => "● PLC: Healthy";
+        public string HistoryHealthIndicatorText => "● History: Healthy";
+        public string MqttHealthIndicatorText => "— MQTT: Disabled";
+        public string RuntimeHealthIndicatorText => "● Runtime: Healthy";
+        public string PlcHealthAutomationName => "PLC health: Healthy";
+        public string HistoryHealthAutomationName => "History health: Healthy";
+        public string MqttHealthAutomationName => "MQTT health: Disabled";
+        public string RuntimeHealthAutomationName => "Runtime health: Healthy";
+        public IReadOnlyList<object> NavigationItems { get; } = [];
+        public object? CurrentViewModel => null;
     }
 }

@@ -199,13 +199,13 @@ M11 merged-main evidence on `25ec87e91eba0be268384c7b941c63cb8bb0f6d9`:
 
 - One singleton `RuntimeHealthService` owns one 1-second production sampler, one `PeriodicTimer`, one sampler task and one immutable snapshot publication per tick.
 - `RuntimeHealthAggregator` composes PLC/device snapshots, Historian, optional Influx diagnostics, MQTT, Alarm, TagCache counts and process telemetry without changing polling, provider or TagCache hot paths.
-- Runtime health states use deterministic precedence (`Stopping` > `Faulted` > `Degraded` > `Starting` > `Healthy` > `Unknown`); absent or missing enabled-device snapshots are not reported as Healthy.
+- Runtime health states use normal deterministic precedence (`Faulted` > `Degraded` > `Starting` > `Unknown` > `Healthy`); `Stopping` is a separate shutdown override, and absent or missing enabled-device snapshots are not reported as Healthy.
 - TagCache `ValueCount` and `SubscriptionCount` remain available while optional update/callback/exception counters are explicitly unavailable when production metrics are disabled.
 - Process CPU, working set and monotonic uptime are observational only; first CPU sample is unavailable and wall-clock changes do not affect uptime.
 - Runtime error messages and optional store diagnostics are sanitized before publication to App; no credentials, tokens, connection strings or inappropriate local paths are exposed.
-- App owns one shared health presentation source with generation-guarded, latest-state Dispatcher coalescing for active workspaces. Operation and the Shell status bar show read-only summaries.
+- App owns one shared health presentation source with generation-guarded, latest-state Dispatcher coalescing for active workspaces. Operation and the Shell status bar show compact read-only glyph/text indicators for PLC, History, MQTT and Runtime.
 - `engineering.system` provides a compact read-only service-health surface; `engineering.diagnostics` provides a virtualized, read-only device diagnostics table. Neither surface reads PLCs, writes configuration or owns commands/reconnect operations.
-- M12 tests cover aggregation precedence, unavailable metrics, process telemetry, sanitization, sampler/timer ownership, subscriber isolation, workspace lifecycle/coalescing, WPF rendering and DataGrid virtualization.
+- M12 tests cover aggregation precedence, provider asymmetry, unavailable metrics, process telemetry, monotonic uptime, sanitization, sampler cadence/ownership/shutdown, subscriber isolation, configured 50-device/10,000-tag structural scale, workspace lifecycle/coalescing, WPF status indicators and DataGrid virtualization.
 
 ## Verified
 
@@ -232,7 +232,7 @@ M11 merged-main evidence on `25ec87e91eba0be268384c7b941c63cb8bb0f6d9`:
 - Copy-folder portability verification — PASS on a fresh copy outside the repository; restore/build/startup do not depend on the original folder, and no original repository path was found in copied source/configuration files.
 - GitNexus final M10 baseline review — PASS; the baseline index contains 3,248 nodes / 10,848 edges / 274 flows with 0 import cycles. `Scada.Runtime` still references only `Scada.Core`, and static boundary scans find no WPF, App or concrete-driver dependency in Runtime.
 - UI automation remains out of scope.
-- M12 feature-worktree verification — PASS; restore, Release build (0 warnings/0 errors), full test suite (417/417), vulnerability audit, WPF resource/startup smoke, fresh copy-folder portability, `git diff --check`, GitNexus cycle checks and Runtime boundary scans all passed.
+- M12 feature-worktree verification — PASS; restore, Release build (0 warnings/0 errors), full test suite (433/433), vulnerability audit, WPF resource/startup smoke, fresh copy-folder portability, `git diff --check`, GitNexus cycle checks and Runtime boundary scans all passed.
 
 ## Not implemented — later milestones
 

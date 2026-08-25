@@ -103,7 +103,7 @@ Scada.App
 └── generation-guarded latest-state Dispatcher projection
 ```
 
-M12 health is observational and read-only. It consumes existing immutable runtime/store snapshots and TagCache counts, never reads a PLC, changes polling, writes project/runtime configuration or issues PLC/MQTT commands. `Scada.Runtime` has no WPF or App dependency; Infrastructure remains the owner of concrete storage diagnostics.
+M12 health is observational and read-only. It consumes existing immutable runtime/store snapshots and TagCache counts, never reads a PLC, changes polling, writes project/runtime configuration or issues PLC/MQTT commands. Normal state precedence is `Faulted` > `Degraded` > `Starting` > `Unknown` > `Healthy`; `Stopping` is a shutdown override. The App status bar renders compact PLC/History/MQTT/Runtime glyph-and-text indicators with accessibility names. `Scada.Runtime` has no WPF or App dependency; Infrastructure remains the owner of concrete storage diagnostics.
 
 M12 flow:
 

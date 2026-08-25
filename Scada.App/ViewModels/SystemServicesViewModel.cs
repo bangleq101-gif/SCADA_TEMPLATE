@@ -26,7 +26,7 @@ public sealed class SystemServicesViewModel : RuntimeHealthWorkspaceViewModel
         Card("Database", Snapshot.Database.State, Snapshot.Database.ProviderText),
         Card("MQTT", Map(Snapshot.Mqtt.State), Snapshot.Mqtt.State.ToString()),
         Card("Alarm", Map(Snapshot.Alarm.State), Snapshot.Alarm.State.ToString()),
-        Card("Process", RuntimeHealthState.Healthy, $"CPU {FormatCpu(Snapshot.Process.CpuPercent)} • Working Set {FormatBytes(Snapshot.Process.WorkingSetBytes)}")
+        Card("Process", ProcessState(Snapshot.Process), $"CPU {FormatCpu(Snapshot.Process.CpuPercent)} • Working Set {FormatBytes(Snapshot.Process.WorkingSetBytes)}")
     ];
 
     protected override void ApplySnapshot(RuntimeHealthSnapshot snapshot)
@@ -46,7 +46,8 @@ public sealed class SystemServicesViewModel : RuntimeHealthWorkspaceViewModel
         Scada.Runtime.Historian.HistorianRuntimeState.Healthy => RuntimeHealthState.Healthy,
         Scada.Runtime.Historian.HistorianRuntimeState.Degraded => RuntimeHealthState.Degraded,
         Scada.Runtime.Historian.HistorianRuntimeState.Faulted => RuntimeHealthState.Faulted,
-        _ => RuntimeHealthState.Stopping
+        Scada.Runtime.Historian.HistorianRuntimeState.Stopping => RuntimeHealthState.Stopping,
+        _ => RuntimeHealthState.Unknown
     };
 
     private static RuntimeHealthState Map(Scada.Core.Mqtt.MqttRuntimeState state) => state switch
@@ -56,7 +57,8 @@ public sealed class SystemServicesViewModel : RuntimeHealthWorkspaceViewModel
         Scada.Core.Mqtt.MqttRuntimeState.Online => RuntimeHealthState.Healthy,
         Scada.Core.Mqtt.MqttRuntimeState.Offline or Scada.Core.Mqtt.MqttRuntimeState.ConfigurationRequired => RuntimeHealthState.Degraded,
         Scada.Core.Mqtt.MqttRuntimeState.Faulted => RuntimeHealthState.Faulted,
-        _ => RuntimeHealthState.Stopping
+        Scada.Core.Mqtt.MqttRuntimeState.Stopping => RuntimeHealthState.Stopping,
+        _ => RuntimeHealthState.Unknown
     };
 
     private static RuntimeHealthState Map(Scada.Runtime.Alarms.AlarmRuntimeState state) => state switch
@@ -66,8 +68,14 @@ public sealed class SystemServicesViewModel : RuntimeHealthWorkspaceViewModel
         Scada.Runtime.Alarms.AlarmRuntimeState.Healthy => RuntimeHealthState.Healthy,
         Scada.Runtime.Alarms.AlarmRuntimeState.Degraded => RuntimeHealthState.Degraded,
         Scada.Runtime.Alarms.AlarmRuntimeState.Faulted => RuntimeHealthState.Faulted,
-        _ => RuntimeHealthState.Stopping
+        Scada.Runtime.Alarms.AlarmRuntimeState.Stopping => RuntimeHealthState.Stopping,
+        _ => RuntimeHealthState.Unknown
     };
+
+    private static RuntimeHealthState ProcessState(ProcessTelemetrySnapshot process) =>
+        process.CpuAvailable || process.WorkingSetBytes is not null
+            ? RuntimeHealthState.Healthy
+            : RuntimeHealthState.Unknown;
 
     private static string FormatCpu(double? value) => value is null ? "Unavailable" : $"{value.Value:0.0}%";
     private static string FormatBytes(long? value) => value is null ? "Unavailable" : $"{value.Value / 1024d / 1024d:0.0} MB";

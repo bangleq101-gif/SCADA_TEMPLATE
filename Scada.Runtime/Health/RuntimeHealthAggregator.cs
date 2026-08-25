@@ -59,7 +59,12 @@ public sealed class RuntimeHealthAggregator
             _options.RuntimeId,
             capturedAtUtc,
             uptime,
-            SelectOverallState(plc.State, database.State, MapMqtt(mqtt.State), MapAlarm(alarm.State)),
+            SelectOverallState(
+                plc.State,
+                MapHistorian(historian.State),
+                database.State,
+                MapMqtt(mqtt.State),
+                MapAlarm(alarm.State)),
             process,
             plc,
             tagCacheSnapshot,
@@ -204,10 +209,13 @@ public sealed class RuntimeHealthAggregator
 
     private static RuntimeHealthState SelectOverallState(params RuntimeHealthState[] states)
     {
+        // Stopping is a shutdown override. During normal operation the precedence
+        // is Faulted > Degraded > Starting > Unknown > Healthy.
         if (states.Any(state => state == RuntimeHealthState.Stopping)) return RuntimeHealthState.Stopping;
         if (states.Any(state => state == RuntimeHealthState.Faulted)) return RuntimeHealthState.Faulted;
         if (states.Any(state => state == RuntimeHealthState.Degraded)) return RuntimeHealthState.Degraded;
         if (states.Any(state => state == RuntimeHealthState.Starting)) return RuntimeHealthState.Starting;
+        if (states.Any(state => state == RuntimeHealthState.Unknown)) return RuntimeHealthState.Unknown;
         if (states.Any(state => state == RuntimeHealthState.Healthy)) return RuntimeHealthState.Healthy;
         return RuntimeHealthState.Unknown;
     }
