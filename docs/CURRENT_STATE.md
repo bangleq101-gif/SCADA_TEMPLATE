@@ -4,11 +4,13 @@ Architecture V1 is approved.
 
 Current implementation milestone:
 
-Architecture V1 baseline — M11 complete
+Milestone 12 — Read-only Operational Health and Engineering Diagnostics
 
 Status:
 
 M11 — Alarm System — COMPLETE. The base implementation was merged via PR #15 at `4b903723ed94d846420c2bf3867eec18a395d1c4`; the approved architecture-alignment revision was merged via PR #16 with approved head `636e8fb16080f29e98d3ea976e5e584e1abe7887`, producing final canonical `main` at `25ec87e91eba0be268384c7b941c63cb8bb0f6d9`.
+
+M12 — Read-only Operational Health and Engineering Diagnostics — implemented on `feature/milestone-12-operational-health`; pending independent source review, PR and merge. Canonical `main` remains the M11 baseline until M12 is merged.
 
 Milestone 7:
 
@@ -193,6 +195,18 @@ M11 merged-main evidence on `25ec87e91eba0be268384c7b941c63cb8bb0f6d9`:
 - Runtime boundary — PASS; `Scada.Runtime` references `Scada.Core` only.
 - Alarm hot-path structural evidence — 10,000 tags, 2,000 Alarm definitions and 500 distinct Alarm TagIds; T0=4 matching definitions, followed by 100 unchanged samples with 0 additional full comparisons, snapshot materializations, publications or subscriber deliveries.
 
+## Implemented in Milestone 12
+
+- One singleton `RuntimeHealthService` owns one 1-second production sampler, one `PeriodicTimer`, one sampler task and one immutable snapshot publication per tick.
+- `RuntimeHealthAggregator` composes PLC/device snapshots, Historian, optional Influx diagnostics, MQTT, Alarm, TagCache counts and process telemetry without changing polling, provider or TagCache hot paths.
+- Runtime health states use deterministic precedence (`Stopping` > `Faulted` > `Degraded` > `Starting` > `Healthy` > `Unknown`); absent or missing enabled-device snapshots are not reported as Healthy.
+- TagCache `ValueCount` and `SubscriptionCount` remain available while optional update/callback/exception counters are explicitly unavailable when production metrics are disabled.
+- Process CPU, working set and monotonic uptime are observational only; first CPU sample is unavailable and wall-clock changes do not affect uptime.
+- Runtime error messages and optional store diagnostics are sanitized before publication to App; no credentials, tokens, connection strings or inappropriate local paths are exposed.
+- App owns one shared health presentation source with generation-guarded, latest-state Dispatcher coalescing for active workspaces. Operation and the Shell status bar show read-only summaries.
+- `engineering.system` provides a compact read-only service-health surface; `engineering.diagnostics` provides a virtualized, read-only device diagnostics table. Neither surface reads PLCs, writes configuration or owns commands/reconnect operations.
+- M12 tests cover aggregation precedence, unavailable metrics, process telemetry, sanitization, sampler/timer ownership, subscriber isolation, workspace lifecycle/coalescing, WPF rendering and DataGrid virtualization.
+
 ## Verified
 
 - `dotnet restore Scada.sln --ignore-failed-sources` — PASS.
@@ -218,6 +232,7 @@ M11 merged-main evidence on `25ec87e91eba0be268384c7b941c63cb8bb0f6d9`:
 - Copy-folder portability verification — PASS on a fresh copy outside the repository; restore/build/startup do not depend on the original folder, and no original repository path was found in copied source/configuration files.
 - GitNexus final M10 baseline review — PASS; the baseline index contains 3,248 nodes / 10,848 edges / 274 flows with 0 import cycles. `Scada.Runtime` still references only `Scada.Core`, and static boundary scans find no WPF, App or concrete-driver dependency in Runtime.
 - UI automation remains out of scope.
+- M12 feature-worktree verification — PASS; restore, Release build (0 warnings/0 errors), full test suite (417/417), vulnerability audit, WPF resource/startup smoke, fresh copy-folder portability, `git diff --check`, GitNexus cycle checks and Runtime boundary scans all passed.
 
 ## Not implemented — later milestones
 
@@ -228,6 +243,8 @@ M11 merged-main evidence on `25ec87e91eba0be268384c7b941c63cb8bb0f6d9`:
 - PLC-backed Machine Settings Apply/Write, recipes, calibration workflow, audit trail and authorization.
 - Deployment tooling.
 - Deeper active-view subscription lifecycle optimization beyond the M3 activation/deactivation boundary.
+- PLC/device editing, reconnect, command, acknowledgement and configuration-write actions from health/diagnostics surfaces.
+- Health thresholds, notifications, trend/reporting surfaces and runtime hot reload.
 - Distributed multi-runtime, redundancy/HA, web/cloud, advanced scripting and plugin marketplace.
 
 ## Technical debt
@@ -247,6 +264,7 @@ M11 merged-main evidence on `25ec87e91eba0be268384c7b941c63cb8bb0f6d9`:
 - Alarm configuration changes are persisted and marked restart-required; runtime hot reload, automatic communication alarms, notification/escalation and multi-process Alarm SQLite writers remain deferred.
 - Alarm SQLite connection configuration is still shared from the Infrastructure History namespace; moving this generic helper to a neutral Persistence namespace is deferred to avoid unrelated churn in the alignment hotfix.
 - Centralized logging uses `ILogger<T>`, the Microsoft.Extensions.Logging pipeline, the Debug provider and structured `DeviceId` fields on polling paths; consistent `RuntimeId` contextual enrichment across Runtime subsystems is not yet standardized (see `docs/V1_COVERAGE.md` row 48).
-- Remaining Architecture V1 partial/not-started coverage, including the unified System Services surface, screen metadata, Engineering Devices/System/Diagnostics, deployment/offline strategy and Simulator fault mode, is tracked in `docs/V1_COVERAGE.md`; this is documentation traceability, not M12 authorization.
+- Remaining Architecture V1 partial/not-started coverage, including screen metadata, Engineering Devices, deployment/offline strategy and Simulator fault mode, is tracked in `docs/V1_COVERAGE.md`; this is documentation traceability, not M12 authorization.
+- The M12 health sampler is observational and intentionally does not provide threshold evaluation, event persistence, notification, command or runtime configuration mutation.
 
-Implementation must follow the ordered milestones in `docs/ROADMAP.md` and the constraints in `docs/SCADA_ARCHITECTURE_V1.md`. M7 MQTT Publisher, M10 qualification and M11 Alarm System are complete on canonical `main`; MQTT Write, command subscriptions and PLC-write paths remain deferred. Current activity is reconciliation of remaining Architecture V1 coverage and planning the next separately approved milestone. M12 is not started.
+Implementation must follow the ordered milestones in `docs/ROADMAP.md` and the constraints in `docs/SCADA_ARCHITECTURE_V1.md`. M7 MQTT Publisher, M10 qualification and M11 Alarm System are complete on canonical `main`; MQTT Write, command subscriptions and PLC-write paths remain deferred. M12 is implemented on this feature branch and remains pending independent source review, PR and merge; no subsequent milestone is authorized.

@@ -1,0 +1,40 @@
+<UserControl x:Class="Scada.App.Views.SystemServicesView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controls="clr-namespace:Scada.App.Controls">
+    <UserControl.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="/Scada.App;component/Resources/Colors.xaml" />
+                <ResourceDictionary Source="/Scada.App;component/Resources/Controls.xaml" />
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
+    </UserControl.Resources>
+    <controls:WorkspaceLayout Title="System Health"
+                              Description="Read-only runtime and service health projection."
+                              Style="{StaticResource WorkspaceLayoutStyle}">
+        <ScrollViewer VerticalScrollBarVisibility="Auto" CanContentScroll="True">
+            <ItemsControl ItemsSource="{Binding Services}">
+                <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate>
+                        <WrapPanel />
+                    </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <Border Style="{StaticResource CardBorderStyle}"
+                                Width="250"
+                                Margin="0,0,12,12"
+                                AutomationProperties.Name="{Binding AutomationName}">
+                            <StackPanel>
+                                <TextBlock Text="{Binding Name}" Style="{StaticResource CardTitleTextStyle}" />
+                                <TextBlock Text="{Binding State}" Margin="0,8,0,0" FontWeight="SemiBold" />
+                                <TextBlock Text="{Binding Detail}" Margin="0,4,0,0" TextWrapping="Wrap" Foreground="{StaticResource SecondaryTextBrush}" />
+                            </StackPanel>
+                        </Border>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </ScrollViewer>
+    </controls:WorkspaceLayout>
+</UserControl>

@@ -5,4 +5,7 @@ public sealed record TagCacheRuntimeSnapshot(
     long CallbackInvocations,
     long SubscriberExceptions,
     int ValueCount,
-    int SubscriptionCount);
+    int SubscriptionCount)
+{
+    public bool MetricsAvailable { get; init; }
+}

@@ -90,6 +90,18 @@
 - Device state is exposed through immutable snapshots, not mutable runtime state objects.
 - For a disconnect transition, a tag with a valid cached value keeps that value and its original PLC timestamp. A tag without a valid cached value receives `null` and the transition timestamp.
 
+## Operational health rules
+
+- Use exactly one `RuntimeHealthService`/coordinator per Runtime. Production sampling is one 1-second sampler with one timer and one sampler task; do not create timers/tasks per device, tag, service or card.
+- Publish at most one immutable `RuntimeHealthSnapshot` per sampler tick. Raw PLC scans, TagCache callbacks and individual service callbacks must not publish health directly.
+- Read health from existing `DeviceManager.DeviceSnapshots`, Historian/MQTT/Alarm snapshots, optional Infrastructure diagnostics, TagCache counts and process telemetry. Do not add a second runtime data path or change provider/polling contracts for health.
+- Keep CPU, working set and monotonic uptime observational. The first CPU sample is unavailable; unavailable counters must remain unavailable rather than being fabricated as zero.
+- Health precedence is deterministic: `Stopping` > `Faulted` > `Degraded` > `Starting` > `Healthy` > `Unknown`. Missing enabled-device snapshots are not Healthy.
+- Sanitize credentials, tokens, connection strings, secret query parameters and inappropriate local paths before any Runtime health object crosses into App. Do not rely on WPF text truncation for redaction.
+- WPF health surfaces are read-only. They may consume TagCache-derived snapshots but must not read PLCs, write project/runtime configuration, reconnect services or issue PLC/MQTT commands.
+- Keep one shared App health presentation subscription. Active workspaces own at most one subscription, use generation guards and coalesce the latest snapshot through one Dispatcher item per active generation; deactivation/disposal leaves zero owned subscriptions.
+- `engineering.system`, `engineering.diagnostics`, Operation and the Shell status bar are App concerns. Do not place WPF, Dispatcher or presentation code in Runtime.
+
 ## Verification rules
 
 - Run restore, Release build and tests before reporting a milestone complete.
