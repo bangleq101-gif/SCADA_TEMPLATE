@@ -153,10 +153,15 @@ public sealed class RuntimeHealthServiceTests
         };
         using var fixture = HealthFixture.Create(clock, options: options);
 
-        await fixture.Service.StartAsync(CancellationToken.None);
         foreach (var tag in options.Tags)
         {
             fixture.Cache.Upsert(new TagUpdate(tag.Id, 1d, TagQuality.Good, clock.GetUtcNow()));
+        }
+
+        await fixture.Service.StartAsync(CancellationToken.None);
+        foreach (var tag in options.Tags.Take(100))
+        {
+            fixture.Cache.Upsert(new TagUpdate(tag.Id, 2d, TagQuality.Good, clock.GetUtcNow()));
         }
 
         Assert.Equal(0, fixture.Service.MaterializationCount);
