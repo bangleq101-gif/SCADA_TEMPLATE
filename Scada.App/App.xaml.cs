@@ -51,13 +51,15 @@ public partial class App : Application
             var projectDocument = projectStore?.Load();
             var startupOptions = projectDocument?.Scada
                 ?? ConfigurationRegistration.CreateOptions(builder.Configuration);
-            ConfigurationValidator.Validate(startupOptions);
+            var simulatorEngineeringProvider = new SimulatorEngineeringProvider();
+            ConfigurationValidator.Validate(startupOptions, [simulatorEngineeringProvider]);
 
             builder.Logging.AddDebug();
             builder.Services.AddSingleton(startupOptions);
             builder.Services.AddSingleton(TimeProvider.System);
             builder.Services.AddSingleton<SimulatorValueGenerator>();
             builder.Services.AddSingleton<SimulatorPlcDriver>();
+            builder.Services.AddSingleton<Scada.Core.Drivers.IDriverEngineeringProvider>(simulatorEngineeringProvider);
             builder.Services.AddSingleton<IPlcDriverResolver>(services => new DriverResolver(
             [
                 DriverRegistration.Shared(
@@ -111,10 +113,11 @@ public partial class App : Application
             builder.Services.AddSingleton<IHostedService>(services =>
                 services.GetRequiredService<RuntimeHealthService>());
             builder.Services.AddSingleton<RuntimeHealthPresentationService>();
-            builder.Services.AddSingleton<ProjectEditSession>(_ => new ProjectEditSession(
+            builder.Services.AddSingleton<ProjectEditSession>(services => new ProjectEditSession(
                 startupOptions,
                 projectPath,
-                projectStore));
+                projectStore,
+                services.GetServices<Scada.Core.Drivers.IDriverEngineeringProvider>()));
             builder.Services.AddSingleton<IClipboardAdapter, WpfClipboardAdapter>();
             builder.Services.AddSingleton<ITagImportDecisionService, WpfTagImportDecisionService>();
             builder.Services.AddSingleton<IDeleteConfirmation, WpfDeleteConfirmation>();
@@ -132,6 +135,7 @@ public partial class App : Application
             builder.Services.AddSingleton<AlarmEngineeringViewModel>();
             builder.Services.AddSingleton<SystemServicesViewModel>();
             builder.Services.AddSingleton<EngineeringDiagnosticsViewModel>();
+            builder.Services.AddSingleton<EngineeringDevicesViewModel>();
             builder.Services.AddSingleton<EngineeringViewModel>();
             builder.Services.AddSingleton<NavigationService>();
             builder.Services.AddSingleton<ShellViewModel>();

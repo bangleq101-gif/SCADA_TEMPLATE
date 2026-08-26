@@ -60,6 +60,10 @@ public sealed class ShellViewModel : INotifyPropertyChanged, IDisposable
         {
             engineeringChildren.Add(new NavigationItem("Diagnostics", NavigationService.EngineeringDiagnosticsRoute));
         }
+        if (_navigation.HasRoute(NavigationService.EngineeringDevicesRoute))
+        {
+            engineeringChildren.Add(new NavigationItem("Devices", NavigationService.EngineeringDevicesRoute));
+        }
 
         var monitoringChildren = new List<NavigationItem>
         {
