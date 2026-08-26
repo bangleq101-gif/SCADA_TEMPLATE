@@ -113,26 +113,38 @@ Status: COMPLETE — merged and verified on canonical `main` at `1b575a0e969703a
 - Verify one sampler/timer, bounded Dispatcher delivery, WPF resources, Runtime boundaries, copy-folder portability and no command/PLC/MQTT writes.
 - M12 does not include thresholds, notifications, event persistence, device editing, reconnect/command actions, runtime configuration mutation or any M13 scope.
 
-## Remaining Architecture V1 Coverage After M12 merged-main verification
+## Milestone 13 — Engineering Devices and Address Browser
 
-The complete requirement-by-requirement matrix is maintained in `docs/V1_COVERAGE.md`. It records 50 audited areas: 29 `COMPLETE`, 12 `PARTIAL`, 3 `NOT STARTED` and 6 `EXPLICITLY DEFERRED`.
+Status: IMPLEMENTED LOCALLY on `feature/milestone-13-engineering-devices`; pending source review and merge.
+
+- Add the App-layer `engineering.devices` workspace while keeping the existing Engineering route hierarchy and `ProjectEditSession` as the only project-editing authority.
+- Add a Core driver-engineering provider contract for typed option metadata, provider validation and read-only logical address candidates. The contract must not be an `IPlcDriver` replacement and must not perform PLC polling or writes.
+- Provide a Simulator engineering provider with deterministic option validation, read-only address candidates and configurable deterministic fault/disconnect scenarios for commissioning and tests.
+- Provide virtualized device editing with Add, Duplicate, Delete, Revert, Save, typed driver options and read-only Address Browser behavior. Device definitions remain static configuration; runtime state remains in Runtime.
+- Verify copy-folder portability, provider validation, project-session save/revert semantics, deterministic Simulator scenarios, WPF rendering/accessibility, no PLC/MQTT writes and the existing `Scada.Runtime → Scada.Core` boundary.
+
+M13 does not include production Siemens/Mitsubishi/Modbus/OPC UA drivers, runtime hot reload, reconnect/command controls, PLC writes, MQTT Write, a plugin framework, deployment tooling or M14 scope.
+
+## Remaining Architecture V1 Coverage After M13 feature implementation
+
+The complete requirement-by-requirement matrix is maintained in `docs/V1_COVERAGE.md`. It records 50 audited areas: 30 `COMPLETE`, 12 `PARTIAL`, 2 `NOT STARTED` and 6 `EXPLICITLY DEFERRED`.
 
 The remaining work is intentionally described as coverage, not as an authorization to start a new milestone:
 
-1. `PARTIAL` — Scale/Offset domain and runtime transformation semantics; active-view subscription scope beyond the M12 health/workspace boundary; Address Browser/device-selection extension; module/line/machine organization; broader HMI catalog; external asset packaging; Engineering Devices/Trend route coverage; screen metadata; Simulator fault mode; and consistent RuntimeId logging context.
-2. `NOT STARTED` — Engineering Devices, deployment tooling and offline package/installation strategy.
+1. `PARTIAL` — Scale/Offset domain and runtime transformation semantics; active-view subscription scope beyond the M12 health/workspace boundary; real protocol-aware Address Browser/device-selection extension; module/line/machine organization; broader HMI catalog; external asset packaging; Engineering Devices/Trend route coverage beyond the M13 device editor; screen metadata; Simulator scenario qualification; and consistent RuntimeId logging context.
+2. `NOT STARTED` — deployment tooling and offline package/installation strategy.
 3. `EXPLICITLY DEFERRED` — production Siemens/Mitsubishi/Modbus/OPC UA drivers, MQTT Write/command subscriptions, Trend, Recipes/Calibration, Reports, and distributed/Web/cloud/HA/scripting/plugin systems.
 
 ### Candidate ordering for a future milestone (proposal only)
 
 If a future planning gate is opened, a dependency-aware review could consider:
 
-1. remaining operational engineering coverage (Engineering Devices, screen metadata and Overview/Status Bar extensions);
+1. remaining operational engineering coverage (screen metadata, broader device lifecycle and Overview/Status Bar extensions);
 2. bounded active-view delivery, Scale/Offset semantics, screen metadata and module/line/machine organization;
 3. deployment/offline portability tooling;
 4. separately approved monitoring or HMI extensions such as Trend or additional asset support.
 
-This is sequencing guidance only. It does not select or authorize M13 implementation scope.
+This is sequencing guidance only. M13 is implemented on its feature branch but remains subject to source review and merge; it does not authorize M14 implementation.
 
 ## Explicitly deferred
 

@@ -1,6 +1,21 @@
 
 # Architecture Decisions
 
+## D63 — Engineering device metadata is separate from Runtime polling
+
+Milestone 13 adds `IDriverEngineeringProvider` in `Scada.Core` as a neutral
+engineering contract because App needs provider metadata/validation and
+concrete Drivers need to supply it without making Runtime know a concrete
+driver. The contract exposes typed connection-option definitions, structured
+validation and cancellation-aware read-only address candidates; it is not an
+`IPlcDriver` replacement and has no PLC polling or write operation. The
+`engineering.devices` workspace is composed in `Scada.App`, while
+`ProjectEditSession` remains the sole project persistence/dirty authority.
+`DeviceDefinition` continues to contain static configuration only and the
+existing project schema v6 / `ConnectionOptions` container is reused. The
+Simulator provider and deterministic fault scenarios remain under
+`Scada.Drivers/Simulator`; `Scada.Runtime` still references `Scada.Core` only.
+
 ## D62 — M12 read-only operational health boundary
 
 Milestone 12 uses exactly one Runtime-owned `RuntimeHealthService` with one production 1-second sampler, one timer and one immutable `RuntimeHealthSnapshot` publication per tick. It samples existing DeviceManager, Historian, optional provider diagnostics, MQTT, Alarm, TagCache counts and process telemetry; raw PLC scans, TagCache updates and individual service callbacks do not publish directly. The Runtime health model remains WPF-independent and sanitizes error text before App publication. Normal health precedence is `Faulted` > `Degraded` > `Starting` > `Unknown` > `Healthy`; `Stopping` is a separate shutdown override. App owns one shared presentation subscription, active-workspace generation guards and latest-state Dispatcher coalescing. `engineering.system`, `engineering.diagnostics`, Operation and the Shell status bar are read-only: they do not read PLCs, write project/runtime configuration, reconnect services or issue PLC/MQTT commands. Disabled TagCache counters are reported as unavailable, process health is Unknown when all process telemetry is unavailable, missing enabled-device snapshots are not Healthy, and M12 does not introduce thresholds, notifications, persistence, hot reload or M13 scope.

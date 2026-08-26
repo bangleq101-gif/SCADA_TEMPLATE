@@ -8,6 +8,7 @@ using Scada.Core.History;
 using Scada.Core.Mqtt;
 using Scada.Core.MachineSettings;
 using Scada.Core.Tags;
+using Scada.Core.Drivers;
 using Scada.Infrastructure.Persistence;
 
 namespace Scada.App.Services;
@@ -16,6 +17,7 @@ public sealed class ProjectEditSession : INotifyPropertyChanged
 {
     private readonly IProjectConfigurationStore? _store;
     private readonly ProjectPath? _projectPath;
+    private readonly IReadOnlyList<IDriverEngineeringProvider> _driverProviders;
     private RuntimeOptions _workingProject;
     private RuntimeOptions _savedProject;
     private bool _isDirty;
@@ -26,7 +28,8 @@ public sealed class ProjectEditSession : INotifyPropertyChanged
     public ProjectEditSession(
         RuntimeOptions startupProject,
         ProjectPath? projectPath,
-        IProjectConfigurationStore? store)
+        IProjectConfigurationStore? store,
+        IEnumerable<IDriverEngineeringProvider>? driverProviders = null)
     {
         ArgumentNullException.ThrowIfNull(startupProject);
         if (projectPath is not null && store is null)
@@ -39,6 +42,9 @@ public sealed class ProjectEditSession : INotifyPropertyChanged
         _workingProject = ProjectSnapshotCloner.Clone(startupProject);
         _projectPath = projectPath;
         _store = store;
+        _driverProviders = (driverProviders ?? [])
+            .Where(provider => provider is not null)
+            .ToArray();
         RefreshState();
     }
 
@@ -145,7 +151,8 @@ public sealed class ProjectEditSession : INotifyPropertyChanged
     {
         IsDirty = !ProjectSnapshotComparer.AreEquivalent(_workingProject, _savedProject);
         RestartRequired = !ProjectSnapshotComparer.AreEquivalent(_workingProject, StartupProject);
-        ValidationIssues = RuntimeOptionsValidation.CollectIssues(_workingProject);
+        ValidationIssues = Scada.Infrastructure.Configuration.ConfigurationValidator
+            .CollectIssues(_workingProject, _driverProviders);
         OnPropertyChanged(nameof(HasBlockingIssues));
     }
 

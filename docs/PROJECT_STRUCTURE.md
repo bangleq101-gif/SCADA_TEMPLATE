@@ -121,6 +121,36 @@ process telemetry ─────────────┘             ↓
 
 Only one health snapshot is materialized and published per sampler tick. TagCache callbacks and raw PLC scans do not publish health directly. Active App workspaces own at most one subscription and coalesce the latest snapshot through one Dispatcher work item per active generation.
 
+## Milestone 13 engineering device ownership
+
+```text
+Scada.Core/Drivers
+├── IDriverEngineeringProvider
+├── DriverOptionDefinition / DriverOptionValueType
+├── AddressBrowseCandidate
+└── driver-neutral engineering validation contract
+
+Scada.Drivers/Simulator
+├── SimulatorEngineeringProvider
+├── SimulatorFaultOptions / SimulatorFaultMode
+└── deterministic read-only address candidates
+
+Scada.App
+├── EngineeringDevicesViewModel
+├── DeviceEditorRowViewModel / DriverOptionEditorViewModel
+├── EngineeringDevicesView
+└── engineering.devices route
+```
+
+M13 reuses the existing persisted `DeviceDefinition.ConnectionOptions` and
+project schema v6. `ProjectEditSession` remains the single working/saved/dirty
+authority. The Core provider contract describes engineering metadata and
+read-only browsing; it does not replace `IPlcDriver`, poll tags or write PLC
+values. Simulator fault scenarios stay under `Scada.Drivers/Simulator` and
+`Scada.Runtime` remains dependent on `Scada.Core` only. The App device editor
+validates through the existing configuration boundary and never accesses a PLC
+or `TagCache` directly.
+
 ## Main folders
 
 ```text
