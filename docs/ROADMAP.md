@@ -88,7 +88,7 @@ Status: COMPLETE — qualified baseline accepted under the authoritative benchma
 
 ## Milestone 11 — Alarm System
 
-Status: COMPLETE — merged and verified on canonical `main` at `25ec87e91eba0be268384c7b941c63cb8bb0f6d9` via PR #15 and the alignment PR #16.
+Status: COMPLETE. M11 code/runtime was completed and verified at `25ec87e91eba0be268384c7b941c63cb8bb0f6d9` via PR #15 and the alignment PR #16. M11 governance/docs closeout was merged via PR #17 at `2cfd0c39f05e8a9251984e0c82198b72f7616745`; that commit became the M12 implementation base.
 
 - Implement a PLC-read-only Alarm System that evaluates central `TagCache` values without additional PLC reads or PLC/MQTT writes.
 - Support `DigitalEquals`, High, HighHigh, Low and LowLow rules with deterministic deadband, exact-instance acknowledgement and `ReturnedUnacknowledged` lifecycle semantics.
@@ -102,7 +102,7 @@ Status: COMPLETE — merged and verified on canonical `main` at `25ec87e91eba0be
 
 ## Milestone 12 — Read-only Operational Health and Engineering Diagnostics
 
-Status: IMPLEMENTED on `feature/milestone-12-operational-health`; PR #19 is open and pending independent re-review and merge.
+Status: COMPLETE — merged and verified on canonical `main` at `1b575a0e969703a01b006ab4a44147ab01e73ee7` via PR #19.
 
 - Add one Runtime-owned health sampler/coordinator at a production 1-second cadence with one immutable snapshot publication per tick.
 - Aggregate existing DeviceManager, Historian, optional Influx store, MQTT, Alarm, TagCache and process telemetry snapshots without changing PLC polling or provider contracts.
@@ -113,7 +113,7 @@ Status: IMPLEMENTED on `feature/milestone-12-operational-health`; PR #19 is open
 - Verify one sampler/timer, bounded Dispatcher delivery, WPF resources, Runtime boundaries, copy-folder portability and no command/PLC/MQTT writes.
 - M12 does not include thresholds, notifications, event persistence, device editing, reconnect/command actions, runtime configuration mutation or any M13 scope.
 
-## Remaining Architecture V1 Coverage After M12 implementation (pending merge)
+## Remaining Architecture V1 Coverage After M12 merged-main verification
 
 The complete requirement-by-requirement matrix is maintained in `docs/V1_COVERAGE.md`. It records 50 audited areas: 29 `COMPLETE`, 12 `PARTIAL`, 3 `NOT STARTED` and 6 `EXPLICITLY DEFERRED`.
 

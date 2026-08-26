@@ -1,17 +1,23 @@
 # Architecture V1 Coverage
 
 This document reconciles the original Architecture V1 specification with the
-implementation on canonical `main` after M11. It is a traceability document,
+implementation on canonical `main` after M12. It is a traceability document,
 not an authorization to begin a new milestone.
 
 ## Audit baseline and reference semantics
 
-- Audited main: `25ec87e91eba0be268384c7b941c63cb8bb0f6d9`.
+- Audited main: `1b575a0e969703a01b006ab4a44147ab01e73ee7`.
 - Original Architecture V1 baseline: `09d48864365a2062f73220a158e47951608ac358`.
 - M11 base merge: PR #15, `4b903723ed94d846420c2bf3867eec18a395d1c4`.
 - M11 alignment approved head: PR #16, `636e8fb16080f29e98d3ea976e5e584e1abe7887`.
+- M11 code/runtime canonical authority: `25ec87e91eba0be268384c7b941c63cb8bb0f6d9`.
 - M10 qualified benchmark authority: `402ee9d46f41489fee8912bbed57dc1388550658`.
-- M11 merged-main verification: 397/397 tests, GitNexus 3,806 nodes / 13,067 edges / 150 clusters / 300 flows / 0 cycles, and `Scada.Runtime → Scada.Core ONLY`.
+- M11 code/runtime merged-main verification: 397/397 tests, GitNexus 3,806 nodes / 13,067 edges / 150 clusters / 300 flows / 0 cycles, and `Scada.Runtime → Scada.Core ONLY`.
+- M11 governance/docs closeout: PR #17 approved head `5ce6f5b1a01053e2409bec57d62bb55e2668aa94`, merged as `2cfd0c39f05e8a9251984e0c82198b72f7616745`.
+- `2cfd0c39f05e8a9251984e0c82198b72f7616745` is the exact M12 implementation base.
+- M12 approved feature head: `64c32a448eacca138a6d83c8baab2fca193ca649`.
+- M12 merged-main authority: `1b575a0e969703a01b006ab4a44147ab01e73ee7`.
+- M12 merged-main verification: 438/438 tests, GitNexus 4,160 nodes / 14,232 edges / 171 clusters / 300 flows / 0 cycles, and `Scada.Runtime → Scada.Core ONLY`.
 
 The `Architecture reference` column preserves the original V1 section number
 where applicable. A reference may also identify an approved/current addendum
@@ -82,7 +88,7 @@ The statuses below describe delivered coverage, not production certification:
 | 47 | Documentation, Git/worktree workflow and plan-before-code gates | §§62-66, 76 | `COMPLETE` | Versioned Architecture, Current State, Roadmap, Decisions, branch/worktree workflow and plan/review gates are in-repository | Docs closeout, GitHub review gates and merged-main evidence are recorded | Coverage gaps are tracked by this matrix | Keep docs and evidence versioned with each approved milestone |
 | 48 | Centralized logging and required context | §72 | `PARTIAL` | `ILogger<T>` and Microsoft.Extensions.Logging provide a centralized pipeline; App composes `AddDebug`; typed categories supply component identity, providers supply severity/timestamp behavior, and polling logs structured `DeviceId` | Release verification and source review confirm the current logging paths | Consistent `RuntimeId` contextual enrichment/scope across Runtime subsystems is not demonstrated or standardized | Define a logging scope/enrichment contract before claiming full §72 coverage |
 | 49 | Configuration validation | §73 | `COMPLETE` | `RuntimeOptionsValidation`, `ConfigurationValidator` and structured validation issues protect startup/configuration boundaries | Core/Infrastructure configuration tests and WPF startup smoke pass | No separate configuration hot-reload contract is required by current V1 implementation | Keep validation centralized and fail closed for blocking issues |
-| 50 | Testing, verification and milestone reporting gates | §§74-76 | `COMPLETE` | Product/test projects, Release gates, vulnerability audit, portability checks, GitNexus checks and milestone evidence are maintained | 438/438 M12 feature-worktree tests pass with Runtime Health, Local Buffer and WPF render coverage | UI automation and production SLA certification remain out of scope | Preserve evidence-based gates and do not treat benchmark data as a production SLA |
+| 50 | Testing, verification and milestone reporting gates | §§74-76 | `COMPLETE` | Product/test projects, Release gates, vulnerability audit, portability checks, GitNexus checks and milestone evidence are maintained | 438/438 M12 merged-main tests pass with Runtime Health, Local Buffer and WPF render coverage | UI automation and production SLA certification remain out of scope | Preserve evidence-based gates and do not treat benchmark data as a production SLA |
 
 ## Summary
 
