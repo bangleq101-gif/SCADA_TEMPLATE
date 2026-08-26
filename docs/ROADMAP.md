@@ -88,7 +88,7 @@ Status: COMPLETE — qualified baseline accepted under the authoritative benchma
 
 ## Milestone 11 — Alarm System
 
-Status: COMPLETE — merged and verified on canonical `main` at `25ec87e91eba0be268384c7b941c63cb8bb0f6d9` via PR #15 and the alignment PR #16.
+Status: COMPLETE. M11 code/runtime was completed and verified at `25ec87e91eba0be268384c7b941c63cb8bb0f6d9` via PR #15 and the alignment PR #16. M11 governance/docs closeout was merged via PR #17 at `2cfd0c39f05e8a9251984e0c82198b72f7616745`; that commit became the M12 implementation base.
 
 - Implement a PLC-read-only Alarm System that evaluates central `TagCache` values without additional PLC reads or PLC/MQTT writes.
 - Support `DigitalEquals`, High, HighHigh, Low and LowLow rules with deterministic deadband, exact-instance acknowledgement and `ReturnedUnacknowledged` lifecycle semantics.

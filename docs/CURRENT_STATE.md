@@ -8,7 +8,7 @@ Milestone 12 — Read-only Operational Health and Engineering Diagnostics
 
 Status:
 
-M11 — Alarm System — COMPLETE. The base implementation was merged via PR #15 at `4b903723ed94d846420c2bf3867eec18a395d1c4`; the approved architecture-alignment revision was merged via PR #16 with approved head `636e8fb16080f29e98d3ea976e5e584e1abe7887`, producing final canonical `main` at `25ec87e91eba0be268384c7b941c63cb8bb0f6d9`.
+M11 — Alarm System — COMPLETE. M11 code/runtime implementation completed at `25ec87e91eba0be268384c7b941c63cb8bb0f6d9` through PR #15 and the approved PR #16 architecture-alignment revision (head `636e8fb16080f29e98d3ea976e5e584e1abe7887`). M11 governance/docs closeout was subsequently merged via PR #17 at `2cfd0c39f05e8a9251984e0c82198b72f7616745`; that commit is the final M11 governance authority and the exact M12 implementation base.
 
 M12 — Read-only Operational Health and Engineering Diagnostics — **COMPLETE — merged and verified on canonical `main` via PR #19**. The approved feature head is `64c32a448eacca138a6d83c8baab2fca193ca649`; the merge commit is `1b575a0e969703a01b006ab4a44147ab01e73ee7`. Merged-main verification passed with 438/438 tests, GitNexus 4,160 nodes / 14,232 edges / 171 clusters / 300 flows / 0 cycles, and the runtime boundary `Scada.Runtime → Scada.Core ONLY`. The M10 performance benchmark authority remains `402ee9d46f41489fee8912bbed57dc1388550658`; M12 did not recapture or replace that benchmark.
 
