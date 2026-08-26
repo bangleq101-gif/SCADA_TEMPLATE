@@ -4,8 +4,12 @@ using Scada.Core.Tags;
 
 namespace Scada.Drivers.Simulator;
 
-public sealed class SimulatorPlcDriver(SimulatorValueGenerator generator) : IPlcDriver
+public sealed class SimulatorPlcDriver(
+    SimulatorValueGenerator generator,
+    TimeProvider? timeProvider = null) : IPlcDriver
 {
+    private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
+
     public string DriverType => "Simulator";
 
     public Task ConnectAsync(DeviceDefinition device, CancellationToken cancellationToken)
@@ -13,9 +17,7 @@ public sealed class SimulatorPlcDriver(SimulatorValueGenerator generator) : IPlc
         cancellationToken.ThrowIfCancellationRequested();
         var fault = ParseFault(device);
         if (fault.Mode == SimulatorFaultMode.ConnectFailure ||
-            fault.Mode == SimulatorFaultMode.Disconnected ||
-            (fault.Mode == SimulatorFaultMode.IntermittentReadFailure &&
-             fault.IsFaultActive(device, DateTimeOffset.UtcNow)))
+            fault.Mode == SimulatorFaultMode.Disconnected)
         {
             throw new InvalidOperationException($"Simulator connection fault for device '{device.Id}'.");
         }
@@ -29,7 +31,7 @@ public sealed class SimulatorPlcDriver(SimulatorValueGenerator generator) : IPlc
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        var now = DateTimeOffset.UtcNow;
+        var now = _timeProvider.GetUtcNow();
         var fault = ParseFault(device);
         if (fault.Mode == SimulatorFaultMode.ReadFailure ||
             (fault.Mode == SimulatorFaultMode.IntermittentReadFailure && fault.IsFaultActive(device, now)))

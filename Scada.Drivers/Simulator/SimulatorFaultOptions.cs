@@ -30,9 +30,10 @@ public sealed record SimulatorFaultOptions(
         var mode = SimulatorFaultMode.None;
         if (values.TryGetValue(FaultModeKey, out var modeText) &&
             !string.IsNullOrWhiteSpace(modeText) &&
-            !Enum.TryParse(modeText, ignoreCase: true, out mode))
+            (!Enum.TryParse(modeText, ignoreCase: true, out mode) || !Enum.IsDefined(mode)))
         {
             errors.Add(Error(FaultModeKey, device, $"Unknown Simulator fault mode '{modeText}'."));
+            mode = SimulatorFaultMode.None;
         }
 
         var period = ReadPositive(values, FaultPeriodSecondsKey, Default.PeriodSeconds, device, errors);

@@ -18,6 +18,7 @@ public sealed class EngineeringDevicesViewModel : IWorkspaceLifecycle, IDisposab
     private AddressBrowseCandidate? _selectedCandidate;
     private bool _active;
     private bool _disposed;
+    private long _browseGeneration;
     private string _searchText = string.Empty;
     private string _statusText = "Ready";
 
@@ -77,8 +78,7 @@ public sealed class EngineeringDevicesViewModel : IWorkspaceLifecycle, IDisposab
 
             _selectedDevice = value;
             RebuildOptionEditors();
-            AddressCandidates.Clear();
-            SelectedCandidate = null;
+            InvalidateAddressBrowse();
             OnPropertyChanged();
             OnPropertyChanged(nameof(SelectedDeviceIssues));
             BrowseAddressesCommand.Refresh();
@@ -137,7 +137,11 @@ public sealed class EngineeringDevicesViewModel : IWorkspaceLifecycle, IDisposab
 
     public void Activate() => IsActive = true;
 
-    public void Deactivate() => IsActive = false;
+    public void Deactivate()
+    {
+        InvalidateAddressBrowse();
+        IsActive = false;
+    }
 
     public void Dispose()
     {
@@ -148,6 +152,7 @@ public sealed class EngineeringDevicesViewModel : IWorkspaceLifecycle, IDisposab
             _active = false;
         }
 
+        InvalidateAddressBrowse();
         _session.PropertyChanged -= OnSessionPropertyChanged;
         BrowseAddressesCommand.Dispose();
     }
@@ -213,16 +218,23 @@ public sealed class EngineeringDevicesViewModel : IWorkspaceLifecycle, IDisposab
 
     private async Task BrowseAddressesAsync(CancellationToken cancellationToken)
     {
-        if (SelectedDevice is null || !_providers.TryGetValue(SelectedDevice.DriverType, out var provider))
+        var device = SelectedDevice;
+        if (device is null || !_providers.TryGetValue(device.DriverType, out var provider))
         {
             AddressCandidates.Clear();
             StatusText = "Address browsing is unavailable for the selected driver.";
             return;
         }
 
+        var generation = Volatile.Read(ref _browseGeneration);
         try
         {
-            var candidates = await provider.BrowseAddressesAsync(SelectedDevice.Definition, cancellationToken);
+            var candidates = await provider.BrowseAddressesAsync(device.Definition, cancellationToken);
+            if (!CanApplyBrowseResult(device, generation, cancellationToken))
+            {
+                return;
+            }
+
             AddressCandidates.Clear();
             foreach (var candidate in candidates.OrderBy(candidate => candidate.Address, StringComparer.OrdinalIgnoreCase))
             {
@@ -233,14 +245,39 @@ public sealed class EngineeringDevicesViewModel : IWorkspaceLifecycle, IDisposab
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
-            StatusText = "Address browsing cancelled.";
+            if (CanApplyBrowseResult(device, generation, cancellationToken))
+            {
+                StatusText = "Address browsing cancelled.";
+            }
         }
         catch (Exception exception)
         {
+            if (!CanApplyBrowseResult(device, generation, cancellationToken))
+            {
+                return;
+            }
+
             AddressCandidates.Clear();
             StatusText = $"Address browsing failed: {exception.Message}";
         }
     }
+
+    private void InvalidateAddressBrowse()
+    {
+        Interlocked.Increment(ref _browseGeneration);
+        BrowseAddressesCommand.Cancel();
+        AddressCandidates.Clear();
+        SelectedCandidate = null;
+    }
+
+    private bool CanApplyBrowseResult(
+        DeviceEditorRowViewModel device,
+        long generation,
+        CancellationToken cancellationToken) =>
+        !cancellationToken.IsCancellationRequested &&
+        !_disposed &&
+        generation == Volatile.Read(ref _browseGeneration) &&
+        ReferenceEquals(device, SelectedDevice);
 
     private void RebuildDevices(string? selectedId = null)
     {

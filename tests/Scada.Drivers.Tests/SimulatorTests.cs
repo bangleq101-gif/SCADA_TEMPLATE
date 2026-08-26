@@ -78,6 +78,26 @@ public sealed class SimulatorTests
     }
 
     [Fact]
+    public void EngineeringProviderRejectsUndefinedNumericFaultMode()
+    {
+        var provider = new SimulatorEngineeringProvider();
+        var device = new DeviceDefinition
+        {
+            Id = "SIM01",
+            DriverType = "Simulator",
+            ConnectionOptions = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                [SimulatorFaultOptions.FaultModeKey] = "999"
+            }
+        };
+
+        var issue = Assert.Single(provider.Validate(device));
+
+        Assert.Equal("SIMULATOR_OPTION_INVALID", issue.Code);
+        Assert.Equal(SimulatorFaultOptions.FaultModeKey, issue.PropertyName);
+    }
+
+    [Fact]
     public async Task BadQualityScenarioPreservesGeneratedValueWithoutWritingToPlc()
     {
         var driver = new SimulatorPlcDriver(new SimulatorValueGenerator());
@@ -138,6 +158,31 @@ public sealed class SimulatorTests
     }
 
     [Fact]
+    public async Task IntermittentReadFailureAllowsConnectButFailsReadDuringActiveWindow()
+    {
+        var activeTime = DateTimeOffset.UnixEpoch.AddSeconds(5);
+        var driver = new SimulatorPlcDriver(new SimulatorValueGenerator(), new FixedTimeProvider(activeTime));
+        var device = new DeviceDefinition
+        {
+            Id = "SIM01",
+            DriverType = "Simulator",
+            ConnectionOptions = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                [SimulatorFaultOptions.FaultModeKey] = nameof(SimulatorFaultMode.IntermittentReadFailure),
+                [SimulatorFaultOptions.FaultPeriodSecondsKey] = "10",
+                [SimulatorFaultOptions.FaultDurationSecondsKey] = "2",
+                [SimulatorFaultOptions.FaultPhaseSecondsKey] = "0"
+            }
+        };
+
+        await driver.ConnectAsync(device, CancellationToken.None);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => driver.ReadAsync(
+            device,
+            [new("T1", "A1", TagDataType.Double)],
+            CancellationToken.None));
+    }
+
+    [Fact]
     public async Task DisconnectedScenarioReturnsNullDisconnectedResults()
     {
         var driver = new SimulatorPlcDriver(new SimulatorValueGenerator());
@@ -174,5 +219,10 @@ public sealed class SimulatorTests
         Assert.True(options.IsFaultActive(device, DateTimeOffset.UnixEpoch.AddSeconds(5)));
         Assert.True(options.IsFaultActive(device, DateTimeOffset.UnixEpoch.AddSeconds(6)));
         Assert.False(options.IsFaultActive(device, DateTimeOffset.UnixEpoch.AddSeconds(7)));
+    }
+
+    private sealed class FixedTimeProvider(DateTimeOffset utcNow) : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow() => utcNow;
     }
 }
