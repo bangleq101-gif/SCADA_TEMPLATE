@@ -40,4 +40,29 @@ public sealed class DevicePollingPlanTests
             });
         Assert.Collection(plan.Tags, _ => { }, _ => { }, _ => { });
     }
+
+    [Fact]
+    public void DriverRequestUsesConfiguredSourceDataTypeRatherThanCanonicalDataType()
+    {
+        var device = new DeviceDefinition { Id = "PLC-1", DriverType = "Test" };
+        var plan = DevicePollingPlan.Create(
+            device,
+            [
+                new TagDefinition
+                {
+                    Id = "LEVEL",
+                    DeviceId = "PLC-1",
+                    Address = "DB1.DBD0",
+                    ScanGroup = "Fast",
+                    SourceDataType = TagDataType.Int32,
+                    DataType = TagDataType.Double,
+                    Scale = 0.1d
+                }
+            ],
+            [new ScanGroupDefinition { Name = "Fast", IntervalMilliseconds = 100 }]);
+
+        var request = Assert.Single(Assert.Single(plan.Groups).Requests);
+
+        Assert.Equal(TagDataType.Int32, request.DataType);
+    }
 }

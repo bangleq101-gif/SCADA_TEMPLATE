@@ -30,7 +30,23 @@ public sealed class TagEditorRowViewModel : INotifyPropertyChanged, INotifyDataE
     public string Description { get => Definition.Description; set => SetValue(Definition.Description, value, newValue => Definition.Description = newValue, nameof(Description)); }
     public string DeviceId { get => Definition.DeviceId; set => SetValue(Definition.DeviceId, value, newValue => Definition.DeviceId = newValue, nameof(DeviceId)); }
     public string Address { get => Definition.Address; set => SetValue(Definition.Address, value, newValue => Definition.Address = newValue, nameof(Address)); }
+    public TagDataType SourceDataType
+    {
+        get => Definition.GetEffectiveSourceDataType();
+        set
+        {
+            if (Definition.SourceDataType == value)
+            {
+                return;
+            }
+
+            Definition.SourceDataType = value;
+            OnPropertyChanged();
+        }
+    }
     public TagDataType DataType { get => Definition.DataType; set => SetValue(Definition.DataType, value, newValue => Definition.DataType = newValue, nameof(DataType)); }
+    public double Scale { get => Definition.Scale; set => SetValue(Definition.Scale, value, newValue => Definition.Scale = newValue, nameof(Scale)); }
+    public double Offset { get => Definition.Offset; set => SetValue(Definition.Offset, value, newValue => Definition.Offset = newValue, nameof(Offset)); }
     public bool Enabled { get => Definition.Enabled; set => SetValue(Definition.Enabled, value, newValue => Definition.Enabled = newValue, nameof(Enabled)); }
     public string ScanGroup { get => Definition.ScanGroup; set => SetValue(Definition.ScanGroup, value, newValue => Definition.ScanGroup = newValue, nameof(ScanGroup)); }
     public TagAccessMode AccessMode { get => Definition.AccessMode; set => SetValue(Definition.AccessMode, value, newValue => Definition.AccessMode = newValue, nameof(AccessMode)); }

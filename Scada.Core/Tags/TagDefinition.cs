@@ -7,7 +7,14 @@ public sealed class TagDefinition
     public string Description { get; set; } = string.Empty;
     public string DeviceId { get; set; } = string.Empty;
     public string Address { get; set; } = string.Empty;
+    /// <summary>
+    /// The data type returned by the PLC driver before engineering conversion.
+    /// A null value preserves legacy configuration semantics and means <see cref="DataType"/>.
+    /// </summary>
+    public TagDataType? SourceDataType { get; set; }
     public TagDataType DataType { get; set; } = TagDataType.Double;
+    public double Scale { get; set; } = 1d;
+    public double Offset { get; set; }
     public bool Enabled { get; set; } = true;
     public string ScanGroup { get; set; } = "Normal";
     public TagAccessMode AccessMode { get; set; } = TagAccessMode.ReadOnly;
@@ -19,4 +26,6 @@ public sealed class TagDefinition
     public bool MqttPublishEnabled { get; set; }
     public string MqttProfile { get; set; } = "Default";
     public string MqttTopicOverride { get; set; } = string.Empty;
+
+    public TagDataType GetEffectiveSourceDataType() => SourceDataType ?? DataType;
 }

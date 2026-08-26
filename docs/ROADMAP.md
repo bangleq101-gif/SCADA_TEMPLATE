@@ -115,7 +115,8 @@ Status: COMPLETE — merged and verified on canonical `main` at `1b575a0e969703a
 
 ## Milestone 13 — Engineering Devices and Address Browser
 
-Status: IMPLEMENTED LOCALLY on `feature/milestone-13-engineering-devices`; pending source review and merge.
+Status: COMPLETE — merged and verified on canonical `main` via PR #21 at
+`3bf14de5f6f9af6d0121fee367f19a2c9da1607d`.
 
 - Add the App-layer `engineering.devices` workspace while keeping the existing Engineering route hierarchy and `ProjectEditSession` as the only project-editing authority.
 - Add a Core driver-engineering provider contract for typed option metadata, provider validation and read-only logical address candidates. The contract must not be an `IPlcDriver` replacement and must not perform PLC polling or writes.
@@ -123,15 +124,42 @@ Status: IMPLEMENTED LOCALLY on `feature/milestone-13-engineering-devices`; pendi
 - Provide virtualized device editing with Add, Duplicate, Delete, Revert, Save, typed driver options and read-only Address Browser behavior. Device definitions remain static configuration; runtime state remains in Runtime.
 - Verify copy-folder portability, provider validation, project-session save/revert semantics, deterministic Simulator scenarios, WPF rendering/accessibility, no PLC/MQTT writes and the existing `Scada.Runtime → Scada.Core` boundary.
 
-M13 does not include production Siemens/Mitsubishi/Modbus/OPC UA drivers, runtime hot reload, reconnect/command controls, PLC writes, MQTT Write, a plugin framework, deployment tooling or M14 scope.
+M13 does not include production Siemens/Mitsubishi/Modbus/OPC UA drivers, runtime hot reload, reconnect/command controls, PLC writes, MQTT Write, a plugin framework or deployment tooling.
 
-## Remaining Architecture V1 Coverage After M13 feature implementation
+## Milestone 14 — Tag Engineering and Bounded Online Tag Monitor
 
-The complete requirement-by-requirement matrix is maintained in `docs/V1_COVERAGE.md`. It records 50 audited areas: 30 `COMPLETE`, 12 `PARTIAL`, 2 `NOT STARTED` and 6 `EXPLICITLY DEFERRED`.
+Status: IMPLEMENTED AND VERIFIED LOCALLY on
+`feature/milestone-14-tag-engineering-monitor`; pending commit and merge.
+
+- Add `SourceDataType`, canonical `DataType`, finite `Scale` and finite
+  `Offset` metadata to `TagDefinition`; use a pure Core transform contract so
+  drivers return raw source values and `TagEngine` publishes canonical values to
+  central TagCache exactly once.
+- Request source types through the existing driver-read plan while keeping
+  `Scada.Runtime` driver-neutral. A Good-value transform failure becomes Bad
+  through existing TagCache D-019 quality/timestamp semantics; it never causes
+  a PLC reread.
+- Migrate project schema v6 → v7 in memory, retain legacy identity semantics,
+  and update clone/compare/save/revert, CSV/TSV and Tag Manager/bulk editing.
+- Bound Online Tag Monitor to static-metadata filtering and paging: default
+  250, maximum 500 visible tags, deduplicated active-page subscriptions,
+  subscribe-before-seed and one latest-state App Dispatcher delivery per active
+  generation.
+- Verify numeric/non-numeric conversion contracts, invalid Good-transform
+  quality behavior, `Int64` precision, v6 migration, 10,000-tag subscription
+  bounds, lifecycle/sequence races and WPF DataGrid virtualization.
+
+M14 does not add PLC/MQTT write paths, direct UI PLC reads, `Min`/`Max`
+clamping, calibration/deadband policy, runtime hot reload, new product projects,
+new packages, Trend, Reports, Recipes or M15 scope.
+
+## Remaining Architecture V1 Coverage After M14 feature implementation
+
+The complete requirement-by-requirement matrix is maintained in `docs/V1_COVERAGE.md`. It records 50 audited areas: 33 `COMPLETE`, 9 `PARTIAL`, 2 `NOT STARTED` and 6 `EXPLICITLY DEFERRED`.
 
 The remaining work is intentionally described as coverage, not as an authorization to start a new milestone:
 
-1. `PARTIAL` — Scale/Offset domain and runtime transformation semantics; active-view subscription scope beyond the M12 health/workspace boundary; real protocol-aware Address Browser/device-selection extension; module/line/machine organization; broader HMI catalog; external asset packaging; Engineering Devices/Trend route coverage beyond the M13 device editor; screen metadata; Simulator scenario qualification; and consistent RuntimeId logging context.
+1. `PARTIAL` — real protocol-aware Address Browser/device-selection extension; module/line/machine organization; broader HMI catalog; external asset packaging; Engineering Devices/Trend route coverage beyond the M13 device editor; screen metadata; Simulator scenario qualification; and consistent RuntimeId logging context.
 2. `NOT STARTED` — deployment tooling and offline package/installation strategy.
 3. `EXPLICITLY DEFERRED` — production Siemens/Mitsubishi/Modbus/OPC UA drivers, MQTT Write/command subscriptions, Trend, Recipes/Calibration, Reports, and distributed/Web/cloud/HA/scripting/plugin systems.
 
@@ -140,11 +168,12 @@ The remaining work is intentionally described as coverage, not as an authorizati
 If a future planning gate is opened, a dependency-aware review could consider:
 
 1. remaining operational engineering coverage (screen metadata, broader device lifecycle and Overview/Status Bar extensions);
-2. bounded active-view delivery, Scale/Offset semantics, screen metadata and module/line/machine organization;
+2. screen metadata and module/line/machine organization;
 3. deployment/offline portability tooling;
 4. separately approved monitoring or HMI extensions such as Trend or additional asset support.
 
-This is sequencing guidance only. M13 is implemented on its feature branch but remains subject to source review and merge; it does not authorize M14 implementation.
+This is sequencing guidance only. M14 has passed feature-worktree verification
+but remains subject to commit and merge; it does not authorize M15 implementation.
 
 ## Explicitly deferred
 

@@ -1,4 +1,5 @@
 using Scada.App.Services;
+using System.Globalization;
 using Scada.App.ViewModels;
 using Scada.Core.Configuration;
 using Scada.Core.Devices;
@@ -191,6 +192,84 @@ public sealed class TagManagerTests
         });
         Assert.Equal(originalNames, context.Session.WorkingProject.Tags.Select(tag => tag.Name));
         Assert.All(context.Session.WorkingProject.Tags, tag => Assert.Equal(TagDataType.Double, tag.DataType));
+    }
+
+    [Fact]
+    public void BulkEditAppliesExplicitSourceTypeScaleAndOffsetAtomically()
+    {
+        var context = CreateContext();
+        context.TagManager.SetSelection(context.TagManager.Rows.Cast<object>());
+        context.TagManager.BulkEdit.SourceDataType = BulkEditValue<TagDataType>.Explicit(TagDataType.Int32);
+        context.TagManager.BulkEdit.ScaleText = "0.1";
+        context.TagManager.BulkEdit.OffsetText = "-20";
+
+        context.TagManager.ApplyBulkEdit();
+
+        Assert.All(context.Session.WorkingProject.Tags, tag =>
+        {
+            Assert.Equal(TagDataType.Int32, tag.SourceDataType);
+            Assert.Equal(0.1d, tag.Scale);
+            Assert.Equal(-20d, tag.Offset);
+        });
+    }
+
+    [Fact]
+    public void InvalidBulkEngineeringInputDoesNotMutateWorkingProject()
+    {
+        var context = CreateContext();
+        context.TagManager.SetSelection(context.TagManager.Rows.Cast<object>());
+        context.TagManager.BulkEdit.ScaleText = "not-a-number";
+
+        context.TagManager.ApplyBulkEdit();
+
+        Assert.All(context.Session.WorkingProject.Tags, tag => Assert.Equal(1d, tag.Scale));
+        Assert.Contains("finite invariant", context.TagManager.StatusText, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void GeneratedImportIdIsInvariantAcrossCulturesWhenEngineeringFieldsArePresent()
+    {
+        var tag = new TagDefinition
+        {
+            Name = "Level",
+            DeviceId = "SIM01",
+            Address = "A100",
+            SourceDataType = TagDataType.Int32,
+            DataType = TagDataType.Double,
+            Scale = 0.1d,
+            Offset = -20d
+        };
+
+        var enUsId = GenerateImportedId(tag, "en-US");
+        var deDeId = GenerateImportedId(tag, "de-DE");
+
+        Assert.Equal(enUsId, deDeId);
+    }
+
+    private static string GenerateImportedId(TagDefinition tag, string cultureName)
+    {
+        string? id = null;
+        Exception? failure = null;
+        var thread = new Thread(() =>
+        {
+            try
+            {
+                var culture = CultureInfo.GetCultureInfo(cultureName);
+                CultureInfo.CurrentCulture = culture;
+                CultureInfo.CurrentUICulture = culture;
+                id = Assert.Single(TagImportPreparer.Prepare([tag], []).Candidates).Definition.Id;
+            }
+            catch (Exception exception)
+            {
+                failure = exception;
+            }
+        }) { IsBackground = true };
+
+        thread.Start();
+        Assert.True(thread.Join(TimeSpan.FromSeconds(10)), "Stable import ID culture check did not complete.");
+        Assert.Null(failure);
+        Assert.NotNull(id);
+        return id;
     }
 
     [Fact]

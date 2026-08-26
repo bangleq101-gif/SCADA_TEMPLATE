@@ -128,6 +128,9 @@ public sealed class TagManagerViewModel : INotifyPropertyChanged, IWorkspaceLife
     public IReadOnlyList<BulkEditValue<TagDataType>> BulkDataTypeOptions =>
         [BulkEditValue<TagDataType>.Unchanged, BulkEditValue<TagDataType>.Mixed, .. DataTypeOptions.Select(value => BulkEditValue<TagDataType>.Explicit(value))];
 
+    public IReadOnlyList<BulkEditValue<TagDataType>> BulkSourceDataTypeOptions =>
+        [BulkEditValue<TagDataType>.Unchanged, BulkEditValue<TagDataType>.Mixed, .. DataTypeOptions.Select(value => BulkEditValue<TagDataType>.Explicit(value))];
+
     public IReadOnlyList<BulkEditValue<TagAccessMode>> BulkAccessModeOptions =>
         [BulkEditValue<TagAccessMode>.Unchanged, BulkEditValue<TagAccessMode>.Mixed, .. AccessModeOptions.Select(value => BulkEditValue<TagAccessMode>.Explicit(value))];
 
@@ -369,6 +372,8 @@ public sealed class TagManagerViewModel : INotifyPropertyChanged, IWorkspaceLife
         {
             Id = CreateUniqueId(),
             Name = CreateUniqueName("New Tag"),
+            SourceDataType = TagDataType.Double,
+            DataType = TagDataType.Double,
             DeviceId = _session.WorkingProject.Devices.FirstOrDefault()?.Id ?? string.Empty,
             ScanGroup = _session.WorkingProject.ScanGroups.FirstOrDefault(group =>
                 string.Equals(group.Name, "Normal", StringComparison.OrdinalIgnoreCase))?.Name
@@ -510,6 +515,12 @@ public sealed class TagManagerViewModel : INotifyPropertyChanged, IWorkspaceLife
             return;
         }
 
+        if (BulkEdit.HasTransformInputErrors)
+        {
+            StatusText = $"{description} blocked: {BulkEdit.ScaleInputError ?? BulkEdit.OffsetInputError}";
+            return;
+        }
+
         var candidate = ProjectSnapshotCloner.Clone(_session.WorkingProject);
         var ids = selected.Select(row => row.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
         foreach (var tag in candidate.Tags.Where(tag => ids.Contains(tag.Id)))
@@ -548,6 +559,21 @@ public sealed class TagManagerViewModel : INotifyPropertyChanged, IWorkspaceLife
         if (BulkEdit.DataType.Kind == BulkEditValueKind.Explicit)
         {
             tag.DataType = BulkEdit.DataType.Value;
+        }
+
+        if (BulkEdit.SourceDataType.Kind == BulkEditValueKind.Explicit)
+        {
+            tag.SourceDataType = BulkEdit.SourceDataType.Value;
+        }
+
+        if (BulkEdit.Scale.Kind == BulkEditValueKind.Explicit)
+        {
+            tag.Scale = BulkEdit.Scale.Value;
+        }
+
+        if (BulkEdit.Offset.Kind == BulkEditValueKind.Explicit)
+        {
+            tag.Offset = BulkEdit.Offset.Value;
         }
 
         if (BulkEdit.ScanGroup.Kind == BulkEditValueKind.Explicit)
@@ -915,7 +941,10 @@ public sealed class TagManagerViewModel : INotifyPropertyChanged, IWorkspaceLife
     private static bool RuntimeDefinitionMatches(TagDefinition left, TagDefinition right) =>
         string.Equals(left.DeviceId, right.DeviceId, StringComparison.Ordinal) &&
         string.Equals(left.Address, right.Address, StringComparison.Ordinal) &&
+        left.GetEffectiveSourceDataType() == right.GetEffectiveSourceDataType() &&
         left.DataType == right.DataType &&
+        left.Scale == right.Scale &&
+        left.Offset == right.Offset &&
         left.Enabled == right.Enabled &&
         string.Equals(left.ScanGroup, right.ScanGroup, StringComparison.Ordinal);
 
@@ -955,7 +984,10 @@ public sealed class TagManagerViewModel : INotifyPropertyChanged, IWorkspaceLife
         Description = source.Description,
         DeviceId = source.DeviceId,
         Address = source.Address,
+        SourceDataType = source.SourceDataType,
         DataType = source.DataType,
+        Scale = source.Scale,
+        Offset = source.Offset,
         Enabled = source.Enabled,
         ScanGroup = source.ScanGroup,
         AccessMode = source.AccessMode,

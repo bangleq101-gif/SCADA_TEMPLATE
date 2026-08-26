@@ -14,7 +14,7 @@
 - Navigation groups are non-navigable. Exactly one canonical leaf is selected, and Shell selection is synchronized from the NavigationService state.
 - Navigation transitions must deactivate the old workspace, update the route/view model coherently and activate the destination. Invalid and same-route navigation must not change lifecycle state.
 - Keep workspace lifecycle abstractions in `Scada.App`; do not move UI navigation or lifecycle contracts into Core or Runtime.
-- Monitoring must own TagCache subscriptions only while active. Activation is idempotent, deactivation disposes owned subscriptions, and queued callbacks must re-check their activation generation before updating rows.
+- Monitoring must own TagCache subscriptions only while active. Online Tag Monitor filters only static tag metadata, subscribes only to its deduplicated visible page (default 250, maximum 500), subscribes before cache seeding, and uses one latest-state Dispatcher delivery per active generation. Activation is idempotent, deactivation disposes owned subscriptions, and queued callbacks must re-check their activation generation before updating rows.
 - WPF Dispatcher marshaling belongs in `Scada.App`. Views and ViewModels must consume TagCache data and must not read PLCs directly.
 - Reuse `WorkspaceLayout` and ResourceDictionary styles for workspace page structure and semantic colors. Do not add a third-party UI framework for the Shell.
 - Machine Settings parameter values are canonical Core text values. Page Apply must validate all drafts before one `ProjectEditSession.MarkChanged()` call; no editor mutates the project or writes a PLC per keystroke. Optional live values use logical TagCache IDs only and active-page subscription ownership.
@@ -23,7 +23,7 @@
 ## Tag Manager rules
 
 - Use an explicit absolute project path. Do not search parent folders, infer a source-tree project or fall back to the application output directory.
-- Treat the versioned `project.json` document as the whole project-document authority. Preserve tag order and save atomically; migrate v1 → v2 → v3 in memory without silently replacing malformed or invalid existing documents with defaults.
+- Treat the versioned `project.json` document as the whole project-document authority. Preserve tag order and save atomically; migrate v1 → v2 → v3 → v4 → v5 → v6 → v7 in memory without silently replacing malformed or invalid existing documents with defaults.
 - Keep startup, saved and working project snapshots isolated through deep cloning. Mark runtime-affecting edits restart-required; do not add hot reload or runtime reconfiguration in this milestone.
 - Keep Tag Manager editing in `Scada.App`; it must not read PLCs or add a second runtime data path.
 - Use one disposable selected-row TagCache subscription for runtime quality observation. Do not create a subscription per row or fan out to the whole table.
@@ -33,6 +33,9 @@
 - Treat CSV/TSV import as a prepare/decide/apply transaction. Never silently suffix, overwrite or regenerate a supplied conflicting Id/name.
 - Keep editor option lists separate from filter option lists; `All` is a filter sentinel and is never an editable DeviceId or ScanGroup value.
 - Model bulk fields as `Unchanged`, `Mixed` or `Explicit`; apply only explicit fields to one cloned candidate and validate once.
+- `SourceDataType` is the raw driver contract, while `DataType` is the canonical TagCache contract. Numeric tags may use finite, nonzero `Scale` and finite `Offset`; Boolean and String require matching source/canonical types and identity Scale/Offset. `TagEngine` performs the conversion once before TagCache, never in App, Historian, MQTT or HMI consumers.
+- A Good raw value that cannot satisfy the declared engineering transform must become Bad through central TagCache quality semantics. Do not clamp against `Min`/`Max`, substitute a value, reread a PLC or silently coerce invalid raw values.
+- CSV/TSV source type, Scale and Offset are invariant-culture interchange fields. Preserve them through import preparation, bulk candidate validation, clone/compare and explicit project Save.
 - Seed row quality from one central TagCache snapshot per row. Keep live subscriptions limited to the selected persisted tag and invalidate every old selection generation.
 - Destructive delete requires an App-layer confirmation adapter; cancellation must leave the working project unchanged.
 

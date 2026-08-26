@@ -1,5 +1,7 @@
 using Scada.Core.Drivers;
+using Scada.Core.Configuration;
 using Scada.Core.Tags;
+using Microsoft.Extensions.Logging.Abstractions;
 using Scada.Runtime.Engine;
 using Scada.Runtime.Tags;
 using Xunit;
@@ -8,6 +10,69 @@ namespace Scada.Runtime.Tests;
 
 public sealed class TagEngineTests
 {
+    [Fact]
+    public void GoodDriverValueIsTransformedOnceBeforeItReachesTagCache()
+    {
+        var cache = new TagCache();
+        var options = new RuntimeOptions
+        {
+            Tags =
+            [
+                new TagDefinition
+                {
+                    Id = "LEVEL",
+                    DeviceId = "PLC-1",
+                    Address = "DB1.DBD0",
+                    SourceDataType = TagDataType.Int32,
+                    DataType = TagDataType.Double,
+                    Scale = 0.1d,
+                    Offset = -20d
+                }
+            ]
+        };
+        var engine = new TagEngine(cache, options, NullLogger<TagEngine>.Instance);
+        var timestamp = DateTimeOffset.Parse("2026-01-01T00:00:05Z");
+
+        engine.Apply([new DriverReadResult("LEVEL", 1_234, TagQuality.Good, timestamp)]);
+
+        var value = Assert.IsType<TagValue>(cache.TryGet("LEVEL", out var cached) ? cached : null);
+        Assert.Equal(103.4d, Assert.IsType<double>(value.Value), precision: 10);
+        Assert.Equal(TagQuality.Good, value.Quality);
+        Assert.Equal(timestamp, value.Timestamp);
+    }
+
+    [Fact]
+    public void InvalidGoodEngineeringTransformBecomesBadWithoutReplacingLastCanonicalGoodValue()
+    {
+        var cache = new TagCache();
+        var options = new RuntimeOptions
+        {
+            Tags =
+            [
+                new TagDefinition
+                {
+                    Id = "COUNT",
+                    DeviceId = "PLC-1",
+                    Address = "DB1.DBD4",
+                    SourceDataType = TagDataType.Int32,
+                    DataType = TagDataType.Double,
+                    Scale = 0.5d
+                }
+            ]
+        };
+        var engine = new TagEngine(cache, options, NullLogger<TagEngine>.Instance);
+        var goodTimestamp = DateTimeOffset.Parse("2026-01-01T00:00:05Z");
+        var invalidTimestamp = DateTimeOffset.Parse("2026-01-01T00:00:10Z");
+
+        engine.Apply([new DriverReadResult("COUNT", 10, TagQuality.Good, goodTimestamp)]);
+        engine.Apply([new DriverReadResult("COUNT", 10.5d, TagQuality.Good, invalidTimestamp)]);
+
+        Assert.True(cache.TryGet("COUNT", out var value));
+        Assert.Equal(5d, Assert.IsType<double>(value!.Value));
+        Assert.Equal(TagQuality.Bad, value.Quality);
+        Assert.Equal(goodTimestamp, value.Timestamp);
+    }
+
     [Fact]
     public void DisconnectWithoutSuccessfulValueUsesTransitionTimestamp()
     {

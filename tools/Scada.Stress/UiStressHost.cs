@@ -39,8 +39,8 @@ public sealed class UiStressHost : IDisposable
             _dispatcher = Dispatcher.CurrentDispatcher;
             _ = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
             _viewModel = new MonitoringViewModel(_cache, _options);
-            foreach (var row in _viewModel.Rows) row.PropertyChanged += OnRowChanged;
             _viewModel.Activate();
+            foreach (var row in _viewModel.Rows) row.PropertyChanged += OnRowChanged;
             _probe = new DispatcherResponsivenessProbe(_dispatcher);
             _started.TrySetResult(null);
             Dispatcher.Run();

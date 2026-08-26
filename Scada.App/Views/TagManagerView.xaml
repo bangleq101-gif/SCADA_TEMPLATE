@@ -49,7 +49,10 @@
                         <WrapPanel Margin="4">
                             <ComboBox Width="110" Margin="0,0,6,0" ItemsSource="{Binding BulkEnabledOptions}" SelectedItem="{Binding BulkEdit.Enabled, Mode=TwoWay}" DisplayMemberPath="DisplayName" ToolTip="Enabled" />
                             <ComboBox Width="140" Margin="0,0,6,0" ItemsSource="{Binding BulkDeviceOptions}" SelectedItem="{Binding BulkEdit.DeviceId, Mode=TwoWay}" DisplayMemberPath="DisplayName" ToolTip="Device" />
+                            <ComboBox Width="120" Margin="0,0,6,0" ItemsSource="{Binding BulkSourceDataTypeOptions}" SelectedItem="{Binding BulkEdit.SourceDataType, Mode=TwoWay}" DisplayMemberPath="DisplayName" ToolTip="Source Data Type" />
                             <ComboBox Width="110" Margin="0,0,6,0" ItemsSource="{Binding BulkDataTypeOptions}" SelectedItem="{Binding BulkEdit.DataType, Mode=TwoWay}" DisplayMemberPath="DisplayName" ToolTip="Data Type" />
+                            <TextBox Width="88" Margin="0,0,6,0" Text="{Binding BulkEdit.ScaleText, UpdateSourceTrigger=PropertyChanged}" ToolTip="Scale: blank leaves the value unchanged; use invariant decimal input." AutomationProperties.Name="Bulk Scale" />
+                            <TextBox Width="88" Margin="0,0,6,0" Text="{Binding BulkEdit.OffsetText, UpdateSourceTrigger=PropertyChanged}" ToolTip="Offset: blank leaves the value unchanged; use invariant decimal input." AutomationProperties.Name="Bulk Offset" />
                             <ComboBox Width="130" Margin="0,0,6,0" ItemsSource="{Binding BulkScanGroupOptions}" SelectedItem="{Binding BulkEdit.ScanGroup, Mode=TwoWay}" DisplayMemberPath="DisplayName" ToolTip="Scan Group" />
                             <ComboBox Width="120" Margin="0,0,6,0" ItemsSource="{Binding BulkAccessModeOptions}" SelectedItem="{Binding BulkEdit.AccessMode, Mode=TwoWay}" DisplayMemberPath="DisplayName" ToolTip="Access Mode" />
                             <ComboBox Width="130" Margin="0,0,6,0" ItemsSource="{Binding BulkHistoryEnabledOptions}" SelectedItem="{Binding BulkEdit.HistoryEnabled, Mode=TwoWay}" DisplayMemberPath="DisplayName" ToolTip="History Enabled" />
@@ -82,7 +85,7 @@
                             </DataGridTemplateColumn.CellEditingTemplate>
                         </DataGridTemplateColumn>
                         <DataGridTextColumn Header="Address" Binding="{Binding Address, UpdateSourceTrigger=PropertyChanged}" Width="1*" />
-                        <DataGridTemplateColumn Header="Data Type" SortMemberPath="DataType" Width="90">
+                        <DataGridTemplateColumn Header="Value Type" SortMemberPath="DataType" Width="90">
                             <DataGridTemplateColumn.CellTemplate>
                                 <DataTemplate><TextBlock Text="{Binding DataType}" /></DataTemplate>
                             </DataGridTemplateColumn.CellTemplate>
@@ -126,6 +129,7 @@
                             <RowDefinition Height="Auto" />
                             <RowDefinition Height="Auto" />
                             <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
                         </Grid.RowDefinitions>
                         <TextBlock Grid.Row="0" Grid.Column="0" Text="Id" Style="{StaticResource FieldLabelTextStyle}" />
                         <TextBox Grid.Row="0" Grid.Column="1" Text="{Binding Id}" IsReadOnly="True" Margin="4" />
@@ -137,7 +141,7 @@
                         <ComboBox Grid.Row="1" Grid.Column="1" ItemsSource="{Binding DataContext.DeviceOptions, ElementName=Root}" Text="{Binding DeviceId, UpdateSourceTrigger=PropertyChanged}" IsEditable="True" Margin="4" />
                         <TextBlock Grid.Row="1" Grid.Column="2" Text="Scan Group" Style="{StaticResource FieldLabelTextStyle}" />
                         <ComboBox Grid.Row="1" Grid.Column="3" ItemsSource="{Binding DataContext.ScanGroupOptions, ElementName=Root}" Text="{Binding ScanGroup, UpdateSourceTrigger=PropertyChanged}" IsEditable="True" Margin="4" />
-                        <TextBlock Grid.Row="1" Grid.Column="4" Text="Data Type" Style="{StaticResource FieldLabelTextStyle}" />
+                        <TextBlock Grid.Row="1" Grid.Column="4" Text="Value Type" Style="{StaticResource FieldLabelTextStyle}" />
                         <ComboBox Grid.Row="1" Grid.Column="5" ItemsSource="{Binding DataContext.DataTypeOptions, ElementName=Root}" SelectedItem="{Binding DataType, UpdateSourceTrigger=PropertyChanged}" Margin="4" />
                         <TextBlock Grid.Row="2" Grid.Column="0" Text="Min" Style="{StaticResource FieldLabelTextStyle}" />
                         <TextBox Grid.Row="2" Grid.Column="1" Text="{Binding Min, UpdateSourceTrigger=PropertyChanged}" Margin="4" />
@@ -155,6 +159,12 @@
                         <TextBox Grid.Row="4" Grid.Column="1" Grid.ColumnSpan="3" Text="{Binding MqttTopicOverride, UpdateSourceTrigger=PropertyChanged}" Margin="4" />
                         <TextBlock Grid.Row="4" Grid.Column="4" Text="Runtime" Style="{StaticResource FieldLabelTextStyle}" />
                         <TextBlock Grid.Row="4" Grid.Column="5" Text="{Binding RuntimeStatus}" Margin="4" VerticalAlignment="Center" Foreground="{StaticResource SecondaryTextBrush}" />
+                        <TextBlock Grid.Row="5" Grid.Column="0" Text="Source Type" Style="{StaticResource FieldLabelTextStyle}" />
+                        <ComboBox Grid.Row="5" Grid.Column="1" ItemsSource="{Binding DataContext.DataTypeOptions, ElementName=Root}" SelectedItem="{Binding SourceDataType, UpdateSourceTrigger=PropertyChanged}" Margin="4" AutomationProperties.Name="Source data type" />
+                        <TextBlock Grid.Row="5" Grid.Column="2" Text="Scale" Style="{StaticResource FieldLabelTextStyle}" />
+                        <TextBox Grid.Row="5" Grid.Column="3" Text="{Binding Scale, UpdateSourceTrigger=PropertyChanged}" Margin="4" AutomationProperties.Name="Engineering scale" />
+                        <TextBlock Grid.Row="5" Grid.Column="4" Text="Offset" Style="{StaticResource FieldLabelTextStyle}" />
+                        <TextBox Grid.Row="5" Grid.Column="5" Text="{Binding Offset, UpdateSourceTrigger=PropertyChanged}" Margin="4" AutomationProperties.Name="Engineering offset" />
                     </Grid>
                 </Border>
             </Grid>

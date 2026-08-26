@@ -4,11 +4,14 @@ Architecture V1 is approved.
 
 Current implementation milestone:
 
-Milestone 13 — Engineering Devices and Address Browser
+Milestone 14 — Tag Engineering and Bounded Online Tag Monitor
 
 Status:
 
-M13 is implemented on `feature/milestone-13-engineering-devices`; it is pending source review and merge.
+M13 is complete on canonical `main` via PR #21 at merge commit
+`3bf14de5f6f9af6d0121fee367f19a2c9da1607d`. M14 is implemented locally on
+`feature/milestone-14-tag-engineering-monitor`; full feature-worktree
+verification and self-review have passed, and it is pending commit and merge.
 
 M11 — Alarm System — COMPLETE. M11 code/runtime implementation completed at `25ec87e91eba0be268384c7b941c63cb8bb0f6d9` through PR #15 and the approved PR #16 architecture-alignment revision (head `636e8fb16080f29e98d3ea976e5e584e1abe7887`). M11 governance/docs closeout was subsequently merged via PR #17 at `2cfd0c39f05e8a9251984e0c82198b72f7616745`; that commit is the final M11 governance authority and the exact M12 implementation base.
 
@@ -209,10 +212,10 @@ M11 merged-main evidence on `25ec87e91eba0be268384c7b941c63cb8bb0f6d9`:
 - `engineering.system` provides a compact read-only service-health surface covering Runtime/System health, Historian, MQTT and provider-aware Local Buffer status; `engineering.diagnostics` provides a virtualized, read-only device diagnostics table. Neither surface reads PLCs, writes configuration or owns commands/reconnect operations.
 - M12 tests cover aggregation precedence, provider asymmetry, unavailable metrics, process telemetry, monotonic uptime, sanitization, sampler cadence/ownership/shutdown, subscriber isolation, 50 synthetic runtime device snapshots, a separate configured 50-device-identity/10,000-tag/100-update sampler scale gate, workspace lifecycle/coalescing, WPF status indicators and DataGrid virtualization.
 
-## Implemented locally in Milestone 13
+## Implemented in Milestone 13
 
-M13 — Engineering Devices and Address Browser — is implemented on
-`feature/milestone-13-engineering-devices`; source review and merge are pending.
+M13 — Engineering Devices and Address Browser — is complete on canonical
+`main` via PR #21 at `3bf14de5f6f9af6d0121fee367f19a2c9da1607d`.
 
 - Core defines the driver-neutral engineering metadata contract:
   `IDriverEngineeringProvider`, typed option definitions and read-only address
@@ -235,6 +238,35 @@ M13 — Engineering Devices and Address Browser — is implemented on
 - M13 adds deterministic Core/Drivers/App tests for provider validation,
   Simulator fault behavior, address browsing, project-session ownership,
   route coverage and WPF rendering/virtualization.
+
+## Implemented locally in Milestone 14
+
+M14 — Tag Engineering and Bounded Online Tag Monitor — is implemented on
+`feature/milestone-14-tag-engineering-monitor`; final feature-worktree
+verification has passed, and commit and merge are pending.
+
+- `TagDefinition` now separates driver-owned `SourceDataType` from canonical
+  `DataType` and adds finite `Scale`/`Offset` engineering metadata. The pure
+  Core transformer accepts only declared raw value shapes, transforms Good
+  values exactly once in `TagEngine`, and publishes only canonical values to
+  central `TagCache`.
+- `DevicePollingPlan` requests the source type from an `IPlcDriver`; Runtime
+  remains driver-neutral and has no WPF, App, Infrastructure or concrete-driver
+  dependency. A transform failure becomes `Bad` through the existing D-019
+  last-known-canonical-value semantics; no PLC reread or UI-side scaling occurs.
+- Project schema v7 migrates v6 tags in memory by setting `SourceDataType` to
+  the former `DataType`; explicit Save writes v7. Clone, compare, CSV/TSV
+  import/export, bulk edit and Tag Manager detail editing preserve all new
+  fields.
+- Online Tag Monitor uses static metadata search/device filtering, a default
+  page size of 250 and a maximum of 500. Only the active visible page owns
+  deduplicated TagCache subscriptions, subscribes before cache seeding, and
+  delivers latest values through one App-layer coalesced Dispatcher callback per
+  active generation. It never reads PLCs and creates no timer/task per tag.
+- M14 includes deterministic transform, validation, migration, Tag Manager,
+  10,000-tag bounded-subscription, lifecycle/sequence and WPF virtualization
+  coverage. `Min`/`Max` clamping, calibration and runtime hot reconfiguration
+  are intentionally not introduced.
 
 ## Verified
 
@@ -263,6 +295,7 @@ M13 — Engineering Devices and Address Browser — is implemented on
 - UI automation remains out of scope.
 - M12 merged-main verification — PASS at `1b575a0e969703a01b006ab4a44147ab01e73ee7`; restore, Release build (0 warnings/0 errors), full test suite (438/438), vulnerability audit, WPF startup smoke, fresh copy-folder portability, `git diff --check`, GitNexus (4,160 nodes / 14,232 edges / 171 clusters / 300 flows / 0 cycles) and Runtime boundary (`Scada.Runtime → Scada.Core ONLY`) all passed.
 - M13 feature-worktree verification — restore PASS; Release build PASS with 0 warnings and 0 errors; full solution tests PASS (453/453: 158 App, 151 Runtime, 38 Core, 12 Drivers, 67 Infrastructure, 27 Stress), including focused Engineering Devices WPF coverage (5/5); vulnerability audit PASS with no vulnerable packages; WPF startup smoke PASS; fresh sibling copy-folder restore/build/startup PASS with no original-path dependency; post-change GitNexus index 4,334 nodes / 14,786 edges / 183 clusters / 300 flows with 0 import cycles; Runtime boundary PASS (`Scada.Runtime → Scada.Core ONLY`).
+- M14 feature-worktree verification — restore PASS; Release build PASS with 0 warnings and 0 errors; full solution tests PASS (483/483: 174 App, 154 Runtime, 48 Core, 12 Drivers, 68 Infrastructure, 27 Stress); vulnerability audit PASS with no vulnerable direct or transitive package; WPF startup smoke PASS with DI composition and `MainWindow` running; a fresh external copy restore/build/startup and original-path scan PASS; `git diff --check` PASS; GitNexus index 4,466 nodes / 15,364 edges / 188 clusters / 300 flows with 0 cycles; Runtime boundary PASS (`Scada.Runtime → Scada.Core ONLY`).
 
 ## Not implemented — later milestones
 
@@ -281,10 +314,10 @@ M13 — Engineering Devices and Address Browser — is implemented on
 
 - A per-device factory that creates a driver with a mismatched `DriverType` can leave that instance without lease ownership before `Acquire` throws. Correct `IDisposable`/`IAsyncDisposable` cleanup on this exceptional misconfiguration path is deferred until resolver acquisition/lifetime design is expanded.
 - A genuinely non-cooperative driver operation may remain in flight after the manager shutdown budget expires. M2 bounds manager return time and retains ownership rather than attempting to kill the task; deeper orphan-operation supervision is later work.
-- Project persistence supports sequential schema v1 → v2 → v3 → v4 → v5 → v6 migration. Migration remains in memory until explicit Save; multi-process conflict handling and undo/redo remain deferred.
+- Project persistence supports sequential schema v1 → v2 → v3 → v4 → v5 → v6 → v7 migration. Migration remains in memory until explicit Save; multi-process conflict handling and undo/redo remain deferred.
 - Project startup requires an explicit canonical `--project-file` path (the supplied launcher provides it); automatic project discovery and hot reload are intentionally not implemented.
-- Tag Manager validation is deterministic and synchronous; full UI automation, `TagDefinition` Scale/Offset fields and runtime scaling/offset transformation semantics remain later work (see `docs/V1_COVERAGE.md` row 16). Runtime reconfiguration without restart also remains later work.
-- The general Online Tag Monitor activates one TagCache subscription per configured row and can enqueue one Dispatcher callback per off-thread update; generation-safe activation/deactivation is implemented, while deeper visible-tag scoping and bounded/latest-state coalescing remain later work (see `docs/V1_COVERAGE.md` row 11).
+- Tag Manager validation is deterministic and synchronous. Source type and finite Scale/Offset engineering conversion are now supported, but `Min`/`Max` clamping, calibration/deadband policy, full UI automation and runtime reconfiguration without restart remain later work.
+- Online Tag Monitor is bounded to the active static-metadata page and coalesces latest values per active generation. Dynamic catalog reload, server-side filtering and additional monitor presentation features remain later work; it must continue to use TagCache only.
 - Import conflict resolution currently offers explicit apply-all for conflict-free imports or append-non-conflicting/cancel for conflicted imports; identity regeneration after a conflict is deferred.
 - InfluxDB provider verification has not yet included a live remote InfluxDB server; transport error mapping, retention behavior and long-running replay remain subject to integration testing.
 - The official InfluxDB.Client exception model exposes HTTP status but does not provide reliable point-level rejection metadata; production therefore preserves generic 400 rows, while point-specific splitting remains available only to an explicitly confirming transport implementation.
@@ -294,7 +327,7 @@ M13 — Engineering Devices and Address Browser — is implemented on
 - Alarm configuration changes are persisted and marked restart-required; runtime hot reload, automatic communication alarms, notification/escalation and multi-process Alarm SQLite writers remain deferred.
 - Alarm SQLite connection configuration is still shared from the Infrastructure History namespace; moving this generic helper to a neutral Persistence namespace is deferred to avoid unrelated churn in the alignment hotfix.
 - Centralized logging uses `ILogger<T>`, the Microsoft.Extensions.Logging pipeline, the Debug provider and structured `DeviceId` fields on polling paths; consistent `RuntimeId` contextual enrichment across Runtime subsystems is not yet standardized (see `docs/V1_COVERAGE.md` row 48).
-- Remaining Architecture V1 partial/not-started coverage, including screen metadata, real protocol-aware browsing, deployment/offline strategy and broader device lifecycle tooling, is tracked in `docs/V1_COVERAGE.md`; this is documentation traceability, not M14 authorization.
+- Remaining Architecture V1 partial/not-started coverage, including screen metadata, real protocol-aware browsing, deployment/offline strategy and broader device lifecycle tooling, is tracked in `docs/V1_COVERAGE.md`; this is documentation traceability, not M15 authorization.
 - The M12 health sampler is observational and intentionally does not provide threshold evaluation, event persistence, notification, command or runtime configuration mutation.
 
-Implementation must follow the ordered milestones in `docs/ROADMAP.md` and the constraints in `docs/SCADA_ARCHITECTURE_V1.md`. M7 MQTT Publisher, M10 qualification, M11 Alarm System and M12 Read-only Operational Health are complete on canonical `main`; M13 Engineering Devices is implemented on `feature/milestone-13-engineering-devices` pending review/merge. MQTT Write, command subscriptions and PLC-write paths remain deferred. M12 is merged at `1b575a0e969703a01b006ab4a44147ab01e73ee7`; M14 remains unauthorized until M13 review is complete.
+Implementation must follow the ordered milestones in `docs/ROADMAP.md` and the constraints in `docs/SCADA_ARCHITECTURE_V1.md`. M7 MQTT Publisher, M10 qualification, M11 Alarm System, M12 Read-only Operational Health and M13 Engineering Devices are complete on canonical `main`; M14 has passed feature-worktree verification and is pending commit and merge. MQTT Write, command subscriptions and PLC-write paths remain deferred. M12 is merged at `1b575a0e969703a01b006ab4a44147ab01e73ee7`; M14 does not authorize M15.

@@ -1,6 +1,32 @@
 
 # Architecture Decisions
 
+## D65 — Bounded Online Tag Monitor delivery remains an App concern
+
+Online Tag Monitor filters only static `RuntimeOptions.Tags` metadata and
+owns subscriptions only for its current visible page: 250 by default and at
+most 500. It subscribes before seeding from central `TagCache`, deduplicates
+logical TagIds, disposes the set on deactivation/disposal and uses generation
+guards both before enqueueing and inside the one coalesced latest-state WPF
+Dispatcher callback. Page/filter changes use set-diff subscription ownership;
+there is no monitor timer, task or PLC read per tag. The Dispatcher abstraction
+and all presentation state remain in `Scada.App`; Runtime and TagCache contracts
+remain unchanged.
+
+## D64 — Tag engineering conversion is canonical Runtime work
+
+`TagDefinition.SourceDataType` describes the raw value requested from a driver;
+`DataType` describes the canonical value visible to TagCache consumers.
+`TagValueTransformer` is a pure Core contract and `TagEngine` is the sole
+Runtime conversion point: it validates declared raw shapes, applies finite
+Scale/Offset only to numeric values and publishes canonical Good values once.
+Boolean and String configurations require matching types and identity
+Scale/Offset. An invalid Good transform publishes Bad and delegates
+last-known-value/timestamp behavior to D-019; no consumer rescales, no PLC is
+reread and no `Min`/`Max` clamp is inferred. Project schema v6 → v7 preserves
+legacy identity semantics in memory by setting `SourceDataType` to the former
+`DataType`; only explicit Save writes v7.
+
 ## D63 — Engineering device metadata is separate from Runtime polling
 
 Milestone 13 adds `IDriverEngineeringProvider` in `Scada.Core` as a neutral

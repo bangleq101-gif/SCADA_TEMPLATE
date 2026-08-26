@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Globalization;
 using System.Runtime.CompilerServices;
 using Scada.Core.Tags;
 
@@ -31,13 +32,20 @@ public sealed class TagBulkEditModel : INotifyPropertyChanged
 {
     private BulkEditValue<bool> _enabled = BulkEditValue<bool>.Unchanged;
     private BulkEditValue<string> _deviceId = BulkEditValue<string>.Unchanged;
+    private BulkEditValue<TagDataType> _sourceDataType = BulkEditValue<TagDataType>.Unchanged;
     private BulkEditValue<TagDataType> _dataType = BulkEditValue<TagDataType>.Unchanged;
+    private BulkEditValue<double> _scale = BulkEditValue<double>.Unchanged;
+    private BulkEditValue<double> _offset = BulkEditValue<double>.Unchanged;
     private BulkEditValue<string> _scanGroup = BulkEditValue<string>.Unchanged;
     private BulkEditValue<TagAccessMode> _accessMode = BulkEditValue<TagAccessMode>.Unchanged;
     private BulkEditValue<bool> _historyEnabled = BulkEditValue<bool>.Unchanged;
     private BulkEditValue<string> _historyProfile = BulkEditValue<string>.Unchanged;
     private BulkEditValue<bool> _mqttPublishEnabled = BulkEditValue<bool>.Unchanged;
     private BulkEditValue<string> _mqttProfile = BulkEditValue<string>.Unchanged;
+    private string _scaleText = string.Empty;
+    private string _offsetText = string.Empty;
+    private string? _scaleInputError;
+    private string? _offsetInputError;
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
@@ -45,7 +53,39 @@ public sealed class TagBulkEditModel : INotifyPropertyChanged
 
     public BulkEditValue<string> DeviceId { get => _deviceId; set => SetField(ref _deviceId, value); }
 
+    public BulkEditValue<TagDataType> SourceDataType { get => _sourceDataType; set => SetField(ref _sourceDataType, value); }
+
     public BulkEditValue<TagDataType> DataType { get => _dataType; set => SetField(ref _dataType, value); }
+
+    public BulkEditValue<double> Scale
+    {
+        get => _scale;
+        set => SetTransformValue(value, isScale: true);
+    }
+
+    public BulkEditValue<double> Offset
+    {
+        get => _offset;
+        set => SetTransformValue(value, isScale: false);
+    }
+
+    public string ScaleText
+    {
+        get => _scaleText;
+        set => SetTransformText(value, isScale: true);
+    }
+
+    public string OffsetText
+    {
+        get => _offsetText;
+        set => SetTransformText(value, isScale: false);
+    }
+
+    public string? ScaleInputError => _scaleInputError;
+
+    public string? OffsetInputError => _offsetInputError;
+
+    public bool HasTransformInputErrors => _scaleInputError is not null || _offsetInputError is not null;
 
     public BulkEditValue<string> ScanGroup { get => _scanGroup; set => SetField(ref _scanGroup, value); }
 
@@ -72,7 +112,10 @@ public sealed class TagBulkEditModel : INotifyPropertyChanged
         {
             Enabled = Uniform(values.Select(tag => tag.Enabled)),
             DeviceId = Uniform(values.Select(tag => tag.DeviceId)),
+            SourceDataType = Uniform(values.Select(tag => tag.GetEffectiveSourceDataType())),
             DataType = Uniform(values.Select(tag => tag.DataType)),
+            Scale = Uniform(values.Select(tag => tag.Scale)),
+            Offset = Uniform(values.Select(tag => tag.Offset)),
             ScanGroup = Uniform(values.Select(tag => tag.ScanGroup)),
             AccessMode = Uniform(values.Select(tag => tag.AccessMode)),
             HistoryEnabled = Uniform(values.Select(tag => tag.HistoryEnabled)),
@@ -110,6 +153,104 @@ public sealed class TagBulkEditModel : INotifyPropertyChanged
         }
 
         field = value;
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+        OnPropertyChanged(propertyName);
     }
+
+    private void SetTransformValue(BulkEditValue<double> value, bool isScale)
+    {
+        if (isScale)
+        {
+            if (EqualityComparer<BulkEditValue<double>>.Default.Equals(_scale, value))
+            {
+                return;
+            }
+
+            _scale = value;
+            _scaleText = FormatTransform(value);
+            _scaleInputError = null;
+            OnPropertyChanged(nameof(Scale));
+            OnPropertyChanged(nameof(ScaleText));
+            OnPropertyChanged(nameof(ScaleInputError));
+        }
+        else
+        {
+            if (EqualityComparer<BulkEditValue<double>>.Default.Equals(_offset, value))
+            {
+                return;
+            }
+
+            _offset = value;
+            _offsetText = FormatTransform(value);
+            _offsetInputError = null;
+            OnPropertyChanged(nameof(Offset));
+            OnPropertyChanged(nameof(OffsetText));
+            OnPropertyChanged(nameof(OffsetInputError));
+        }
+
+        OnPropertyChanged(nameof(HasTransformInputErrors));
+    }
+
+    private void SetTransformText(string? value, bool isScale)
+    {
+        var text = value ?? string.Empty;
+        if (string.Equals(isScale ? _scaleText : _offsetText, text, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        if (isScale)
+        {
+            _scaleText = text;
+        }
+        else
+        {
+            _offsetText = text;
+        }
+
+        BulkEditValue<double> nextValue;
+        string? error;
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            nextValue = BulkEditValue<double>.Unchanged;
+            error = null;
+        }
+        else if (double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed) &&
+                 double.IsFinite(parsed))
+        {
+            nextValue = BulkEditValue<double>.Explicit(parsed);
+            error = null;
+        }
+        else
+        {
+            nextValue = BulkEditValue<double>.Unchanged;
+            error = "Use a finite invariant-culture number.";
+        }
+
+        if (isScale)
+        {
+            _scale = nextValue;
+            _scaleInputError = error;
+            OnPropertyChanged(nameof(ScaleText));
+            OnPropertyChanged(nameof(Scale));
+            OnPropertyChanged(nameof(ScaleInputError));
+        }
+        else
+        {
+            _offset = nextValue;
+            _offsetInputError = error;
+            OnPropertyChanged(nameof(OffsetText));
+            OnPropertyChanged(nameof(Offset));
+            OnPropertyChanged(nameof(OffsetInputError));
+        }
+
+        OnPropertyChanged(nameof(HasTransformInputErrors));
+    }
+
+    private static string FormatTransform(BulkEditValue<double> value) =>
+        value.Kind == BulkEditValueKind.Explicit
+            ? value.Value.ToString("R", CultureInfo.InvariantCulture)
+            : string.Empty;
+
+    private void OnPropertyChanged(string? propertyName) =>
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
 }

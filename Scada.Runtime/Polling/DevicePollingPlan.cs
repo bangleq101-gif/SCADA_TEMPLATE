@@ -38,7 +38,7 @@ public sealed class DevicePollingPlan
         {
             var requests = deviceTags
                 .Where(tag => string.Equals(tag.ScanGroup, group.Name, StringComparison.OrdinalIgnoreCase))
-                .Select(tag => new DriverReadRequest(tag.Id, tag.Address, tag.DataType))
+                .Select(tag => new DriverReadRequest(tag.Id, tag.Address, tag.GetEffectiveSourceDataType()))
                 .ToArray();
 
             if (requests.Length > 0)

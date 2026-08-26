@@ -16,7 +16,10 @@ public sealed class TagTableCodecTests
             Description = "Line 1\r\nLine 2",
             DeviceId = "SIM01",
             Address = "A1",
+            SourceDataType = TagDataType.Int32,
             DataType = TagDataType.Double,
+            Scale = 0.1d,
+            Offset = -20d,
             AccessMode = TagAccessMode.ReadWrite,
             Min = -1.5,
             Max = 100.25,
@@ -36,6 +39,10 @@ public sealed class TagTableCodecTests
         Assert.Equal(source.Id, roundTrip.Id);
         Assert.Equal(source.Name, roundTrip.Name);
         Assert.Equal(source.Description, roundTrip.Description);
+        Assert.Equal(source.SourceDataType, roundTrip.SourceDataType);
+        Assert.Equal(source.DataType, roundTrip.DataType);
+        Assert.Equal(source.Scale, roundTrip.Scale);
+        Assert.Equal(source.Offset, roundTrip.Offset);
         Assert.Equal(source.AccessMode, roundTrip.AccessMode);
         Assert.Equal(source.Min, roundTrip.Min);
         Assert.Equal(source.Max, roundTrip.Max);
@@ -87,5 +94,18 @@ public sealed class TagTableCodecTests
         Assert.False(imported[0].Enabled);
         Assert.Equal(TagDataType.Int32, imported[1].DataType);
         Assert.Equal(TagAccessMode.ReadWrite, imported[1].AccessMode);
+    }
+
+    [Fact]
+    public void LegacyTableWithoutEngineeringColumnsUsesIdentitySourceConfiguration()
+    {
+        var imported = CsvCodec.Import("Id,Name,DeviceId,Address,DataType\nT1,Level,SIM01,A1,Double\n");
+
+        var tag = Assert.Single(imported);
+
+        Assert.Equal(TagDataType.Double, tag.DataType);
+        Assert.Equal(TagDataType.Double, tag.SourceDataType);
+        Assert.Equal(1d, tag.Scale);
+        Assert.Equal(0d, tag.Offset);
     }
 }
