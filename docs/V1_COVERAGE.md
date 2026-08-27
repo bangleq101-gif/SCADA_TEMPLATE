@@ -19,11 +19,13 @@ traceability document, not an authorization to begin a new milestone.
 - M12 merged-main authority: `1b575a0e969703a01b006ab4a44147ab01e73ee7`.
 - M12 merged-main verification: 438/438 tests, GitNexus 4,160 nodes / 14,232 edges / 171 clusters / 300 flows / 0 cycles, and `Scada.Runtime → Scada.Core ONLY`.
 - M13 merged-main authority: PR #21, `3bf14de5f6f9af6d0121fee367f19a2c9da1607d`.
-- M14 feature-worktree verification passed on
-  `feature/milestone-14-tag-engineering-monitor` (483/483 tests, Release
-  build with 0 warnings/errors, audit, WPF/copy-folder smoke, GitNexus 0 cycles
-  and `Scada.Runtime → Scada.Core ONLY`); it is pending commit and merge and
-  does not authorize a later milestone.
+- M14 merged-main authority: PR #22,
+  `f5cd141f2f26ebc9fa56bd0f8139ce23a670d640`; implementation commit
+  `f538a22eab6484b910ce870e4609fc53f28a9dc1` and docs-evidence correction
+  `86cbc8b92186f5afd1d66c6ff58e7fe18b5e239d` are both in its ancestry.
+- M14 merged-main verification: 483/483 tests, Release build with 0
+  warnings/errors, audit, WPF/copy-folder smoke, GitNexus 0 cycles and
+  `Scada.Runtime → Scada.Core ONLY`; it does not authorize a later milestone.
 
 The `Architecture reference` column preserves the original V1 section number
 where applicable. A reference may also identify an approved/current addendum
@@ -106,6 +108,6 @@ The statuses below describe delivered coverage, not production certification:
 | `EXPLICITLY DEFERRED` | 6 |
 | **Total** | **50** |
 
-The matrix records M14 feature-branch coverage verified locally and pending
-commit and merge; it does not authorize M15. Any next milestone must first
-receive its own plan and architecture gate.
+The matrix records M14 coverage merged and verified on canonical `main`; it
+does not authorize M15. Any next milestone must first receive its own plan and
+architecture gate.
