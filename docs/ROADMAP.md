@@ -128,8 +128,8 @@ M13 does not include production Siemens/Mitsubishi/Modbus/OPC UA drivers, runtim
 
 ## Milestone 14 — Tag Engineering and Bounded Online Tag Monitor
 
-Status: IMPLEMENTED AND VERIFIED LOCALLY on
-`feature/milestone-14-tag-engineering-monitor`; pending commit and merge.
+Status: COMPLETE — merged to canonical `main` via PR #22 at merge commit
+`f5cd141f2f26ebc9fa56bd0f8139ce23a670d640`.
 
 - Add `SourceDataType`, canonical `DataType`, finite `Scale` and finite
   `Offset` metadata to `TagDefinition`; use a pure Core transform contract so
@@ -172,8 +172,8 @@ If a future planning gate is opened, a dependency-aware review could consider:
 3. deployment/offline portability tooling;
 4. separately approved monitoring or HMI extensions such as Trend or additional asset support.
 
-This is sequencing guidance only. M14 has passed feature-worktree verification
-but remains subject to commit and merge; it does not authorize M15 implementation.
+This is sequencing guidance only. M14 is complete on canonical `main`; it does
+not authorize M15 implementation.
 
 ## Explicitly deferred
 

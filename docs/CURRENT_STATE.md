@@ -9,9 +9,10 @@ Milestone 14 — Tag Engineering and Bounded Online Tag Monitor
 Status:
 
 M13 is complete on canonical `main` via PR #21 at merge commit
-`3bf14de5f6f9af6d0121fee367f19a2c9da1607d`. M14 is implemented locally on
-`feature/milestone-14-tag-engineering-monitor`; full feature-worktree
-verification and self-review have passed, and it is pending commit and merge.
+`3bf14de5f6f9af6d0121fee367f19a2c9da1607d`. M14 is complete on canonical
+`main` via PR #22 at merge commit `f5cd141f2f26ebc9fa56bd0f8139ce23a670d640`.
+The M14 implementation commit is `f538a22eab6484b910ce870e4609fc53f28a9dc1`,
+followed by the docs-evidence correction `86cbc8b92186f5afd1d66c6ff58e7fe18b5e239d`.
 
 M11 — Alarm System — COMPLETE. M11 code/runtime implementation completed at `25ec87e91eba0be268384c7b941c63cb8bb0f6d9` through PR #15 and the approved PR #16 architecture-alignment revision (head `636e8fb16080f29e98d3ea976e5e584e1abe7887`). M11 governance/docs closeout was subsequently merged via PR #17 at `2cfd0c39f05e8a9251984e0c82198b72f7616745`; that commit is the final M11 governance authority and the exact M12 implementation base.
 
@@ -239,11 +240,10 @@ M13 — Engineering Devices and Address Browser — is complete on canonical
   Simulator fault behavior, address browsing, project-session ownership,
   route coverage and WPF rendering/virtualization.
 
-## Implemented locally in Milestone 14
+## Implemented in Milestone 14
 
-M14 — Tag Engineering and Bounded Online Tag Monitor — is implemented on
-`feature/milestone-14-tag-engineering-monitor`; final feature-worktree
-verification has passed, and commit and merge are pending.
+M14 — Tag Engineering and Bounded Online Tag Monitor — is complete on canonical
+`main` via PR #22 at merge commit `f5cd141f2f26ebc9fa56bd0f8139ce23a670d640`.
 
 - `TagDefinition` now separates driver-owned `SourceDataType` from canonical
   `DataType` and adds finite `Scale`/`Offset` engineering metadata. The pure
@@ -295,7 +295,7 @@ verification has passed, and commit and merge are pending.
 - UI automation remains out of scope.
 - M12 merged-main verification — PASS at `1b575a0e969703a01b006ab4a44147ab01e73ee7`; restore, Release build (0 warnings/0 errors), full test suite (438/438), vulnerability audit, WPF startup smoke, fresh copy-folder portability, `git diff --check`, GitNexus (4,160 nodes / 14,232 edges / 171 clusters / 300 flows / 0 cycles) and Runtime boundary (`Scada.Runtime → Scada.Core ONLY`) all passed.
 - M13 feature-worktree verification — restore PASS; Release build PASS with 0 warnings and 0 errors; full solution tests PASS (453/453: 158 App, 151 Runtime, 38 Core, 12 Drivers, 67 Infrastructure, 27 Stress), including focused Engineering Devices WPF coverage (5/5); vulnerability audit PASS with no vulnerable packages; WPF startup smoke PASS; fresh sibling copy-folder restore/build/startup PASS with no original-path dependency; post-change GitNexus index 4,334 nodes / 14,786 edges / 183 clusters / 300 flows with 0 import cycles; Runtime boundary PASS (`Scada.Runtime → Scada.Core ONLY`).
-- M14 feature-worktree verification — restore PASS; Release build PASS with 0 warnings and 0 errors; full solution tests PASS (483/483: 174 App, 154 Runtime, 48 Core, 12 Drivers, 68 Infrastructure, 27 Stress); vulnerability audit PASS with no vulnerable direct or transitive package; WPF startup smoke PASS with DI composition and `MainWindow` running; a fresh external copy restore/build/startup and original-path scan PASS; `git diff --check` PASS; GitNexus index 4,466 nodes / 15,363 edges / 188 clusters / 300 flows with 0 cycles; Runtime boundary PASS (`Scada.Runtime → Scada.Core ONLY`).
+- M14 merged-main verification — PASS at `f5cd141f2f26ebc9fa56bd0f8139ce23a670d640`; restore PASS; Release build PASS with 0 warnings and 0 errors; full solution tests PASS (483/483: 174 App, 154 Runtime, 48 Core, 12 Drivers, 68 Infrastructure, 27 Stress); vulnerability audit PASS with no vulnerable direct or transitive package; WPF startup smoke PASS with DI composition and `MainWindow` running; a fresh external copy restore/build/startup and original-path scan PASS; `git diff --check` PASS; GitNexus exact merged-main index PASS with 0 cycles; Runtime boundary PASS (`Scada.Runtime → Scada.Core ONLY`).
 
 ## Not implemented — later milestones
 
@@ -330,4 +330,4 @@ verification has passed, and commit and merge are pending.
 - Remaining Architecture V1 partial/not-started coverage, including screen metadata, real protocol-aware browsing, deployment/offline strategy and broader device lifecycle tooling, is tracked in `docs/V1_COVERAGE.md`; this is documentation traceability, not M15 authorization.
 - The M12 health sampler is observational and intentionally does not provide threshold evaluation, event persistence, notification, command or runtime configuration mutation.
 
-Implementation must follow the ordered milestones in `docs/ROADMAP.md` and the constraints in `docs/SCADA_ARCHITECTURE_V1.md`. M7 MQTT Publisher, M10 qualification, M11 Alarm System, M12 Read-only Operational Health and M13 Engineering Devices are complete on canonical `main`; M14 has passed feature-worktree verification and is pending commit and merge. MQTT Write, command subscriptions and PLC-write paths remain deferred. M12 is merged at `1b575a0e969703a01b006ab4a44147ab01e73ee7`; M14 does not authorize M15.
+Implementation must follow the ordered milestones in `docs/ROADMAP.md` and the constraints in `docs/SCADA_ARCHITECTURE_V1.md`. M7 MQTT Publisher, M10 qualification, M11 Alarm System, M12 Read-only Operational Health, M13 Engineering Devices and M14 Tag Engineering and Bounded Online Tag Monitor are complete on canonical `main`. MQTT Write, command subscriptions and PLC-write paths remain deferred. M12 is merged at `1b575a0e969703a01b006ab4a44147ab01e73ee7`; M14 does not authorize M15.
