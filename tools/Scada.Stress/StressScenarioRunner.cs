@@ -35,7 +35,10 @@ public sealed class StressScenarioRunner
         var pollingMetrics = new PollingMetricsCollector();
         var driver = new StressSimulatorDriver(settings.ChangePattern, settings.Seed);
         var resolver = new DriverResolver([DriverRegistration.Shared("Simulator", driver)]);
-        var manager = new DeviceManager(workload.Options, resolver, new TagEngine(cache), NullLogger<DeviceManager>.Instance, NullLogger<DevicePollingWorker>.Instance, TimeProvider.System, settings.InstrumentationEnabled ? pollingMetrics : null);
+        var manager = new DeviceManager(workload.Options, resolver,
+            new TagEngine(cache, workload.Options, NullLogger<TagEngine>.Instance),
+            NullLogger<DeviceManager>.Instance, NullLogger<DevicePollingWorker>.Instance,
+            TimeProvider.System, settings.InstrumentationEnabled ? pollingMetrics : null);
         var polling = new PollingRuntimeService(manager);
 
         TimedHistoryStore? timedHistory = null;

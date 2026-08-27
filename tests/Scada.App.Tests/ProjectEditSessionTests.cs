@@ -184,7 +184,45 @@ public sealed class ProjectEditSessionTests
             session.Revert();
 
             Assert.Equal(string.Empty, session.WorkingProject.Alarms.Definitions[0].Message);
-            Assert.Equal(6, new ProjectConfigurationStore(new ProjectPath(Path.Combine(directory, "project.json"))).Load()!.SchemaVersion);
+            Assert.Equal(7, new ProjectConfigurationStore(new ProjectPath(Path.Combine(directory, "project.json"))).Load()!.SchemaVersion);
+        }
+        finally
+        {
+            DeleteDirectory(directory);
+        }
+    }
+
+    [Fact]
+    public void TagEngineeringFieldsAreDeepClonedComparedSavedAndReverted()
+    {
+        var directory = CreateTempDirectory();
+        try
+        {
+            var options = CreateOptions();
+            options.Tags[0].SourceDataType = TagDataType.Int32;
+            options.Tags[0].DataType = TagDataType.Double;
+            options.Tags[0].Scale = 0.1d;
+            options.Tags[0].Offset = -20d;
+            var session = CreateSession(options, directory);
+
+            session.WorkingProject.Tags[0].Scale = 0.25d;
+            session.MarkChanged();
+
+            Assert.True(session.IsDirty);
+            Assert.Equal(0.1d, session.SavedProject.Tags[0].Scale);
+            Assert.Equal(0.1d, session.StartupProject.Tags[0].Scale);
+            Assert.True(session.TrySave());
+            Assert.Equal(0.25d, session.SavedProject.Tags[0].Scale);
+
+            session.WorkingProject.Tags[0].SourceDataType = TagDataType.Int64;
+            session.WorkingProject.Tags[0].Offset = 99d;
+            session.MarkChanged();
+            session.Revert();
+
+            var reverted = session.WorkingProject.Tags[0];
+            Assert.Equal(TagDataType.Int32, reverted.SourceDataType);
+            Assert.Equal(0.25d, reverted.Scale);
+            Assert.Equal(-20d, reverted.Offset);
         }
         finally
         {

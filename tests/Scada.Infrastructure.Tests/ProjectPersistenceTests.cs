@@ -101,7 +101,7 @@ public sealed class ProjectPersistenceTests
     [Theory]
     [InlineData(0)]
     [InlineData(-1)]
-    [InlineData(7)]
+    [InlineData(8)]
     public void UnsupportedProjectSchemaVersionsAreRejected(int schemaVersion)
     {
         AssertSchemaRejected($"{{\"SchemaVersion\":{schemaVersion},\"Scada\":{{}}}}", "schema");
@@ -154,7 +154,7 @@ public sealed class ProjectPersistenceTests
     }
 
     [Fact]
-    public void LoadingV2MigratesToV6WithoutRewritingTheSourceFile()
+    public void LoadingV2MigratesToV7WithoutRewritingTheSourceFile()
     {
         var directory = CreateTempDirectory();
         try
@@ -167,7 +167,7 @@ public sealed class ProjectPersistenceTests
             var loaded = store.Load();
 
             Assert.NotNull(loaded);
-            Assert.Equal(6, loaded!.SchemaVersion);
+            Assert.Equal(7, loaded!.SchemaVersion);
             Assert.Empty(loaded!.Scada!.MachineSettings.Pages);
             Assert.False(loaded.Scada.Alarms.Enabled);
             Assert.Empty(loaded.Scada.Alarms.Definitions);
@@ -185,7 +185,7 @@ public sealed class ProjectPersistenceTests
     }
 
     [Fact]
-    public void LoadingV1PerformsSequentialMigrationAndSaveWritesV6()
+    public void LoadingV1PerformsSequentialMigrationAndSaveWritesV7()
     {
         var directory = CreateTempDirectory();
         try
@@ -197,7 +197,7 @@ public sealed class ProjectPersistenceTests
 
             var loaded = store.Load()!;
 
-            Assert.Equal(6, loaded.SchemaVersion);
+            Assert.Equal(7, loaded.SchemaVersion);
             Assert.True(loaded.Scada!.Historian.Enabled);
             Assert.Equal("Data/v1.db", loaded.Scada.Historian.DatabasePath);
             Assert.Equal(HistoryStorageProvider.SQLite, loaded.Scada.Historian.StorageProvider);
@@ -205,7 +205,7 @@ public sealed class ProjectPersistenceTests
 
             store.Save(loaded);
 
-            Assert.Contains("\"SchemaVersion\": 6", File.ReadAllText(path), StringComparison.Ordinal);
+            Assert.Contains("\"SchemaVersion\": 7", File.ReadAllText(path), StringComparison.Ordinal);
         }
         finally
         {
@@ -234,6 +234,40 @@ public sealed class ProjectPersistenceTests
             store.Save(loaded);
 
             Assert.Contains($"\"SchemaVersion\": {ProjectDocumentSchema.CurrentVersion}", File.ReadAllText(path), StringComparison.Ordinal);
+        }
+        finally
+        {
+            DeleteDirectory(directory);
+        }
+    }
+
+    [Fact]
+    public void LoadingV6AddsSourceTypeInMemoryAndExplicitSaveWritesEngineeringFields()
+    {
+        var directory = CreateTempDirectory();
+        try
+        {
+            var path = Path.Combine(directory, "project.json");
+            const string original = "{\"SchemaVersion\":6,\"Scada\":{\"RuntimeId\":\"Runtime01\",\"Devices\":[{\"Id\":\"SIM01\",\"DriverType\":\"Simulator\"}],\"Tags\":[{\"Id\":\"LEVEL\",\"Name\":\"Level\",\"DeviceId\":\"SIM01\",\"Address\":\"A1\",\"DataType\":3}]}}";
+            File.WriteAllText(path, original);
+            var store = new ProjectConfigurationStore(new ProjectPath(path));
+
+            var loaded = store.Load()!;
+            var tag = Assert.Single(loaded.Scada!.Tags);
+
+            Assert.Equal(7, loaded.SchemaVersion);
+            Assert.Equal(TagDataType.Double, tag.DataType);
+            Assert.Equal(TagDataType.Double, tag.SourceDataType);
+            Assert.Equal(1d, tag.Scale);
+            Assert.Equal(0d, tag.Offset);
+            Assert.Equal(original, File.ReadAllText(path));
+
+            store.Save(loaded);
+            var saved = File.ReadAllText(path);
+            Assert.Contains("\"SchemaVersion\": 7", saved, StringComparison.Ordinal);
+            Assert.Contains("\"SourceDataType\"", saved, StringComparison.Ordinal);
+            Assert.Contains("\"Scale\": 1", saved, StringComparison.Ordinal);
+            Assert.Contains("\"Offset\": 0", saved, StringComparison.Ordinal);
         }
         finally
         {

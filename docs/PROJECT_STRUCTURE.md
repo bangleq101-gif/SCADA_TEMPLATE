@@ -151,6 +151,35 @@ values. Simulator fault scenarios stay under `Scada.Drivers/Simulator` and
 validates through the existing configuration boundary and never accesses a PLC
 or `TagCache` directly.
 
+## Milestone 14 tag engineering and monitoring ownership
+
+```text
+Scada.Core/Tags
+├── TagDefinition: SourceDataType, canonical DataType, Scale and Offset
+└── TagValueTransformer: pure declared-shape and engineering conversion contract
+
+Scada.Runtime
+├── DevicePollingPlan: requests SourceDataType from IPlcDriver
+└── TagEngine: transforms Good raw values once before TagCache
+
+Scada.App
+├── TagManager: edits/imports/exports engineering metadata through ProjectEditSession
+└── MonitoringViewModel: static metadata filter/page and active-page TagCache ownership
+```
+
+The driver returns a declared raw source value. `TagEngine` converts it to the
+canonical engineering value exactly once before it enters `TagCache`; UI, HMI,
+Historian, MQTT and Alarm therefore consume the same canonical value and never
+perform a PLC reread or their own scale/offset transform. A transform failure
+becomes `TagQuality.Bad` and central TagCache D-019 preserves a prior canonical
+Good value and its source timestamp.
+
+Online Tag Monitor has App-only presentation ownership. It builds a static
+metadata-filtered page, owns only the page's distinct subscriptions while
+active, subscribes before seeding and coalesces pending updates into one WPF
+Dispatcher callback for the current generation. Its default page is 250 tags
+and it never exceeds 500; no per-tag timer, task or UI-side polling exists.
+
 ## Main folders
 
 ```text
@@ -199,7 +228,7 @@ tools/
 
 `tools/Scada.Stress` is a non-product Release stress harness. It may compose all five product projects to exercise the real runtime and WPF paths, but no product project references it. Generated evidence is written only beneath ignored `artifacts/stress`.
 
-The App layer owns the hierarchical route model and workspace lifecycle. `NavigationService.CurrentRouteKey` is the authoritative active route; `ShellViewModel` derives tree selection from it. Navigation destination ViewModels implement the minimal `IWorkspaceLifecycle` contract. Monitoring owns TagCache subscriptions only while its workspace is active and rejects callbacks from older activation generations.
+The App layer owns the hierarchical route model and workspace lifecycle. `NavigationService.CurrentRouteKey` is the authoritative active route; `ShellViewModel` derives tree selection from it. Navigation destination ViewModels implement the minimal `IWorkspaceLifecycle` contract. Monitoring owns only the active visible-page TagCache subscriptions, coalesces latest values through App Dispatcher ownership and rejects callbacks from older activation/page generations.
 
 ## Runtime polling components
 
@@ -238,7 +267,7 @@ one scheduler / device
       ↓
 device + Scan Group logical batch read
       ↓
-TagEngine
+TagEngine (SourceDataType → canonical DataType, Scale, Offset)
       ↓
 TagCache
       ↓
@@ -328,6 +357,28 @@ selected-row TagCache quality observation only
 ```
 
 The Tag Manager owns project editing in `Scada.App`; import data is prepared and conflict-checked before a single candidate mutation, and bulk edits apply only explicit field states. It does not read PLCs, change Runtime polling or provide live runtime reconfiguration. Runtime-affecting edits are marked restart-required. BuildRows seeds a quality snapshot with one `TryGet` per tag and creates no subscriptions; only the selected persisted tag may own one live subscription.
+
+## Milestone 14 Tag engineering flow
+
+```text
+TagDefinition (SourceDataType, DataType, Scale, Offset)
+    │
+    ▼
+DevicePollingPlan → DriverReadRequest(SourceDataType)
+    │
+    ▼
+IPlcDriver raw result
+    │
+    ▼
+TagEngine / TagValueTransformer
+    │ canonical TagValue
+    ▼
+TagCache → UI / Alarm / Historian / MQTT / HMI
+```
+
+No product consumer applies a second engineering conversion. `Min` and `Max`
+remain validation/presentation metadata in this milestone; they do not clamp a
+canonical runtime value.
 
 ## Portable configuration
 

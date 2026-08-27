@@ -33,6 +33,9 @@ public static class ProjectDocumentMigrator
                 case 5:
                     MigrateV5ToV6(document);
                     break;
+                case 6:
+                    MigrateV6ToV7(document);
+                    break;
                 default:
                     throw new ProjectDocumentException(
                         $"Project schema version {document.SchemaVersion} cannot be migrated.");
@@ -78,6 +81,17 @@ public static class ProjectDocumentMigrator
         document.Scada!.Alarms ??= new AlarmOptions();
         document.Scada.Alarms.Enabled = false;
         document.SchemaVersion = 6;
+    }
+
+    private static void MigrateV6ToV7(ProjectDocument document)
+    {
+        EnsureScada(document);
+        foreach (var tag in document.Scada!.Tags)
+        {
+            tag.SourceDataType ??= tag.DataType;
+        }
+
+        document.SchemaVersion = 7;
     }
 
     private static void EnsureScada(ProjectDocument document)

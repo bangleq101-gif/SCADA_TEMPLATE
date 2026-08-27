@@ -256,7 +256,10 @@ internal static class ProjectSnapshotCloner
                 Description = tag.Description,
                 DeviceId = tag.DeviceId,
                 Address = tag.Address,
+                SourceDataType = tag.SourceDataType,
                 DataType = tag.DataType,
+                Scale = tag.Scale,
+                Offset = tag.Offset,
                 Enabled = tag.Enabled,
                 ScanGroup = tag.ScanGroup,
                 AccessMode = tag.AccessMode,
@@ -418,7 +421,10 @@ internal static class ProjectSnapshotComparer
                 !string.Equals(leftTag.Description, rightTag.Description, StringComparison.Ordinal) ||
                 !string.Equals(leftTag.DeviceId, rightTag.DeviceId, StringComparison.Ordinal) ||
                 !string.Equals(leftTag.Address, rightTag.Address, StringComparison.Ordinal) ||
+                leftTag.SourceDataType != rightTag.SourceDataType ||
                 leftTag.DataType != rightTag.DataType ||
+                leftTag.Scale != rightTag.Scale ||
+                leftTag.Offset != rightTag.Offset ||
                 leftTag.Enabled != rightTag.Enabled ||
                 !string.Equals(leftTag.ScanGroup, rightTag.ScanGroup, StringComparison.Ordinal) ||
                 leftTag.AccessMode != rightTag.AccessMode ||

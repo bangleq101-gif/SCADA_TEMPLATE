@@ -109,6 +109,7 @@ public partial class App : Application
             builder.Services.AddSingleton<IHostedService>(services =>
                 services.GetRequiredService<PollingRuntimeService>());
             builder.Services.AddSingleton<IRuntimeHealthDispatcher, WpfRuntimeHealthDispatcher>();
+            builder.Services.AddSingleton<IMonitoringDispatcher, WpfMonitoringDispatcher>();
             builder.Services.AddSingleton<RuntimeHealthService>();
             builder.Services.AddSingleton<IHostedService>(services =>
                 services.GetRequiredService<RuntimeHealthService>());

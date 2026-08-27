@@ -3,16 +3,53 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:controls="clr-namespace:Scada.App.Controls">
     <controls:WorkspaceLayout Title="Online Tag Monitor"
-                              Description="Live values for configured tags."
-                              Style="{StaticResource WorkspaceLayoutStyle}">
-        <DataGrid ItemsSource="{Binding Rows}" Style="{StaticResource WorkspaceDataGridStyle}">
-            <DataGrid.Columns>
-                <DataGridTextColumn Header="Tag" Binding="{Binding Name}" Width="1.4*" />
-                <DataGridTextColumn Header="Device" Binding="{Binding DeviceId}" Width="1*" />
-                <DataGridTextColumn Header="Value" Binding="{Binding Value}" Width="1*" />
-                <DataGridTextColumn Header="Quality" Binding="{Binding Quality}" Width="1*" />
-                <DataGridTextColumn Header="Timestamp" Binding="{Binding Timestamp}" Width="1.6*" />
-            </DataGrid.Columns>
-        </DataGrid>
+                              Description="Live TagCache values for the current bounded page."
+                              Style="{DynamicResource WorkspaceLayoutStyle}">
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+            </Grid.RowDefinitions>
+            <Border Style="{DynamicResource CardBorderStyle}" Padding="12" Margin="0,0,0,12">
+                <WrapPanel VerticalAlignment="Center">
+                    <TextBlock Text="Search" VerticalAlignment="Center" Margin="0,0,6,0" />
+                    <TextBox Width="220" Margin="0,0,12,0"
+                             Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
+                             AutomationProperties.Name="Search monitored tags" />
+                    <TextBlock Text="Device" VerticalAlignment="Center" Margin="0,0,6,0" />
+                    <ComboBox Width="150" Margin="0,0,12,0"
+                              ItemsSource="{Binding DeviceFilters}"
+                              SelectedItem="{Binding SelectedDeviceId}"
+                              AutomationProperties.Name="Filter monitored tags by device" />
+                    <TextBlock Text="Page size" VerticalAlignment="Center" Margin="0,0,6,0" />
+                    <ComboBox Width="76" Margin="0,0,12,0"
+                              ItemsSource="{Binding PageSizeOptions}"
+                              SelectedItem="{Binding PageSize}"
+                              AutomationProperties.Name="Monitoring page size" />
+                    <Button Content="Previous" Command="{Binding PreviousPageCommand}"
+                            Style="{DynamicResource SecondaryButtonStyle}" Margin="0,0,6,0"
+                            AutomationProperties.Name="Previous monitoring page" />
+                    <Button Content="Next" Command="{Binding NextPageCommand}"
+                            Style="{DynamicResource SecondaryButtonStyle}" Margin="0,0,12,0"
+                            AutomationProperties.Name="Next monitoring page" />
+                    <TextBlock Text="{Binding PageSummary}" VerticalAlignment="Center"
+                               AutomationProperties.Name="Monitoring page summary" />
+                </WrapPanel>
+            </Border>
+            <DataGrid Grid.Row="1" ItemsSource="{Binding Rows}" Style="{DynamicResource WorkspaceDataGridStyle}"
+                      EnableRowVirtualization="True" EnableColumnVirtualization="True"
+                      VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling"
+                      ScrollViewer.CanContentScroll="True"
+                      AutomationProperties.Name="Bounded online Tag monitor">
+                <DataGrid.Columns>
+                    <DataGridTextColumn Header="Tag" Binding="{Binding Name}" Width="1.4*" />
+                    <DataGridTextColumn Header="Device" Binding="{Binding DeviceId}" Width="1*" />
+                    <DataGridTextColumn Header="Address" Binding="{Binding Address}" Width="1*" />
+                    <DataGridTextColumn Header="Value" Binding="{Binding Value}" Width="1*" />
+                    <DataGridTextColumn Header="Quality" Binding="{Binding Quality}" Width="1*" />
+                    <DataGridTextColumn Header="Timestamp" Binding="{Binding Timestamp}" Width="1.6*" />
+                </DataGrid.Columns>
+            </DataGrid>
+        </Grid>
     </controls:WorkspaceLayout>
 </UserControl>

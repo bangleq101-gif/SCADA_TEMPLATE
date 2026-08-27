@@ -1,12 +1,12 @@
 # Architecture V1 Coverage
 
 This document reconciles the original Architecture V1 specification with the
-implementation on canonical `main` after M12. It is a traceability document,
-not an authorization to begin a new milestone.
+M14 feature implementation based on canonical `main` after M13. It is a
+traceability document, not an authorization to begin a new milestone.
 
 ## Audit baseline and reference semantics
 
-- Audited main: `1b575a0e969703a01b006ab4a44147ab01e73ee7`.
+- Audited canonical main base: `3bf14de5f6f9af6d0121fee367f19a2c9da1607d`.
 - Original Architecture V1 baseline: `09d48864365a2062f73220a158e47951608ac358`.
 - M11 base merge: PR #15, `4b903723ed94d846420c2bf3867eec18a395d1c4`.
 - M11 alignment approved head: PR #16, `636e8fb16080f29e98d3ea976e5e584e1abe7887`.
@@ -18,6 +18,12 @@ not an authorization to begin a new milestone.
 - M12 approved feature head: `64c32a448eacca138a6d83c8baab2fca193ca649`.
 - M12 merged-main authority: `1b575a0e969703a01b006ab4a44147ab01e73ee7`.
 - M12 merged-main verification: 438/438 tests, GitNexus 4,160 nodes / 14,232 edges / 171 clusters / 300 flows / 0 cycles, and `Scada.Runtime → Scada.Core ONLY`.
+- M13 merged-main authority: PR #21, `3bf14de5f6f9af6d0121fee367f19a2c9da1607d`.
+- M14 feature-worktree verification passed on
+  `feature/milestone-14-tag-engineering-monitor` (483/483 tests, Release
+  build with 0 warnings/errors, audit, WPF/copy-folder smoke, GitNexus 0 cycles
+  and `Scada.Runtime → Scada.Core ONLY`); it is pending commit and merge and
+  does not authorize a later milestone.
 
 The `Architecture reference` column preserves the original V1 section number
 where applicable. A reference may also identify an approved/current addendum
@@ -49,14 +55,14 @@ The statuses below describe delivered coverage, not production certification:
 | 8 | M10 qualified 50-PLC / approximately 10,000-tag evidence | §§6-7, 61 | `COMPLETE` | Phase A qualification harness and authoritative v3 baseline | 15 compatible runs passed under `402ee9d46f41489fee8912bbed57dc1388550658` | Baseline is not a production SLA | Do not reinterpret or recapture without a new gate |
 | 9 | `RuntimeId`, one Runtime and central data flow | §§11, 13-14 | `COMPLETE` | Runtime identity, polling flow and central runtime services | Core/runtime tests and merged-main verification pass | Distributed runtime is not part of V1 | Keep one Runtime as the V1 operating model |
 | 10 | Central TagCache, subscriptions and no consumer PLC rereads | §11 | `COMPLETE` | Thread-safe TagCache, disposable subscriptions and last-known-value quality semantics | TagCache, polling, MQTT, Historian and Alarm tests pass | No new consumer-specific cache is required | Keep TagCache as the sole live-value source |
-| 11 | Active-view subscription scope and WPF Dispatcher boundedness | §12 | `PARTIAL` | Workspace activation/deactivation, zero inactive subscriptions, generation guards, Alarm latest-state coalescing and selected Tag Manager subscription scope exist | Monitoring lifecycle, Alarm coalescing and HMI/Machine Settings lifecycle tests pass | General Online Tag Monitor subscribes all configured rows while active and can enqueue one Dispatcher callback per off-thread update; deeper visible/needed-tag scope and latest-state coalescing remain open | Track as a separate scalability boundary; do not solve in this documentation revision |
+| 11 | Active-view subscription scope and WPF Dispatcher boundedness | §12 | `COMPLETE` | Online Tag Monitor filters static metadata, owns only its deduplicated active page (250 default, 500 maximum), subscribes before seed and coalesces latest values into one App Dispatcher item per active generation | M14 10,000-tag bounded-subscription, sequence/lifecycle and WPF virtualization tests | Dynamic catalog reload and richer monitor presentation remain later work, not a V1 polling path | Keep TagCache as the sole live-value source and keep Dispatcher ownership in App |
 | 12 | Historian engine, profiles, queue, background writer and SQLite | §§15, 22-27 | `COMPLETE` | Core history profiles, Runtime queue/coordinator and Infrastructure SQLite store | Historian and SQLite test suites pass | Runtime hot reload remains deferred | Use profile-based configuration and bounded queues |
 | 13 | InfluxDB provider, buffering, resync, retention and health | §§16, 25-27, 40 | `COMPLETE` | Buffered Influx store, outbox, transport, retention and connection-test paths | Influx provider tests and package audit pass | Live remote Influx integration has not been qualified | Treat remote integration as a separately scheduled test boundary |
 | 14 | Historian and optional-service failure isolation | §§15, 27, 56 | `COMPLETE` | Storage failure and optional-service coordination are isolated from polling ownership | Failure, retry, outbox and shutdown tests pass | Multi-process outbox writers remain unsupported | Preserve non-blocking runtime behavior |
 | 15 | Tag Manager CRUD, editing workflow, CSV/clipboard and virtualization | §§17-18 | `COMPLETE` | Add/edit/delete/duplicate/search/filter/sort/bulk/copy-paste/import/export and virtualized DataGrid | Tag Manager and large-dataset tests pass | Runtime reconfiguration without restart remains later work | Keep WPF Tag Manager as the engineering workflow |
-| 16 | Tag engineering metadata and Scale/Offset transformation | §19 | `PARTIAL` | Current `TagDefinition` and Tag Manager provide Id/Name/Description/Device/Address/DataType/Enabled/ScanGroup/AccessMode/Min/Max/Unit plus history/MQTT metadata | Tag validation, import/export and large-dataset tests cover the current fields | `Scale` and `Offset` domain fields are absent; runtime scaling/offset transformation semantics and corresponding validation/tests are absent | Do not add Scale/Offset in this revision; approve the domain and runtime semantics separately |
-| 17 | Device selection and Address Browser | §20 | `PARTIAL` | Tag rows support configured device selection and M13 adds a vendor-neutral engineering-provider contract with a read-only Simulator candidate browser | Device editing, provider validation and deterministic browse tests pass on the M13 feature branch | Real protocol-aware address browsing and live device discovery remain absent | Extend the provider contract only when a concrete driver has an approved browse capability |
-| 18 | Online Tag Monitor functional capability | §21 | `COMPLETE` | Monitoring displays Tag, Value, Quality, Timestamp and Device from TagCache | Monitoring lifecycle and WPF tests pass | Its active subscription/Dispatcher scalability gap is tracked separately in row 11 | Preserve functional monitoring while treating row 11 as an independent architecture constraint |
+| 16 | Tag engineering metadata and Scale/Offset transformation | §19 | `COMPLETE` | `TagDefinition` separates SourceDataType from canonical DataType and adds finite Scale/Offset; a pure Core transformer runs exactly once in Runtime TagEngine before TagCache | M14 conversion, invalid-quality, `Int64` precision, validation, migration, Tag Manager and CSV/TSV tests | `Min`/`Max` clamping, calibration/deadband policy and hot reconfiguration remain intentionally separate | Keep canonical conversion central; do not rescale in consumers |
+| 17 | Device selection and Address Browser | §20 | `COMPLETE` | Tag rows support configured device selection and M13 adds a vendor-neutral engineering-provider contract with a read-only Simulator candidate browser | M13 merged-main device editing, provider validation and deterministic browse tests | Real protocol-aware address browsing and live device discovery remain absent | Extend the provider contract only when a concrete driver has an approved browse capability |
+| 18 | Online Tag Monitor functional capability | §21 | `COMPLETE` | Monitoring displays Tag, Value, Quality, Timestamp, Device and Address from TagCache with bounded metadata-filtered paging | M14 Monitoring lifecycle, WPF and 10,000-tag scale tests | No direct PLC read or dynamic catalog reload is included | Preserve the read-only TagCache-driven monitor |
 | 19 | MQTT publisher, profiles, topics, payload and health | §§28-32 | `COMPLETE` | Runtime publisher, MQTTnet Infrastructure transport, settings UI, automatic topic/payload and Test Connection | MQTT runtime/settings/reconnect/coalescing tests pass | MQTT Write is not part of this capability | Keep publisher read-only and TagCache-driven |
 | 20 | MQTT Write and command subscriptions | §33 | `EXPLICITLY DEFERRED` | No write or command subscription path is composed | Absence verified by source/boundary review | Safety, authorization and interlock semantics are unspecified | Require a separate simulator-first approval |
 | 21 | Workspace separation, configuration-page pattern and WPF design system | §§34-37, 69 | `COMPLETE` | Operation, Machine Settings, Monitoring and Engineering workspaces use shared WPF resources/styles and compact layouts | Shell, workspace and WPF resource tests pass | Unified service/health surfaces are tracked in rows 22-24 | Extend only through the existing App design system |
@@ -67,9 +73,9 @@ The statuses below describe delivered coverage, not production certification:
 | 26 | Logical-tag controls, no PLC address knowledge and reusable faceplates | §§46-47 | `COMPLETE` | `HmiEquipmentContext`, logical roles, shared faceplates and non-owning host | HMI context, lifecycle and faceplate tests pass | No write/command interaction is included | Keep controls unaware of PLC addresses |
 | 27 | External symbol assets and licensing boundary | §§48-49 | `PARTIAL` | Architecture and decisions define external assets as graphic sources only; no vendor package is a dependency | Boundary review confirms no vendor package dependency | No packaged Symbol Factory or licensed asset library is shipped | Add vendor-neutral fallback assets and explicit license handling later |
 | 28 | Module, Line and Machine multi-screen organization | §50 | `PARTIAL` | Hierarchical shell and internal Machine Settings/HMI composition exist | Navigation and workspace tests pass | No generic module/line/machine screen composition model | Define metadata and hierarchy together before implementation |
-| 29 | Navigation groups and actual route coverage | §51 | `PARTIAL` | Shell provides Operation, Machine Settings, Monitoring and Engineering groups, including Alarm/History/MQTT/Tag Manager/System/Diagnostics/Devices routes | Shell and M13 Engineering Devices route tests pass | Trend and broader screen metadata coverage remain absent | Add routes only with corresponding workspace contracts |
+| 29 | Navigation groups and actual route coverage | §51 | `PARTIAL` | Shell provides Operation, Machine Settings, Monitoring and Engineering groups, including Alarm/History/MQTT/Tag Manager/System/Diagnostics/Devices routes | Shell, M13 Engineering Devices and M14 Monitor tests pass | Trend and broader screen metadata coverage remain absent | Add routes only with corresponding workspace contracts |
 | 30 | Engineering Devices UI | §51 | `COMPLETE` | `EngineeringDevicesViewModel` and `EngineeringDevicesView` provide static device editing, typed provider options and a read-only Address Browser under `engineering.devices` | M13 functional and WPF rendering/virtualization tests pass | Runtime reconnect/command actions and protocol-specific discovery remain out of scope | Keep runtime state and device commands outside the engineering editor |
-| 31 | Engineering Tags UI | §§17-20, 51 | `COMPLETE` | `TagManagerViewModel` and `TagManagerView` provide the engineering tag workflow | Tag Manager functional and scale tests pass | Scale/Offset and advanced Address Browser gaps are tracked in rows 16-17 | Preserve the current logical-tag editing model |
+| 31 | Engineering Tags UI | §§17-20, 51 | `COMPLETE` | `TagManagerViewModel` and `TagManagerView` provide the engineering tag workflow including SourceDataType, Scale and Offset | M14 Tag Manager, candidate validation and CSV/TSV tests pass | Advanced protocol-aware Address Browser remains tracked in row 17 | Preserve the current logical-tag editing model |
 | 32 | Engineering History UI | §§22-27, 39-40 | `COMPLETE` | `HistorySettingsViewModel` and view expose profiles, storage and connection actions | History settings and provider tests pass | Live remote integration remains a separate boundary | Keep write/test-connection semantics explicit |
 | 33 | Engineering MQTT UI | §§28-32, 41 | `COMPLETE` | `MqttSettingsViewModel` and view expose publisher configuration and Test Connection | MQTT settings and runtime tests pass | MQTT Write UI is intentionally absent | Keep publisher-only scope |
 | 34 | Engineering System UI | §51 | `PARTIAL` | `SystemServicesViewModel` and `SystemServicesView` expose a compact, read-only `engineering.system` route backed by the shared Runtime health snapshot | Workspace lifecycle, card/accessibility and WPF render tests pass | This milestone provides an observational service-health surface only; system editing, thresholds, commands and broader engineering responsibilities remain absent | Keep System Health separate from Engineering configuration and plan remaining responsibilities separately |
@@ -94,12 +100,12 @@ The statuses below describe delivered coverage, not production certification:
 
 | Status | Count |
 |---|---:|
-| `COMPLETE` | 30 |
-| `PARTIAL` | 12 |
+| `COMPLETE` | 33 |
+| `PARTIAL` | 9 |
 | `NOT STARTED` | 2 |
 | `EXPLICITLY DEFERRED` | 6 |
 | **Total** | **50** |
 
-The matrix records the M13 feature-branch implementation as delivered
-coverage pending source review and merge; it does not authorize M14. Any next
-milestone must first receive its own plan and architecture gate.
+The matrix records M14 feature-branch coverage verified locally and pending
+commit and merge; it does not authorize M15. Any next milestone must first
+receive its own plan and architecture gate.

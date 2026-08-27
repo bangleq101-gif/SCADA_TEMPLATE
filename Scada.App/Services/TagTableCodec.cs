@@ -8,7 +8,7 @@ internal static class TagTableCodec
 {
     public static readonly string[] Headers =
     [
-        "Id", "Name", "Description", "DeviceId", "Address", "DataType", "Enabled", "ScanGroup",
+        "Id", "Name", "Description", "DeviceId", "Address", "SourceDataType", "DataType", "Scale", "Offset", "Enabled", "ScanGroup",
         "AccessMode", "Min", "Max", "Unit", "HistoryEnabled", "HistoryProfile", "MqttPublishEnabled",
         "MqttProfile", "MqttTopicOverride"
     ];
@@ -26,7 +26,10 @@ internal static class TagTableCodec
                 tag.Description,
                 tag.DeviceId,
                 tag.Address,
+                tag.GetEffectiveSourceDataType().ToString(),
                 tag.DataType.ToString(),
+                FormatNumber(tag.Scale),
+                FormatNumber(tag.Offset),
                 tag.Enabled.ToString(CultureInfo.InvariantCulture),
                 tag.ScanGroup,
                 tag.AccessMode.ToString(),
@@ -93,6 +96,9 @@ internal static class TagTableCodec
             };
 
             tag.DataType = ParseEnum(row, headerIndexes, "DataType", TagDataType.Double);
+            tag.SourceDataType = ParseEnum(row, headerIndexes, "SourceDataType", tag.DataType);
+            tag.Scale = ParseDoubleOrDefault(row, headerIndexes, "Scale", 1d);
+            tag.Offset = ParseDoubleOrDefault(row, headerIndexes, "Offset", 0d);
             tag.AccessMode = ParseEnum(row, headerIndexes, "AccessMode", TagAccessMode.ReadOnly);
             tag.Enabled = ParseBoolean(row, headerIndexes, "Enabled", true);
             tag.Min = ParseNullableDouble(row, headerIndexes, "Min");
@@ -107,6 +113,9 @@ internal static class TagTableCodec
 
     private static string FormatNumber(double? value) =>
         value?.ToString("R", CultureInfo.InvariantCulture) ?? string.Empty;
+
+    private static string FormatNumber(double value) =>
+        value.ToString("R", CultureInfo.InvariantCulture);
 
     private static void RequireHeader(IReadOnlyDictionary<string, int> indexes, string name)
     {
@@ -191,5 +200,26 @@ internal static class TagTableCodec
         }
 
         throw new FormatException($"Value '{value}' is not a valid number for {name}.");
+    }
+
+    private static double ParseDoubleOrDefault(
+        IReadOnlyList<string> row,
+        IReadOnlyDictionary<string, int> indexes,
+        string name,
+        double defaultValue)
+    {
+        var value = Get(row, indexes, name);
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return defaultValue;
+        }
+
+        if (double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var result) &&
+            double.IsFinite(result))
+        {
+            return result;
+        }
+
+        throw new FormatException($"Value '{value}' is not a valid finite number for {name}.");
     }
 }

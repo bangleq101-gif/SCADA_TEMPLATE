@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using Scada.Core.Tags;
@@ -158,7 +159,11 @@ public static class TagImportPreparer
 
     private static string CreateStableId(TagDefinition tag, int sourceRow, ISet<string> usedIds)
     {
-        var seed = string.Join('\u001f', sourceRow, tag.Name, tag.Description, tag.DeviceId, tag.Address, tag.DataType, tag.ScanGroup);
+        var seed = string.Join('\u001f', sourceRow, tag.Name, tag.Description, tag.DeviceId, tag.Address,
+            tag.GetEffectiveSourceDataType(), tag.DataType,
+            tag.Scale.ToString("R", CultureInfo.InvariantCulture),
+            tag.Offset.ToString("R", CultureInfo.InvariantCulture),
+            tag.ScanGroup);
         var hash = SHA256.HashData(Encoding.UTF8.GetBytes(seed));
         var baseId = $"TAG_IMPORT_{Convert.ToHexString(hash.AsSpan(0, 8))}";
         var candidate = baseId;
@@ -178,7 +183,10 @@ public static class TagImportPreparer
         Description = source.Description,
         DeviceId = source.DeviceId,
         Address = source.Address,
+        SourceDataType = source.SourceDataType,
         DataType = source.DataType,
+        Scale = source.Scale,
+        Offset = source.Offset,
         Enabled = source.Enabled,
         ScanGroup = source.ScanGroup,
         AccessMode = source.AccessMode,

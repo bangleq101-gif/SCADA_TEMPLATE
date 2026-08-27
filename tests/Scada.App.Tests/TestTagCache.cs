@@ -35,6 +35,20 @@ internal sealed class TestTagCache : ITagCache
         }
     }
 
+    public IReadOnlyList<string> ActiveTagIds
+    {
+        get
+        {
+            lock (_sync)
+            {
+                return _subscriptions
+                    .Where(subscription => !subscription.IsDisposed)
+                    .Select(subscription => subscription.TagId)
+                    .ToArray();
+            }
+        }
+    }
+
     public int DisposedSubscriptionCount
     {
         get

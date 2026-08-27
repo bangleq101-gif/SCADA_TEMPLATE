@@ -415,6 +415,46 @@ public static class RuntimeOptionsValidation
                 $"Tag '{tag.Id}' has an invalid data type."));
         }
 
+        var sourceDataType = tag.GetEffectiveSourceDataType();
+        if (!Enum.IsDefined(sourceDataType))
+        {
+            issues.Add(Error("TAG_SOURCE_DATA_TYPE_INVALID", "Tag", tag.Id, nameof(tag.SourceDataType),
+                $"Tag '{tag.Id}' has an invalid source data type."));
+        }
+        else if (Enum.IsDefined(tag.DataType))
+        {
+            var sourceIsNumeric = TagValueTransformer.IsNumeric(sourceDataType);
+            var targetIsNumeric = TagValueTransformer.IsNumeric(tag.DataType);
+            if (!sourceIsNumeric || !targetIsNumeric)
+            {
+                if (sourceDataType != tag.DataType)
+                {
+                    issues.Add(Error("TAG_ENGINEERING_TYPE_INCOMPATIBLE", "Tag", tag.Id, nameof(tag.SourceDataType),
+                        "Boolean and String tags require identical source and engineering data types."));
+                }
+
+                if (tag.Scale != 1d || tag.Offset != 0d)
+                {
+                    issues.Add(Error("TAG_ENGINEERING_TRANSFORM_NON_NUMERIC", "Tag", tag.Id, nameof(tag.Scale),
+                        "Boolean and String tags require Scale = 1 and Offset = 0."));
+                }
+            }
+            else
+            {
+                if (!double.IsFinite(tag.Scale) || tag.Scale == 0d)
+                {
+                    issues.Add(Error("TAG_SCALE_INVALID", "Tag", tag.Id, nameof(tag.Scale),
+                        "Scale must be finite and nonzero."));
+                }
+
+                if (!double.IsFinite(tag.Offset))
+                {
+                    issues.Add(Error("TAG_OFFSET_INVALID", "Tag", tag.Id, nameof(tag.Offset),
+                        "Offset must be finite."));
+                }
+            }
+        }
+
         if (!Enum.IsDefined(tag.AccessMode))
         {
             issues.Add(Error("TAG_ACCESS_MODE_INVALID", "Tag", tag.Id, nameof(tag.AccessMode),
