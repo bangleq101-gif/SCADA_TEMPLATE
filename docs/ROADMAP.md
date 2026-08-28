@@ -153,13 +153,35 @@ M14 does not add PLC/MQTT write paths, direct UI PLC reads, `Min`/`Max`
 clamping, calibration/deadband policy, runtime hot reload, new product projects,
 new packages, Trend, Reports, Recipes or M15 scope.
 
-## Remaining Architecture V1 Coverage After M14 feature implementation
+## Milestone 15 — Screen Metadata and Module/Line/Machine Composition
 
-The complete requirement-by-requirement matrix is maintained in `docs/V1_COVERAGE.md`. It records 50 audited areas: 33 `COMPLETE`, 9 `PARTIAL`, 2 `NOT STARTED` and 6 `EXPLICITLY DEFERRED`.
+Status: IMPLEMENTED LOCALLY — feature worktree
+`feature/milestone-15-screen-organization`; pending review and merge.
+
+- Add an App-layer immutable screen metadata contract with `ScreenId`, `Title`,
+  `Category`, `IconKey`, `Order`, optional `RequiredRole` and route identity.
+- Compose static screen registrations into deterministic hierarchical navigation
+  using optional Module → Line → Machine → Screen path segments.
+- Preserve `NavigationService.CurrentRouteKey` as the authoritative route and
+  workspace lifecycle state while using `NavigationItem` only as the App-layer
+  navigation/display projection.
+- Keep the catalog compile-time and vendor-neutral. Do not add persisted screen
+  editors, dynamic XAML/plugin loading, authorization enforcement, PLC/MQTT
+  writes, Runtime changes or new product projects.
+- Verify built-in route compatibility, hierarchy validation/order, WPF resource
+  rendering/accessibility and bounded catalog composition tests.
+
+M15 does not include deployment tooling, offline installation strategy, Trend,
+production PLC drivers, MQTT Write, command subscriptions, authorization or
+M16 implementation.
+
+## Remaining Architecture V1 Coverage After M15 feature implementation
+
+The complete requirement-by-requirement matrix is maintained in `docs/V1_COVERAGE.md`. It records 50 audited areas: 35 `COMPLETE`, 7 `PARTIAL`, 2 `NOT STARTED` and 6 `EXPLICITLY DEFERRED`.
 
 The remaining work is intentionally described as coverage, not as an authorization to start a new milestone:
 
-1. `PARTIAL` — real protocol-aware Address Browser/device-selection extension; module/line/machine organization; broader HMI catalog; external asset packaging; Engineering Devices/Trend route coverage beyond the M13 device editor; screen metadata; Simulator scenario qualification; and consistent RuntimeId logging context.
+1. `PARTIAL` — real protocol-aware Address Browser/device-selection extension; broader HMI catalog; external asset packaging; Engineering Devices/Trend route coverage beyond the M13 device editor; Simulator scenario qualification; consistent RuntimeId logging context; and dynamic/persisted screen composition beyond the M15 static catalog.
 2. `NOT STARTED` — deployment tooling and offline package/installation strategy.
 3. `EXPLICITLY DEFERRED` — production Siemens/Mitsubishi/Modbus/OPC UA drivers, MQTT Write/command subscriptions, Trend, Recipes/Calibration, Reports, and distributed/Web/cloud/HA/scripting/plugin systems.
 
@@ -167,13 +189,12 @@ The remaining work is intentionally described as coverage, not as an authorizati
 
 If a future planning gate is opened, a dependency-aware review could consider:
 
-1. remaining operational engineering coverage (screen metadata, broader device lifecycle and Overview/Status Bar extensions);
-2. screen metadata and module/line/machine organization;
-3. deployment/offline portability tooling;
-4. separately approved monitoring or HMI extensions such as Trend or additional asset support.
+1. remaining operational engineering coverage (broader device lifecycle and Overview/Status Bar extensions);
+2. deployment/offline portability tooling;
+3. separately approved monitoring or HMI extensions such as Trend or additional asset support.
 
-This is sequencing guidance only. M14 is complete on canonical `main`; it does
-not authorize M15 implementation.
+This is sequencing guidance only. M15 is implemented in its feature worktree;
+it does not authorize M16 implementation.
 
 ## Explicitly deferred
 

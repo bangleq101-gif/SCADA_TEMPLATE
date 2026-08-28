@@ -3,6 +3,7 @@ using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using System.Windows.Input;
 using Scada.App.Services;
+using Scada.App.Screens;
 using Scada.Core.Configuration;
 using Scada.Runtime.Health;
 
@@ -32,61 +33,9 @@ public sealed class ShellViewModel : INotifyPropertyChanged, IDisposable
         _healthDispatcher = healthDispatcher ?? new WpfRuntimeHealthDispatcher();
         _healthSnapshot = health?.Snapshot;
         _navigation.PropertyChanged += OnNavigationPropertyChanged;
-        var engineeringChildren = new List<NavigationItem>
-        {
-            new("Engineering Overview", NavigationService.EngineeringOverviewRoute)
-        };
-        if (_navigation.HasRoute(NavigationService.EngineeringTagManagerRoute))
-        {
-            engineeringChildren.Add(new NavigationItem("Tag Manager", NavigationService.EngineeringTagManagerRoute));
-        }
-        if (_navigation.HasRoute(NavigationService.EngineeringHistoryRoute))
-        {
-            engineeringChildren.Add(new NavigationItem("History Settings", NavigationService.EngineeringHistoryRoute));
-        }
-        if (_navigation.HasRoute(NavigationService.EngineeringMqttRoute))
-        {
-            engineeringChildren.Add(new NavigationItem("MQTT Settings", NavigationService.EngineeringMqttRoute));
-        }
-        if (_navigation.HasRoute(NavigationService.EngineeringAlarmsRoute))
-        {
-            engineeringChildren.Add(new NavigationItem("Alarm Settings", NavigationService.EngineeringAlarmsRoute));
-        }
-        if (_navigation.HasRoute(NavigationService.EngineeringSystemRoute))
-        {
-            engineeringChildren.Add(new NavigationItem("System Health", NavigationService.EngineeringSystemRoute));
-        }
-        if (_navigation.HasRoute(NavigationService.EngineeringDiagnosticsRoute))
-        {
-            engineeringChildren.Add(new NavigationItem("Diagnostics", NavigationService.EngineeringDiagnosticsRoute));
-        }
-        if (_navigation.HasRoute(NavigationService.EngineeringDevicesRoute))
-        {
-            engineeringChildren.Add(new NavigationItem("Devices", NavigationService.EngineeringDevicesRoute));
-        }
-
-        var monitoringChildren = new List<NavigationItem>
-        {
-            new("Online Tag Monitor", NavigationService.MonitoringOnlineTagsRoute)
-        };
-        if (_navigation.HasRoute(NavigationService.MonitoringAlarmsRoute))
-        {
-            monitoringChildren.Add(new NavigationItem("Alarms", NavigationService.MonitoringAlarmsRoute));
-        }
-
-        NavigationItems =
-        [
-            new NavigationItem(
-                "OPERATION",
-                children: [new NavigationItem("Overview", NavigationService.OperationOverviewRoute)]),
-            new NavigationItem(
-                "MACHINE SETTINGS",
-                children: [new NavigationItem("Machine Settings", NavigationService.MachineSettingsOverviewRoute)]),
-            new NavigationItem(
-                "MONITORING",
-                children: monitoringChildren),
-            new NavigationItem("ENGINEERING", children: engineeringChildren)
-        ];
+        NavigationItems = ScreenCatalog
+            .CreateDefault()
+            .BuildNavigationItems(_navigation.HasRoute);
         NavigateCommand = new RelayCommand(parameter =>
         {
             if (parameter is NavigationItem { IsNavigable: true, RouteKey: not null } item)

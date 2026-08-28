@@ -1,6 +1,19 @@
 
 # Architecture Decisions
 
+## D66 — Static screen metadata and Module/Line/Machine composition remain App-owned
+
+Milestone 15 introduces an immutable App-layer `ScreenDescriptor` and a
+`ScreenCatalog` that validates static registrations and builds deterministic
+Module → Line → Machine → Screen navigation projections. The catalog can filter
+entries against routes registered in `NavigationService`, but it does not
+discover XAML/classes dynamically or persist a screen catalog in the project
+document. `NavigationService.CurrentRouteKey` remains the sole route/lifecycle
+authority; `NavigationItem.Screen` is display metadata only. `RequiredRole` is
+reserved metadata and is not an authorization implementation. The catalog has
+no Core/Runtime/Drivers/Infrastructure dependency and creates no per-screen
+polling, timer or TagCache subscription.
+
 ## D65 — Bounded Online Tag Monitor delivery remains an App concern
 
 Online Tag Monitor filters only static `RuntimeOptions.Tags` metadata and

@@ -6,6 +6,29 @@
 
 `Scada.Core/MachineSettings` contains persisted page/parameter definitions, canonical text conversion and pure validation. `Scada.App/ViewModels/MachineSettingsViewModel.cs` owns page drafts, transactional Apply and active-page logical TagCache observation; it does not own project persistence or PLC commands.
 
+## Milestone 15 screen metadata and composition
+
+```text
+Scada.App/Screens
+├── ScreenDescriptor
+├── ScreenHierarchyPath
+└── ScreenCatalog
+```
+
+`ScreenCatalog` is an App-layer, compile-time catalog for the current WPF
+application. It validates unique screen/route identities, required display
+metadata and contiguous Module → Line → Machine path segments, then builds a
+deterministically ordered `NavigationItem` tree. A catalog can filter entries
+against routes actually registered by `NavigationService`, so optional
+workspaces do not create dead menu items.
+
+`NavigationItem.RouteKey` and `NavigationService.CurrentRouteKey` remain the
+navigation/lifecycle authority. The optional `NavigationItem.Screen` metadata
+is immutable display information only; it does not add a second route state,
+permission system or runtime dependency. New screen ViewModels and XAML remain
+statically registered in `Scada.App`; dynamic discovery and persisted screen
+editing are intentionally deferred.
+
 ## Production dependency graph
 
 ```text
@@ -214,6 +237,7 @@ Scada.Infrastructure/
 Scada.App/
 ├── Controls
 ├── Resources
+├── Screens
 ├── Services
 ├── ViewModels
 └── Views
@@ -229,6 +253,21 @@ tools/
 `tools/Scada.Stress` is a non-product Release stress harness. It may compose all five product projects to exercise the real runtime and WPF paths, but no product project references it. Generated evidence is written only beneath ignored `artifacts/stress`.
 
 The App layer owns the hierarchical route model and workspace lifecycle. `NavigationService.CurrentRouteKey` is the authoritative active route; `ShellViewModel` derives tree selection from it. Navigation destination ViewModels implement the minimal `IWorkspaceLifecycle` contract. Monitoring owns only the active visible-page TagCache subscriptions, coalesces latest values through App Dispatcher ownership and rejects callbacks from older activation/page generations.
+
+M15 adds an App-only screen catalog in front of this existing route model:
+
+```text
+static ScreenDescriptor registrations
+        ↓
+ScreenCatalog validation/order/hierarchy builder
+        ↓
+NavigationItem tree projection
+        ↓
+ShellViewModel / NavigationService
+```
+
+The catalog introduces no Core/Runtime/Drivers/Infrastructure references and no
+per-screen timers, polling workers or TagCache subscriptions.
 
 ## Runtime polling components
 

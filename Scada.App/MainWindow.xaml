@@ -17,14 +17,6 @@
         <DataTemplate DataType="{x:Type vm:SystemServicesViewModel}"><views:SystemServicesView /></DataTemplate>
         <DataTemplate DataType="{x:Type vm:EngineeringDiagnosticsViewModel}"><views:EngineeringDiagnosticsView /></DataTemplate>
         <DataTemplate DataType="{x:Type vm:EngineeringDevicesViewModel}"><views:EngineeringDevicesView /></DataTemplate>
-        <HierarchicalDataTemplate x:Key="NavigationItemTemplate"
-                                  ItemsSource="{Binding Children}"
-                                  ItemContainerStyle="{StaticResource NavigationTreeViewItemStyle}">
-            <Button Content="{Binding Title}"
-                    Command="{Binding DataContext.NavigateCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                    CommandParameter="{Binding}"
-                    Style="{StaticResource NavigationItemButtonStyle}" />
-        </HierarchicalDataTemplate>
     </Window.Resources>
     <Grid Background="{StaticResource WindowBrush}">
         <Grid.RowDefinitions>
