@@ -155,8 +155,8 @@ new packages, Trend, Reports, Recipes or M15 scope.
 
 ## Milestone 15 — Screen Metadata and Module/Line/Machine Composition
 
-Status: IMPLEMENTED LOCALLY — feature worktree
-`feature/milestone-15-screen-organization`; pending review and merge.
+Status: COMPLETE — merged to canonical `main` via PR #24 at merge commit
+`4f4d325273fcdd1420182b061e40dc5b51bbc235`.
 
 - Add an App-layer immutable screen metadata contract with `ScreenId`, `Title`,
   `Category`, `IconKey`, `Order`, optional `RequiredRole` and route identity.
@@ -175,7 +175,7 @@ M15 does not include deployment tooling, offline installation strategy, Trend,
 production PLC drivers, MQTT Write, command subscriptions, authorization or
 M16 implementation.
 
-## Remaining Architecture V1 Coverage After M15 feature implementation
+## Remaining Architecture V1 Coverage After M15 merge
 
 The complete requirement-by-requirement matrix is maintained in `docs/V1_COVERAGE.md`. It records 50 audited areas: 35 `COMPLETE`, 7 `PARTIAL`, 2 `NOT STARTED` and 6 `EXPLICITLY DEFERRED`.
 
@@ -193,8 +193,8 @@ If a future planning gate is opened, a dependency-aware review could consider:
 2. deployment/offline portability tooling;
 3. separately approved monitoring or HMI extensions such as Trend or additional asset support.
 
-This is sequencing guidance only. M15 is implemented in its feature worktree;
-it does not authorize M16 implementation.
+This is sequencing guidance only. M15 is complete on canonical `main`; it does
+not authorize M16 implementation.
 
 ## Explicitly deferred
 
