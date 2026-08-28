@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
+using Scada.App.Screens;
 
 namespace Scada.App.ViewModels;
 
@@ -12,7 +13,8 @@ public sealed class NavigationItem : INotifyPropertyChanged
     public NavigationItem(
         string title,
         string? routeKey = null,
-        IEnumerable<NavigationItem>? children = null)
+        IEnumerable<NavigationItem>? children = null,
+        ScreenDescriptor? screen = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(title);
 
@@ -27,9 +29,21 @@ public sealed class NavigationItem : INotifyPropertyChanged
             throw new ArgumentException("A group navigation item cannot have a route key.", nameof(routeKey));
         }
 
+        if (screen is not null && childItems.Length > 0)
+        {
+            throw new ArgumentException("A screen navigation item cannot have children.", nameof(screen));
+        }
+
+        if (screen is not null
+            && !string.Equals(screen.RouteKey, routeKey, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new ArgumentException("Screen metadata must use the navigation item's route key.", nameof(screen));
+        }
+
         Title = title;
         RouteKey = string.IsNullOrWhiteSpace(routeKey) ? null : routeKey;
         Children = new ReadOnlyCollection<NavigationItem>(childItems);
+        Screen = screen;
         _isExpanded = Children.Count > 0;
     }
 
@@ -40,6 +54,19 @@ public sealed class NavigationItem : INotifyPropertyChanged
     public string? RouteKey { get; }
 
     public ReadOnlyCollection<NavigationItem> Children { get; }
+
+    // RouteKey remains the navigation authority. Screen is immutable display metadata.
+    public ScreenDescriptor? Screen { get; }
+
+    public string? ScreenId => Screen?.ScreenId;
+
+    public ScreenCategory? Category => Screen?.Category;
+
+    public string? IconKey => Screen?.IconKey;
+
+    public int? Order => Screen?.Order;
+
+    public string? RequiredRole => Screen?.RequiredRole;
 
     public bool IsGroup => Children.Count > 0;
 

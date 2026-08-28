@@ -4,7 +4,7 @@ Architecture V1 is approved.
 
 Current implementation milestone:
 
-Milestone 14 — Tag Engineering and Bounded Online Tag Monitor
+Milestone 15 — Screen Metadata and Module/Line/Machine Composition Foundation
 
 Status:
 
@@ -13,6 +13,10 @@ M13 is complete on canonical `main` via PR #21 at merge commit
 `main` via PR #22 at merge commit `f5cd141f2f26ebc9fa56bd0f8139ce23a670d640`.
 The M14 implementation commit is `f538a22eab6484b910ce870e4609fc53f28a9dc1`,
 followed by the docs-evidence correction `86cbc8b92186f5afd1d66c6ff58e7fe18b5e239d`.
+
+M15 implementation is complete in an isolated feature worktree on branch
+`feature/milestone-15-screen-organization`; it is not merged to `main` in this
+working state.
 
 M11 — Alarm System — COMPLETE. M11 code/runtime implementation completed at `25ec87e91eba0be268384c7b941c63cb8bb0f6d9` through PR #15 and the approved PR #16 architecture-alignment revision (head `636e8fb16080f29e98d3ea976e5e584e1abe7887`). M11 governance/docs closeout was subsequently merged via PR #17 at `2cfd0c39f05e8a9251984e0c82198b72f7616745`; that commit is the final M11 governance authority and the exact M12 implementation base.
 
@@ -268,6 +272,24 @@ M14 — Tag Engineering and Bounded Online Tag Monitor — is complete on canoni
   coverage. `Min`/`Max` clamping, calibration and runtime hot reconfiguration
   are intentionally not introduced.
 
+## Implemented in Milestone 15
+
+- Added an App-layer immutable `ScreenDescriptor` contract with `ScreenId`,
+  `Title`, `RouteKey`, `Category`, `IconKey`, `Order`, optional `RequiredRole`
+  metadata and an optional `ModuleId`/`LineId`/`MachineId` hierarchy path.
+- Added `ScreenCatalog` validation, deterministic ordering, route-availability
+  filtering and Module → Line → Machine → Screen navigation-tree composition.
+- Moved the shared hierarchical navigation template into App resources and
+  added accessible screen title/help bindings. `NavigationItem.RouteKey` and
+  `NavigationService.CurrentRouteKey` remain the route and lifecycle authority;
+  screen metadata is display/catalog metadata only.
+- Replaced the hard-coded Shell menu construction with the catalog's static
+  built-in route registrations while preserving Operation, Machine Settings,
+  Monitoring and Engineering groups and all existing route keys.
+- M15 does not add persisted screen configuration, dynamic XAML/class loading,
+  per-screen global routes, authorization enforcement, PLC/MQTT writes or any
+  Runtime/Drivers/Infrastructure dependency.
+
 ## Verified
 
 - `dotnet restore Scada.sln --ignore-failed-sources` — PASS.
@@ -296,6 +318,7 @@ M14 — Tag Engineering and Bounded Online Tag Monitor — is complete on canoni
 - M12 merged-main verification — PASS at `1b575a0e969703a01b006ab4a44147ab01e73ee7`; restore, Release build (0 warnings/0 errors), full test suite (438/438), vulnerability audit, WPF startup smoke, fresh copy-folder portability, `git diff --check`, GitNexus (4,160 nodes / 14,232 edges / 171 clusters / 300 flows / 0 cycles) and Runtime boundary (`Scada.Runtime → Scada.Core ONLY`) all passed.
 - M13 feature-worktree verification — restore PASS; Release build PASS with 0 warnings and 0 errors; full solution tests PASS (453/453: 158 App, 151 Runtime, 38 Core, 12 Drivers, 67 Infrastructure, 27 Stress), including focused Engineering Devices WPF coverage (5/5); vulnerability audit PASS with no vulnerable packages; WPF startup smoke PASS; fresh sibling copy-folder restore/build/startup PASS with no original-path dependency; post-change GitNexus index 4,334 nodes / 14,786 edges / 183 clusters / 300 flows with 0 import cycles; Runtime boundary PASS (`Scada.Runtime → Scada.Core ONLY`).
 - M14 merged-main verification — PASS at `f5cd141f2f26ebc9fa56bd0f8139ce23a670d640`; restore PASS; Release build PASS with 0 warnings and 0 errors; full solution tests PASS (483/483: 174 App, 154 Runtime, 48 Core, 12 Drivers, 68 Infrastructure, 27 Stress); vulnerability audit PASS with no vulnerable direct or transitive package; WPF startup smoke PASS with DI composition and `MainWindow` running; a fresh external copy restore/build/startup and original-path scan PASS; `git diff --check` PASS; GitNexus exact merged-main index PASS with 0 cycles; Runtime boundary PASS (`Scada.Runtime → Scada.Core ONLY`).
+- M15 feature-worktree verification — restore PASS; Release build PASS with 0 warnings and 0 errors; full solution tests PASS (490/490: 181 App, 154 Runtime, 48 Core, 12 Drivers, 68 Infrastructure, 27 Stress); vulnerability audit PASS with no vulnerable packages; WPF startup smoke PASS with `MainWindow` running and title `SCADA TEMPLATE`; fresh external copy restore/build/startup PASS with no original-path dependency; `git diff --check` PASS; GitNexus post-change index 4,528 nodes / 15,505 edges / 197 clusters / 300 flows with 0 cycles; Runtime boundary PASS (`Scada.Runtime → Scada.Core ONLY`).
 
 ## Not implemented — later milestones
 
@@ -327,7 +350,7 @@ M14 — Tag Engineering and Bounded Online Tag Monitor — is complete on canoni
 - Alarm configuration changes are persisted and marked restart-required; runtime hot reload, automatic communication alarms, notification/escalation and multi-process Alarm SQLite writers remain deferred.
 - Alarm SQLite connection configuration is still shared from the Infrastructure History namespace; moving this generic helper to a neutral Persistence namespace is deferred to avoid unrelated churn in the alignment hotfix.
 - Centralized logging uses `ILogger<T>`, the Microsoft.Extensions.Logging pipeline, the Debug provider and structured `DeviceId` fields on polling paths; consistent `RuntimeId` contextual enrichment across Runtime subsystems is not yet standardized (see `docs/V1_COVERAGE.md` row 48).
-- Remaining Architecture V1 partial/not-started coverage, including screen metadata, real protocol-aware browsing, deployment/offline strategy and broader device lifecycle tooling, is tracked in `docs/V1_COVERAGE.md`; this is documentation traceability, not M15 authorization.
+- Remaining Architecture V1 partial/not-started coverage, including real protocol-aware browsing, deployment/offline strategy, broader device lifecycle tooling and RuntimeId logging context, is tracked in `docs/V1_COVERAGE.md`; M15's static screen catalog does not claim dynamic discovery or permission enforcement.
 - The M12 health sampler is observational and intentionally does not provide threshold evaluation, event persistence, notification, command or runtime configuration mutation.
 
-Implementation must follow the ordered milestones in `docs/ROADMAP.md` and the constraints in `docs/SCADA_ARCHITECTURE_V1.md`. M7 MQTT Publisher, M10 qualification, M11 Alarm System, M12 Read-only Operational Health, M13 Engineering Devices and M14 Tag Engineering and Bounded Online Tag Monitor are complete on canonical `main`. MQTT Write, command subscriptions and PLC-write paths remain deferred. M12 is merged at `1b575a0e969703a01b006ab4a44147ab01e73ee7`; M14 does not authorize M15.
+Implementation must follow the ordered milestones in `docs/ROADMAP.md` and the constraints in `docs/SCADA_ARCHITECTURE_V1.md`. M7 MQTT Publisher, M10 qualification, M11 Alarm System, M12 Read-only Operational Health, M13 Engineering Devices and M14 Tag Engineering and Bounded Online Tag Monitor are complete on canonical `main`; M15 is implemented in its feature worktree and remains pending review/merge. MQTT Write, command subscriptions and PLC-write paths remain deferred. M12 is merged at `1b575a0e969703a01b006ab4a44147ab01e73ee7`.
