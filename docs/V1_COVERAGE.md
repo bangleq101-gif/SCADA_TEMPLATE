@@ -108,6 +108,6 @@ The statuses below describe delivered coverage, not production certification:
 | `EXPLICITLY DEFERRED` | 6 |
 | **Total** | **50** |
 
-The matrix records M15 coverage implemented in the feature worktree; it is
-pending review/merge to canonical `main`. Any next milestone must first receive
-its own plan and architecture gate.
+The matrix records M15 coverage merged and verified on canonical `main` via PR
+#24 at merge commit `4f4d325273fcdd1420182b061e40dc5b51bbc235`. Any next
+milestone must first receive its own plan and architecture gate.
