@@ -17,9 +17,10 @@ followed by the docs-evidence correction `86cbc8b92186f5afd1d66c6ff58e7fe18b5e23
 M15 is complete on canonical `main` via PR #24 at merge commit
 `4f4d325273fcdd1420182b061e40dc5b51bbc235`.
 
-M16 is implemented on `feature/milestone-16-deployment-offline` from canonical
-baseline `4aefca3e22d237b586e1e39995679c35440df361`; feature-worktree verification is
-complete and merge is pending.
+M16 is complete on canonical `main` via PR #26 at merge commit
+`377fe17a98fa274b4cb6beb3c3a84d0bfe55fca8`. The reviewed implementation head
+is `1a86cd3e878b2a4fb5209748a1bf68ec5fe64d9e`, and the merge tree is identical
+to that reviewed feature tree.
 
 M11 — Alarm System — COMPLETE. M11 code/runtime implementation completed at `25ec87e91eba0be268384c7b941c63cb8bb0f6d9` through PR #15 and the approved PR #16 architecture-alignment revision (head `636e8fb16080f29e98d3ea976e5e584e1abe7887`). M11 governance/docs closeout was subsequently merged via PR #17 at `2cfd0c39f05e8a9251984e0c82198b72f7616745`; that commit is the final M11 governance authority and the exact M12 implementation base.
 
@@ -392,4 +393,4 @@ M14 — Tag Engineering and Bounded Online Tag Monitor — is complete on canoni
   assets and RuntimeId logging context, is tracked in `docs/V1_COVERAGE.md`.
 - The M12 health sampler is observational and intentionally does not provide threshold evaluation, event persistence, notification, command or runtime configuration mutation.
 
-Implementation must follow the ordered milestones in `docs/ROADMAP.md` and the constraints in `docs/SCADA_ARCHITECTURE_V1.md`. M7 MQTT Publisher, M10 qualification, M11 Alarm System, M12 Read-only Operational Health, M13 Engineering Devices, M14 Tag Engineering and Bounded Online Tag Monitor and M15 Screen Metadata and Composition are complete on canonical `main`; M16 Deployment and Offline Portability is implemented and verified on its feature branch, pending merge. MQTT Write, command subscriptions and PLC-write paths remain deferred. M12 is merged at `1b575a0e969703a01b006ab4a44147ab01e73ee7` and M15 is merged at `4f4d325273fcdd1420182b061e40dc5b51bbc235`.
+Implementation must follow the ordered milestones in `docs/ROADMAP.md` and the constraints in `docs/SCADA_ARCHITECTURE_V1.md`. M7 MQTT Publisher, M10 qualification, M11 Alarm System, M12 Read-only Operational Health, M13 Engineering Devices, M14 Tag Engineering and Bounded Online Tag Monitor, M15 Screen Metadata and Composition and M16 Deployment and Offline Portability are complete on canonical `main`. MQTT Write, command subscriptions and PLC-write paths remain deferred. M12 is merged at `1b575a0e969703a01b006ab4a44147ab01e73ee7`, M15 is merged at `4f4d325273fcdd1420182b061e40dc5b51bbc235` and M16 is merged at `377fe17a98fa274b4cb6beb3c3a84d0bfe55fca8`.

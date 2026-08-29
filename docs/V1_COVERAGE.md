@@ -108,6 +108,6 @@ The statuses below describe delivered coverage, not production certification:
 | `EXPLICITLY DEFERRED` | 6 |
 | **Total** | **50** |
 
-The matrix records M15 merged coverage plus the implemented and verified M16
-deployment/offline-portability feature scope pending merge. Any next
+The matrix records M16 merged and verified on canonical `main` via PR #26 at
+merge commit `377fe17a98fa274b4cb6beb3c3a84d0bfe55fca8`. Any next
 milestone must first receive its own plan and architecture gate.
