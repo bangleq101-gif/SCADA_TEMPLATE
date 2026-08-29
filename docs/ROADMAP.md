@@ -177,7 +177,8 @@ M16 implementation.
 
 ## Milestone 16 — Deployment and Offline Portability Foundation
 
-Status: IMPLEMENTED AND VERIFIED ON FEATURE BRANCH — merge pending.
+Status: COMPLETE — merged to canonical `main` via PR #26 at merge commit
+`377fe17a98fa274b4cb6beb3c3a84d0bfe55fca8`.
 
 - Publish `Scada.App` as a portable Windows bundle with an explicit
   framework-dependent default and optional self-contained mode.
