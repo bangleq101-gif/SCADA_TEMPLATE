@@ -1,12 +1,22 @@
 param(
     [ValidateSet('Debug', 'Release')]
     [string]$Configuration = 'Debug',
-    [switch]$NoBuild
+    [switch]$NoBuild,
+    [Parameter(Mandatory)]
+    [string]$ProjectFile
 )
 
 $projectRoot = Split-Path -Parent $PSScriptRoot
-$projectFile = Join-Path $projectRoot 'project.json'
 $appProject = Join-Path $projectRoot 'Scada.App\Scada.App.csproj'
+
+if (-not [System.IO.Path]::IsPathFullyQualified($ProjectFile)) {
+    throw 'ProjectFile must be an absolute path to project.json.'
+}
+
+$resolvedProjectFile = [System.IO.Path]::GetFullPath($ProjectFile)
+if (-not (Test-Path -LiteralPath $resolvedProjectFile -PathType Leaf)) {
+    throw "Project file was not found: $resolvedProjectFile"
+}
 
 $runArguments = @('--project', $appProject, '--configuration', $Configuration)
 if ($NoBuild) {
@@ -15,7 +25,7 @@ if ($NoBuild) {
 
 $runArguments += '--'
 $runArguments += '--project-file'
-$runArguments += [System.IO.Path]::GetFullPath($projectFile)
+$runArguments += $resolvedProjectFile
 
 dotnet run @runArguments
 exit $LASTEXITCODE

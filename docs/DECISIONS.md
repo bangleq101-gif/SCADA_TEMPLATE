@@ -1,6 +1,28 @@
 
 # Architecture Decisions
 
+## D67 — Deployment keeps application binaries separate from canonical project data
+
+Milestone 16 publishes a Windows bundle with application binaries under `app/`
+and requires an external absolute `project.json` path at launch. Deployment and
+development launchers do not search the working directory, source tree or parent
+folders. Historian, Alarm and local-buffer data therefore continue to resolve
+relative to `ProjectPath.DirectoryPath`, not the published application folder.
+
+Framework-dependent `win-x64` is the default publish mode; self-contained
+publish must be selected explicitly. Target checks validate the matching .NET
+Desktop Runtime, project-directory writability and `env:` secret references
+without displaying secret values. Deployment verification may perform a bounded
+startup smoke but does not own or mutate customer project configuration.
+
+Offline package media is an external release artifact, not repository content.
+The export workflow derives direct and transitive package identities from the
+restored assets graph, copies exact `.nupkg` archives from a trusted cache and
+records SHA-256 hashes. Offline restore clears online sources and uses only the
+explicit approved folder feed. Git does not contain package caches, installers,
+tokens, databases or logs, and M16 does not claim redistribution rights for any
+third-party runtime or licensed asset.
+
 ## D66 — Static screen metadata and Module/Line/Machine composition remain App-owned
 
 Milestone 15 introduces an immutable App-layer `ScreenDescriptor` and a

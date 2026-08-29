@@ -175,26 +175,48 @@ M15 does not include deployment tooling, offline installation strategy, Trend,
 production PLC drivers, MQTT Write, command subscriptions, authorization or
 M16 implementation.
 
-## Remaining Architecture V1 Coverage After M15 merge
+## Milestone 16 — Deployment and Offline Portability Foundation
 
-The complete requirement-by-requirement matrix is maintained in `docs/V1_COVERAGE.md`. It records 50 audited areas: 35 `COMPLETE`, 7 `PARTIAL`, 2 `NOT STARTED` and 6 `EXPLICITLY DEFERRED`.
+Status: IMPLEMENTED AND VERIFIED ON FEATURE BRANCH — merge pending.
+
+- Publish `Scada.App` as a portable Windows bundle with an explicit
+  framework-dependent default and optional self-contained mode.
+- Require an external canonical absolute `project.json` path at both development
+  and published launch boundaries; do not discover a source-tree configuration.
+- Validate target Windows/.NET Desktop Runtime prerequisites, bundle contents,
+  project JSON, writable project storage and referenced environment secrets
+  without logging secret values.
+- Verify a copied bundle independently from the repository and provide a bounded
+  WPF startup smoke.
+- Export the exact restored NuGet dependency graph into an external approved
+  folder feed with SHA-256 evidence, and restore using a temporary config that
+  clears all online sources.
+- Keep installers, package caches, `.nupkg` files, runtime installers, secrets,
+  databases and logs outside Git.
+
+M16 does not include MSI/EXE installer authoring, automatic updates, Windows
+Service hosting, production PLC drivers, Trend, Reports, Recipes, PLC Write,
+MQTT Write or command subscriptions.
+
+## Remaining Architecture V1 Coverage After M16
+
+The complete requirement-by-requirement matrix is maintained in `docs/V1_COVERAGE.md`. It records 50 audited areas: 37 `COMPLETE`, 7 `PARTIAL`, 0 `NOT STARTED` and 6 `EXPLICITLY DEFERRED`.
 
 The remaining work is intentionally described as coverage, not as an authorization to start a new milestone:
 
 1. `PARTIAL` — real protocol-aware Address Browser/device-selection extension; broader HMI catalog; external asset packaging; Engineering Devices/Trend route coverage beyond the M13 device editor; Simulator scenario qualification; consistent RuntimeId logging context; and dynamic/persisted screen composition beyond the M15 static catalog.
-2. `NOT STARTED` — deployment tooling and offline package/installation strategy.
-3. `EXPLICITLY DEFERRED` — production Siemens/Mitsubishi/Modbus/OPC UA drivers, MQTT Write/command subscriptions, Trend, Recipes/Calibration, Reports, and distributed/Web/cloud/HA/scripting/plugin systems.
+2. `EXPLICITLY DEFERRED` — production Siemens/Mitsubishi/Modbus/OPC UA drivers, MQTT Write/command subscriptions, Trend, Recipes/Calibration, Reports, and distributed/Web/cloud/HA/scripting/plugin systems.
 
 ### Candidate ordering for a future milestone (proposal only)
 
 If a future planning gate is opened, a dependency-aware review could consider:
 
 1. remaining operational engineering coverage (broader device lifecycle and Overview/Status Bar extensions);
-2. deployment/offline portability tooling;
+2. concrete protocol-driver qualification or additional HMI/asset coverage;
 3. separately approved monitoring or HMI extensions such as Trend or additional asset support.
 
-This is sequencing guidance only. M15 is complete on canonical `main`; it does
-not authorize M16 implementation.
+This is sequencing guidance only. M16 does not authorize production driver,
+write-path, installer, Trend or M17 implementation.
 
 ## Explicitly deferred
 

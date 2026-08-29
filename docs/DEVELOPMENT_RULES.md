@@ -93,6 +93,26 @@
 - Device state is exposed through immutable snapshots, not mutable runtime state objects.
 - For a disconnect transition, a tag with a valid cached value keeps that value and its original PLC timestamp. A tag without a valid cached value receives `null` and the transition timestamp.
 
+## Deployment and offline portability rules
+
+- Publish deployment artifacts under an explicit output directory. The standard
+  publisher refuses a non-empty output and never recursively deletes an existing
+  destination.
+- Keep published binaries under `app/` and customer project/configuration/data
+  outside the application directory. Every launcher must pass an existing
+  absolute `--project-file`; do not search the working directory or source tree.
+- Use framework-dependent Windows publish by default. Self-contained publish is
+  explicit and still requires package/runtime provenance and licensing review.
+- Environment checks may report secret environment-variable names but must never
+  print their values. Do not commit `.env`, tokens, databases, logs or customer
+  project data into a deployment bundle.
+- Offline feeds are external release artifacts. Export exact direct/transitive
+  `.nupkg` versions from a trusted restored graph, record SHA-256 evidence and
+  clear online sources during offline restore. Do not commit feeds, global caches
+  or runtime installers.
+- Any package, SDK or runtime change invalidates the prior offline package set and
+  requires a new audit and offline restore/build qualification.
+
 ## Operational health rules
 
 - Use exactly one `RuntimeHealthService`/coordinator per Runtime. Production sampling is one 1-second sampler with one timer and one sampler task; do not create timers/tasks per device, tag, service or card.

@@ -1,5 +1,27 @@
 # SCADA V1 Project Structure
 
+## Milestone 16 deployment and offline portability
+
+```text
+Deployment/
+├── Publish-Scada.ps1
+├── Start-Scada.ps1
+├── Test-ScadaEnvironment.ps1
+├── Verify-Deployment.ps1
+├── README.md
+└── offline/
+    ├── Export-OfflinePackages.ps1
+    ├── Restore-Offline.ps1
+    ├── NuGet.config.template
+    └── README.md
+```
+
+The publish result separates `app/` binaries from the customer project. Both
+source and published launchers require an explicit absolute `project.json` path,
+so runtime data remains relative to the canonical project directory. Offline
+package feeds and caches are generated outside Git from the exact restored
+dependency graph and carry a SHA-256 manifest.
+
 ## HMI controls and faceplates
 
 `Scada.App/Hmi` contains the App-layer logical equipment contexts and faceplate host state. `Scada.App/Controls/Hmi` contains passive WPF controls; `Scada.App/Resources/Hmi` contains their copy-folder-contained styles and vendor-neutral fallback visuals. These controls consume TagCache only through their screen-owned context and do not read PLC data directly.
@@ -246,6 +268,10 @@ scripts/
 ├── run-scada.ps1
 └── run-stress.ps1
 
+Deployment/
+├── publish, launch and environment verification scripts
+└── offline package export/restore workflow
+
 tools/
 └── Scada.Stress
 ```
@@ -421,6 +447,6 @@ canonical runtime value.
 
 ## Portable configuration
 
-`Scada.App/appsettings.json` is copied to application output. The application sets its content root to `AppContext.BaseDirectory`, while project persistence uses an explicit absolute `--project-file` path. Historian SQLite is resolved relative to that canonical project document directory and is never created when Historian is disabled. `scripts/run-scada.ps1` resolves its project path from `$PSScriptRoot`, so running a copied template folder does not depend on the original repository or current working directory. The Influx outbox is likewise resolved beneath the canonical project directory as `Data/influx-buffer.db`. Influx credentials are environment-variable references such as `env:SCADA_INFLUX_TOKEN`; the token value is not stored in project JSON, logged or shown in the UI.
+`Scada.App/appsettings.json` is copied to application output. The application sets its content root to `AppContext.BaseDirectory`, while project persistence uses an explicit absolute `--project-file` path. Historian SQLite is resolved relative to that canonical project document directory and is never created when Historian is disabled. `scripts/run-scada.ps1` and the published `Start-Scada.ps1` require that canonical absolute project path, so running a copied template or deployment bundle does not depend on the original repository or current working directory. The Influx outbox is likewise resolved beneath the canonical project directory as `Data/influx-buffer.db`. Influx credentials are environment-variable references such as `env:SCADA_INFLUX_TOKEN`; the token value is not stored in project JSON, logged or shown in the UI.
 
 Milestone 11 Alarm persistence follows the same canonical project boundary: the default `Data/alarms.db` is resolved beneath `ProjectPath.DirectoryPath`, never beneath `AppContext.BaseDirectory`. Alarm persistence requires a canonical project path when enabled and rejects empty, rooted or out-of-project traversal paths. The AlarmEvents store uses SQLite schema v2 with nullable `SourceQuality`; initialization explicitly upgrades a v1 table with `ALTER TABLE`, preserves legacy rows as `NULL`, and rejects newer schema versions. Project schema v5 → v6 migration is in memory and defaults Alarm runtime enablement to false until an explicit project Save and later runtime restart.

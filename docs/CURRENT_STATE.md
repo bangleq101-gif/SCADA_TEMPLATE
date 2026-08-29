@@ -4,7 +4,7 @@ Architecture V1 is approved.
 
 Current implementation milestone:
 
-Milestone 15 — Screen Metadata and Module/Line/Machine Composition Foundation
+Milestone 16 — Deployment and Offline Portability Foundation
 
 Status:
 
@@ -16,6 +16,10 @@ followed by the docs-evidence correction `86cbc8b92186f5afd1d66c6ff58e7fe18b5e23
 
 M15 is complete on canonical `main` via PR #24 at merge commit
 `4f4d325273fcdd1420182b061e40dc5b51bbc235`.
+
+M16 is implemented on `feature/milestone-16-deployment-offline` from canonical
+baseline `4aefca3e22d237b586e1e39995679c35440df361`; feature-worktree verification is
+complete and merge is pending.
 
 M11 — Alarm System — COMPLETE. M11 code/runtime implementation completed at `25ec87e91eba0be268384c7b941c63cb8bb0f6d9` through PR #15 and the approved PR #16 architecture-alignment revision (head `636e8fb16080f29e98d3ea976e5e584e1abe7887`). M11 governance/docs closeout was subsequently merged via PR #17 at `2cfd0c39f05e8a9251984e0c82198b72f7616745`; that commit is the final M11 governance authority and the exact M12 implementation base.
 
@@ -289,6 +293,29 @@ M14 — Tag Engineering and Bounded Online Tag Monitor — is complete on canoni
   per-screen global routes, authorization enforcement, PLC/MQTT writes or any
   Runtime/Drivers/Infrastructure dependency.
 
+## Implemented in Milestone 16
+
+- Added a portable `Deployment/` bundle workflow with framework-dependent or
+  explicitly self-contained Windows publish modes and an empty-output safety
+  boundary.
+- Added a published launcher that requires an existing absolute `project.json`
+  path and never discovers configuration from the working directory, source
+  tree or parent folders.
+- Added target-environment checks for Windows, bundle completeness, compatible
+  .NET Desktop Runtime, project JSON readability, project-directory writability
+  and environment-variable secret references without exposing secret values.
+- Added bundle verification and bounded WPF startup smoke tooling. Deployment
+  validation rejects source, build, database, log and secret artifacts.
+- Added an offline NuGet workflow that exports the exact restored direct and
+  transitive package graph from trusted global packages, records SHA-256 hashes,
+  clears all online sources during restore and keeps cache/feed paths external
+  to the repository.
+- Updated `scripts/run-scada.ps1` to require an explicit absolute project file;
+  the repository no longer assumes a missing root `project.json`.
+- M16 does not add an MSI/EXE installer, automatic updates, Windows Service
+  hosting, package binaries, runtime installers, production PLC drivers or any
+  PLC/MQTT write path.
+
 ## Verified
 
 - `dotnet restore Scada.sln --ignore-failed-sources` — PASS.
@@ -318,6 +345,16 @@ M14 — Tag Engineering and Bounded Online Tag Monitor — is complete on canoni
 - M13 feature-worktree verification — restore PASS; Release build PASS with 0 warnings and 0 errors; full solution tests PASS (453/453: 158 App, 151 Runtime, 38 Core, 12 Drivers, 67 Infrastructure, 27 Stress), including focused Engineering Devices WPF coverage (5/5); vulnerability audit PASS with no vulnerable packages; WPF startup smoke PASS; fresh sibling copy-folder restore/build/startup PASS with no original-path dependency; post-change GitNexus index 4,334 nodes / 14,786 edges / 183 clusters / 300 flows with 0 import cycles; Runtime boundary PASS (`Scada.Runtime → Scada.Core ONLY`).
 - M14 merged-main verification — PASS at `f5cd141f2f26ebc9fa56bd0f8139ce23a670d640`; restore PASS; Release build PASS with 0 warnings and 0 errors; full solution tests PASS (483/483: 174 App, 154 Runtime, 48 Core, 12 Drivers, 68 Infrastructure, 27 Stress); vulnerability audit PASS with no vulnerable direct or transitive package; WPF startup smoke PASS with DI composition and `MainWindow` running; a fresh external copy restore/build/startup and original-path scan PASS; `git diff --check` PASS; GitNexus exact merged-main index PASS with 0 cycles; Runtime boundary PASS (`Scada.Runtime → Scada.Core ONLY`).
 - M15 merged-main verification — PASS at `4f4d325273fcdd1420182b061e40dc5b51bbc235`; restore PASS; Release build PASS with 0 warnings and 0 errors; full solution tests PASS (490/490: 181 App, 154 Runtime, 48 Core, 12 Drivers, 68 Infrastructure, 27 Stress); vulnerability audit PASS with no vulnerable packages; WPF startup smoke PASS with `MainWindow` running and title `SCADA TEMPLATE`; fresh external copy restore/build/startup PASS with no original-path dependency; `git diff --check` PASS; GitNexus merged-main index 4,528 nodes / 15,505 edges / 197 clusters / 300 flows with 0 cycles; Runtime boundary PASS (`Scada.Runtime → Scada.Core ONLY`).
+- M16 feature-worktree verification — PASS; restore PASS; Release build PASS
+  with 0 warnings and 0 errors; full solution tests PASS (490/490: 181 App,
+  154 Runtime, 48 Core, 12 Drivers, 68 Infrastructure, 27 Stress);
+  vulnerability audit PASS with no vulnerable package; framework-dependent and
+  self-contained `win-x64` publish/environment/WPF startup checks PASS; copied
+  deployment verification PASS with relative project paths rejected; exact
+  offline graph export produced 61 SHA-256-recorded packages and a fresh
+  external copy restored/built using only that folder feed; GitNexus indexed
+  4,552 nodes / 15,528 edges / 197 clusters / 300 flows with 0 cycles and LOW
+  changed-flow risk; Runtime boundary remains `Scada.Runtime → Scada.Core ONLY`.
 
 ## Not implemented — later milestones
 
@@ -326,7 +363,8 @@ M14 — Tag Engineering and Bounded Online Tag Monitor — is complete on canoni
 - The later Trend system.
 - Automatic PLC communication alarms, Alarm-to-PLC acknowledgement and Alarm notification/escalation.
 - PLC-backed Machine Settings Apply/Write, recipes, calibration workflow, audit trail and authorization.
-- Deployment tooling.
+- MSI/EXE installers, automatic update, Windows Service hosting and bundled
+  third-party runtime/package installers.
 - Deeper active-view subscription lifecycle optimization beyond the M3 activation/deactivation boundary.
 - PLC/device editing, reconnect, command, acknowledgement and configuration-write actions from health/diagnostics surfaces.
 - Health thresholds, notifications, trend/reporting surfaces and runtime hot reload.
@@ -349,7 +387,9 @@ M14 — Tag Engineering and Bounded Online Tag Monitor — is complete on canoni
 - Alarm configuration changes are persisted and marked restart-required; runtime hot reload, automatic communication alarms, notification/escalation and multi-process Alarm SQLite writers remain deferred.
 - Alarm SQLite connection configuration is still shared from the Infrastructure History namespace; moving this generic helper to a neutral Persistence namespace is deferred to avoid unrelated churn in the alignment hotfix.
 - Centralized logging uses `ILogger<T>`, the Microsoft.Extensions.Logging pipeline, the Debug provider and structured `DeviceId` fields on polling paths; consistent `RuntimeId` contextual enrichment across Runtime subsystems is not yet standardized (see `docs/V1_COVERAGE.md` row 48).
-- Remaining Architecture V1 partial/not-started coverage, including real protocol-aware browsing, deployment/offline strategy, broader device lifecycle tooling and RuntimeId logging context, is tracked in `docs/V1_COVERAGE.md`; M15's static screen catalog does not claim dynamic discovery or permission enforcement.
+- Remaining Architecture V1 partial/deferred coverage, including real
+  protocol-aware browsing, broader device lifecycle tooling, expanded HMI
+  assets and RuntimeId logging context, is tracked in `docs/V1_COVERAGE.md`.
 - The M12 health sampler is observational and intentionally does not provide threshold evaluation, event persistence, notification, command or runtime configuration mutation.
 
-Implementation must follow the ordered milestones in `docs/ROADMAP.md` and the constraints in `docs/SCADA_ARCHITECTURE_V1.md`. M7 MQTT Publisher, M10 qualification, M11 Alarm System, M12 Read-only Operational Health, M13 Engineering Devices, M14 Tag Engineering and Bounded Online Tag Monitor and M15 Screen Metadata and Composition are complete on canonical `main`; M16 has not started. MQTT Write, command subscriptions and PLC-write paths remain deferred. M12 is merged at `1b575a0e969703a01b006ab4a44147ab01e73ee7` and M15 is merged at `4f4d325273fcdd1420182b061e40dc5b51bbc235`.
+Implementation must follow the ordered milestones in `docs/ROADMAP.md` and the constraints in `docs/SCADA_ARCHITECTURE_V1.md`. M7 MQTT Publisher, M10 qualification, M11 Alarm System, M12 Read-only Operational Health, M13 Engineering Devices, M14 Tag Engineering and Bounded Online Tag Monitor and M15 Screen Metadata and Composition are complete on canonical `main`; M16 Deployment and Offline Portability is implemented and verified on its feature branch, pending merge. MQTT Write, command subscriptions and PLC-write paths remain deferred. M12 is merged at `1b575a0e969703a01b006ab4a44147ab01e73ee7` and M15 is merged at `4f4d325273fcdd1420182b061e40dc5b51bbc235`.
