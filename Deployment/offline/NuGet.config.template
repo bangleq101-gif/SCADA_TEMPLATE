@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<configuration>
+  <packageSources>
+    <clear />
+    <add key="SCADA Offline Feed" value="__SCADA_OFFLINE_SOURCE__" />
+  </packageSources>
+  <disabledPackageSources>
+    <clear />
+  </disabledPackageSources>
+</configuration>
