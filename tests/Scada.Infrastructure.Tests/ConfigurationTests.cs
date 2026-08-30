@@ -2,6 +2,7 @@ using Scada.Core.Configuration;
 using Scada.Core.Devices;
 using Scada.Core.History;
 using Scada.Core.Tags;
+using Scada.Core.Drivers;
 using Scada.Infrastructure.Configuration;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -21,6 +22,20 @@ public sealed class ConfigurationTests
         };
 
         Assert.Throws<ConfigurationValidationException>(() => ConfigurationValidator.Validate(options));
+    }
+
+    [Fact]
+    public void ValidatorInvokesOptionalDriverSpecificTagValidation()
+    {
+        var options = new RuntimeOptions
+        {
+            Devices = [new DeviceDefinition { Id = "PLC01", DriverType = "Test" }],
+            Tags = [new TagDefinition { Id = "T1", Name = "Tag 1", DeviceId = "PLC01", Address = "invalid" }]
+        };
+
+        var issues = ConfigurationValidator.CollectIssues(options, [new TestTagProvider()]);
+
+        Assert.Contains(issues, issue => issue.Code == "TEST_TAG_INVALID");
     }
 
     [Fact]
@@ -183,5 +198,16 @@ public sealed class ConfigurationTests
 
     private sealed class TestServiceCollection : List<ServiceDescriptor>, IServiceCollection
     {
+    }
+
+    private sealed class TestTagProvider : IDriverEngineeringProvider, IDriverTagEngineeringProvider
+    {
+        public string DriverType => "Test";
+        public IReadOnlyList<DriverOptionDefinition> OptionDefinitions => [];
+        public IReadOnlyList<ValidationIssue> Validate(DeviceDefinition device) => [];
+        public IReadOnlyList<ValidationIssue> ValidateTag(DeviceDefinition device, TagDefinition tag) =>
+            [new("TEST_TAG_INVALID", ValidationSeverity.Error, "Tag", tag.Id, nameof(tag.Address), "Invalid test address.")];
+        public Task<IReadOnlyList<AddressBrowseCandidate>> BrowseAddressesAsync(DeviceDefinition device, CancellationToken cancellationToken) =>
+            Task.FromResult<IReadOnlyList<AddressBrowseCandidate>>([]);
     }
 }
