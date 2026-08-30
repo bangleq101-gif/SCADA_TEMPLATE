@@ -109,6 +109,6 @@ The statuses below describe delivered coverage, not production certification:
 | **Total** | **50** |
 
 The matrix records M16 merged and verified on canonical `main` via PR #26 at
-merge commit `377fe17a98fa274b4cb6beb3c3a84d0bfe55fca8` and M17 implemented
-on its feature branch pending final verification/review/merge. Any next
-milestone must first receive its own plan and architecture gate.
+merge commit `377fe17a98fa274b4cb6beb3c3a84d0bfe55fca8` and M17 merged and
+verified via PR #28 at `0a735e2c846f1769c69ba4010d62995ebd7499ad`.
+Any next milestone must first receive its own plan and architecture gate.

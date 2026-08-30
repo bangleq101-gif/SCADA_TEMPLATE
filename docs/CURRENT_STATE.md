@@ -22,10 +22,11 @@ M16 is complete on canonical `main` via PR #26 at merge commit
 is `1a86cd3e878b2a4fb5209748a1bf68ec5fe64d9e`, and the merge tree is identical
 to that reviewed feature tree.
 
-M17 is implemented on `feature/milestone-17-modbus-tcp-readonly` and is pending
-final verification/review/merge. It adds a copy-folder-portable, per-device
-Modbus TCP read-only driver for FC01/FC02/FC03/FC04 without changing Runtime,
-TagCache or any write boundary.
+M17 is complete on canonical `main` via PR #28 at merge commit
+`0a735e2c846f1769c69ba4010d62995ebd7499ad`. The reviewed implementation head
+is `f08546d4c23116125a63b1274c1b29fe6a13bfec`. It adds a copy-folder-portable,
+per-device Modbus TCP read-only driver for FC01/FC02/FC03/FC04 without changing
+Runtime, TagCache or any write boundary.
 
 M11 — Alarm System — COMPLETE. M11 code/runtime implementation completed at `25ec87e91eba0be268384c7b941c63cb8bb0f6d9` through PR #15 and the approved PR #16 architecture-alignment revision (head `636e8fb16080f29e98d3ea976e5e584e1abe7887`). M11 governance/docs closeout was subsequently merged via PR #17 at `2cfd0c39f05e8a9251984e0c82198b72f7616745`; that commit is the final M11 governance authority and the exact M12 implementation base.
 
@@ -394,6 +395,12 @@ M14 — Tag Engineering and Bounded Online Tag Monitor — is complete on canoni
   restore PASS; GitNexus indexed 4,678 nodes / 15,838 edges / 200 clusters /
   300 flows with 0 import cycles; Runtime boundary remains
   `Scada.Runtime → Scada.Core ONLY`.
+- M17 merged-main verification — PASS at
+  `0a735e2c846f1769c69ba4010d62995ebd7499ad`; restore PASS; Release build PASS
+  with 0 warnings and 0 errors; full tests PASS (512/512); vulnerability audit
+  PASS; WPF startup smoke PASS; `git diff --check` PASS; GitNexus clean rebuild
+  indexed 4,680 nodes / 15,848 edges / 200 clusters / 300 flows with 0 import
+  cycles; canonical `main` is clean and equals `origin/main`.
 
 ## Not implemented — later milestones
 
