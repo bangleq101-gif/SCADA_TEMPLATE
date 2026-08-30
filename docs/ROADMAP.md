@@ -199,14 +199,38 @@ M16 does not include MSI/EXE installer authoring, automatic updates, Windows
 Service hosting, production PLC drivers, Trend, Reports, Recipes, PLC Write,
 MQTT Write or command subscriptions.
 
-## Remaining Architecture V1 Coverage After M16
+## Milestone 17 — Modbus TCP Read-Only Production Driver
 
-The complete requirement-by-requirement matrix is maintained in `docs/V1_COVERAGE.md`. It records 50 audited areas: 37 `COMPLETE`, 7 `PARTIAL`, 0 `NOT STARTED` and 6 `EXPLICITLY DEFERRED`.
+Status: IMPLEMENTED ON FEATURE BRANCH — pending final verification/review/merge.
+
+- Add one per-device `ModbusTcp` driver implementation beneath
+  `Scada.Drivers/ModbusTcp` and compose it through the existing Runtime-local
+  resolver lease. Do not change the driver-neutral Runtime polling contracts.
+- Support read-only FC01, FC02, FC03 and FC04 with one serialized connection per
+  configured device, cooperative cancellation and existing bounded Runtime
+  reconnect/shutdown behavior.
+- Use explicit zero-based logical address grammar and deterministic register
+  decoding. Driver-specific range planning may merge contiguous requests but
+  must obey 2,000-bit and 125-register protocol maxima.
+- Add driver/device/tag engineering validation without direct UI PLC reads or
+  fabricated register discovery.
+- Preserve copy-folder portability: source, central package pin, documentation,
+  tests and offline package discovery all travel with a complete copied folder.
+- Verify full tests, vulnerability audit, WPF startup, fresh copy restore/build,
+  publish/offline package flow, GitNexus cycles and the Runtime/Core boundary.
+
+M17 does not include Modbus RTU, PLC Write functions, live hardware
+certification, Siemens/Mitsubishi/OPC UA drivers, runtime hot reload, MQTT Write,
+Trend, Reports, Recipes or M18 scope.
+
+## Remaining Architecture V1 Coverage After M17
+
+The complete requirement-by-requirement matrix is maintained in `docs/V1_COVERAGE.md`. It records 50 audited areas: 37 `COMPLETE`, 8 `PARTIAL`, 0 `NOT STARTED` and 5 `EXPLICITLY DEFERRED`.
 
 The remaining work is intentionally described as coverage, not as an authorization to start a new milestone:
 
 1. `PARTIAL` — real protocol-aware Address Browser/device-selection extension; broader HMI catalog; external asset packaging; Engineering Devices/Trend route coverage beyond the M13 device editor; Simulator scenario qualification; consistent RuntimeId logging context; and dynamic/persisted screen composition beyond the M15 static catalog.
-2. `EXPLICITLY DEFERRED` — production Siemens/Mitsubishi/Modbus/OPC UA drivers, MQTT Write/command subscriptions, Trend, Recipes/Calibration, Reports, and distributed/Web/cloud/HA/scripting/plugin systems.
+2. `EXPLICITLY DEFERRED` — production Siemens/Mitsubishi/OPC UA drivers, Modbus RTU/write functions, MQTT Write/command subscriptions, Trend, Recipes/Calibration, Reports, and distributed/Web/cloud/HA/scripting/plugin systems.
 
 ### Candidate ordering for a future milestone (proposal only)
 
@@ -216,8 +240,8 @@ If a future planning gate is opened, a dependency-aware review could consider:
 2. concrete protocol-driver qualification or additional HMI/asset coverage;
 3. separately approved monitoring or HMI extensions such as Trend or additional asset support.
 
-This is sequencing guidance only. M16 does not authorize production driver,
-write-path, installer, Trend or M17 implementation.
+This is sequencing guidance only. M17 does not authorize another production
+driver, any write path, installer, Trend or M18 implementation.
 
 ## Explicitly deferred
 

@@ -248,6 +248,11 @@ Scada.Runtime/
 └── Tags
 
 Scada.Drivers/
+├── ModbusTcp
+│   ├── address/options parsing and engineering validation
+│   ├── protocol range planning and deterministic decoding
+│   ├── FluentModbus transport adapter
+│   └── per-device read-only IPlcDriver
 └── Simulator
 
 Scada.Infrastructure/

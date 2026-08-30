@@ -39,6 +39,22 @@ public static class ConfigurationValidator
             }
         }
 
+        var devices = (options.Devices ?? [])
+            .Where(device => !string.IsNullOrWhiteSpace(device.Id))
+            .GroupBy(device => device.Id, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(group => group.Key, group => group.First(), StringComparer.OrdinalIgnoreCase);
+        foreach (var tag in options.Tags ?? [])
+        {
+            if (!devices.TryGetValue(tag.DeviceId, out var device) ||
+                !providers.TryGetValue(device.DriverType, out var provider) ||
+                provider is not IDriverTagEngineeringProvider tagProvider)
+            {
+                continue;
+            }
+
+            issues.AddRange(tagProvider.ValidateTag(device, tag));
+        }
+
         return issues;
     }
 

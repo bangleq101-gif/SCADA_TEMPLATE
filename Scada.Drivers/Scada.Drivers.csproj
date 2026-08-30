@@ -5,4 +5,7 @@
   <ItemGroup>
     <ProjectReference Include="..\Scada.Core\Scada.Core.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="FluentModbus" />
+  </ItemGroup>
 </Project>

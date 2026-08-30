@@ -4,7 +4,7 @@ Architecture V1 is approved.
 
 Current implementation milestone:
 
-Milestone 16 — Deployment and Offline Portability Foundation
+Milestone 17 — Modbus TCP Read-Only Production Driver
 
 Status:
 
@@ -21,6 +21,11 @@ M16 is complete on canonical `main` via PR #26 at merge commit
 `377fe17a98fa274b4cb6beb3c3a84d0bfe55fca8`. The reviewed implementation head
 is `1a86cd3e878b2a4fb5209748a1bf68ec5fe64d9e`, and the merge tree is identical
 to that reviewed feature tree.
+
+M17 is implemented on `feature/milestone-17-modbus-tcp-readonly` and is pending
+final verification/review/merge. It adds a copy-folder-portable, per-device
+Modbus TCP read-only driver for FC01/FC02/FC03/FC04 without changing Runtime,
+TagCache or any write boundary.
 
 M11 — Alarm System — COMPLETE. M11 code/runtime implementation completed at `25ec87e91eba0be268384c7b941c63cb8bb0f6d9` through PR #15 and the approved PR #16 architecture-alignment revision (head `636e8fb16080f29e98d3ea976e5e584e1abe7887`). M11 governance/docs closeout was subsequently merged via PR #17 at `2cfd0c39f05e8a9251984e0c82198b72f7616745`; that commit is the final M11 governance authority and the exact M12 implementation base.
 
@@ -317,6 +322,29 @@ M14 — Tag Engineering and Bounded Online Tag Monitor — is complete on canoni
   hosting, package binaries, runtime installers, production PLC drivers or any
   PLC/MQTT write path.
 
+## Implemented in Milestone 17
+
+- Added a per-device `ModbusTcp` `IPlcDriver` under
+  `Scada.Drivers/ModbusTcp`; `Scada.Runtime` remains concrete-driver-neutral.
+- Added read-only Modbus functions FC01 Coils, FC02 Discrete Inputs, FC03
+  Holding Registers and FC04 Input Registers.
+- Added canonical zero-based logical addresses: `C:<offset>`, `DI:<offset>`,
+  `HR:<offset>:<encoding>` and `IR:<offset>:<encoding>`.
+- Added deterministic I16/U16/I32/U32/I64/F32/F64 decoding with configurable
+  register byte and word order.
+- Added protocol range coalescing with Modbus limits of 2,000 bits and 125
+  registers while preserving Runtime's device/scan-group logical batching.
+- Added cancellation-aware TCP connection/read/disconnect, per-device transport
+  ownership and existing Runtime reconnect/backoff compatibility.
+- Added driver-specific connection and tag-address engineering validation. The
+  standard Modbus protocol has no portable register discovery, so the Address
+  Browser intentionally returns no invented candidates.
+- Pinned FluentModbus centrally in the copied repository. Offline package export
+  discovers it through the restored dependency graph; no driver binary or source
+  outside the copied project folder is required.
+- M17 remains read-only: no FC05/FC06/FC15/FC16, PLC Write, MQTT Write, command
+  subscription, hot reload or production Siemens/Mitsubishi/OPC UA driver.
+
 ## Verified
 
 - `dotnet restore Scada.sln --ignore-failed-sources` — PASS.
@@ -356,10 +384,20 @@ M14 — Tag Engineering and Bounded Online Tag Monitor — is complete on canoni
   external copy restored/built using only that folder feed; GitNexus indexed
   4,552 nodes / 15,528 edges / 197 clusters / 300 flows with 0 cycles and LOW
   changed-flow risk; Runtime boundary remains `Scada.Runtime → Scada.Core ONLY`.
+- M17 feature-worktree verification — PASS; restore PASS; Release build PASS
+  with 0 warnings and 0 errors; full solution tests PASS (512/512: 181 App,
+  154 Runtime, 48 Core, 33 Drivers, 69 Infrastructure, 27 Stress);
+  vulnerability audit PASS with no vulnerable package; WPF startup smoke PASS;
+  fresh external copy restore/build and original-path scan PASS; framework-
+  dependent publish contains FluentModbus; exact offline graph export contains
+  68 SHA-256-recorded packages including FluentModbus 5.3.2 and offline-only
+  restore PASS; GitNexus indexed 4,678 nodes / 15,838 edges / 200 clusters /
+  300 flows with 0 import cycles; Runtime boundary remains
+  `Scada.Runtime → Scada.Core ONLY`.
 
 ## Not implemented — later milestones
 
-- Real Siemens, Mitsubishi, Modbus or OPC UA drivers.
+- Real Siemens, Mitsubishi or OPC UA drivers; Modbus RTU remains deferred.
 - MQTT Write and command-subscription support.
 - The later Trend system.
 - Automatic PLC communication alarms, Alarm-to-PLC acknowledgement and Alarm notification/escalation.

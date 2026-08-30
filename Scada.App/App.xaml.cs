@@ -8,6 +8,7 @@ using Scada.App.ViewModels;
 using Scada.Core.Drivers;
 using Scada.Core.History;
 using Scada.Drivers.Simulator;
+using Scada.Drivers.ModbusTcp;
 using Scada.Infrastructure.Configuration;
 using Scada.Infrastructure.History;
 using Scada.Infrastructure.History.Influx;
@@ -52,7 +53,8 @@ public partial class App : Application
             var startupOptions = projectDocument?.Scada
                 ?? ConfigurationRegistration.CreateOptions(builder.Configuration);
             var simulatorEngineeringProvider = new SimulatorEngineeringProvider();
-            ConfigurationValidator.Validate(startupOptions, [simulatorEngineeringProvider]);
+            var modbusEngineeringProvider = new ModbusTcpEngineeringProvider();
+            ConfigurationValidator.Validate(startupOptions, [simulatorEngineeringProvider, modbusEngineeringProvider]);
 
             builder.Logging.AddDebug();
             builder.Services.AddSingleton(startupOptions);
@@ -60,11 +62,15 @@ public partial class App : Application
             builder.Services.AddSingleton<SimulatorValueGenerator>();
             builder.Services.AddSingleton<SimulatorPlcDriver>();
             builder.Services.AddSingleton<Scada.Core.Drivers.IDriverEngineeringProvider>(simulatorEngineeringProvider);
+            builder.Services.AddSingleton<Scada.Core.Drivers.IDriverEngineeringProvider>(modbusEngineeringProvider);
             builder.Services.AddSingleton<IPlcDriverResolver>(services => new DriverResolver(
             [
                 DriverRegistration.Shared(
                     "Simulator",
-                    services.GetRequiredService<SimulatorPlcDriver>())
+                    services.GetRequiredService<SimulatorPlcDriver>()),
+                DriverRegistration.PerDevice(
+                    "ModbusTcp",
+                    _ => new ModbusTcpPlcDriver())
             ]));
             builder.Services.AddSingleton<TagCache>();
             builder.Services.AddSingleton<ITagCache>(services => services.GetRequiredService<TagCache>());

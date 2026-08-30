@@ -1,6 +1,31 @@
 
 # Architecture Decisions
 
+## D68 — Modbus TCP is a per-device read-only driver inside the copied solution
+
+Milestone 17 implements `ModbusTcp` beneath `Scada.Drivers` and registers it
+through `DriverRegistration.PerDevice`. Each configured PLC owns a separate
+driver/transport instance for connection state, while `DeviceManager`,
+`DevicePollingWorker`, `IPlcDriver`, `TagEngine` and central `TagCache` remain
+unchanged. Reconnect reuses the leased driver object and recreates its TCP
+transport; the Runtime lease owns final async disposal.
+
+Addresses are explicit zero-based logical strings: Coils `C`, Discrete Inputs
+`DI`, Holding Registers `HR` and Input Registers `IR`. Register addresses include
+an encoding, and the driver returns the declared raw `SourceDataType`; canonical
+engineering Scale/Offset remains the sole responsibility of Runtime
+`TagEngine`. The concrete driver alone coalesces contiguous protocol ranges and
+enforces Modbus read limits. Illegal function/address/value responses mark only
+the affected block Bad; transport and gateway failures flow to existing Runtime
+disconnect/reconnect isolation.
+
+The implementation supports only FC01/FC02/FC03/FC04. It contains no Modbus
+write function, MQTT Write, direct UI PLC read or fake register discovery.
+FluentModbus is centrally pinned and isolated to `Scada.Drivers`. A copied
+SCADA_TEMPLATE folder therefore carries the source/package declaration and can
+restore, build, publish and run independently; customer endpoint/unit/tag
+configuration remains in that copied project's `project.json`.
+
 ## D67 — Deployment keeps application binaries separate from canonical project data
 
 Milestone 16 publishes a Windows bundle with application binaries under `app/`
