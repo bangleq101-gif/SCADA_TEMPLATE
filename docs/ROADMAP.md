@@ -201,7 +201,8 @@ MQTT Write or command subscriptions.
 
 ## Milestone 17 — Modbus TCP Read-Only Production Driver
 
-Status: IMPLEMENTED ON FEATURE BRANCH — pending final verification/review/merge.
+Status: COMPLETE — merged and verified on canonical `main` via PR #28 at merge
+commit `0a735e2c846f1769c69ba4010d62995ebd7499ad`.
 
 - Add one per-device `ModbusTcp` driver implementation beneath
   `Scada.Drivers/ModbusTcp` and compose it through the existing Runtime-local
